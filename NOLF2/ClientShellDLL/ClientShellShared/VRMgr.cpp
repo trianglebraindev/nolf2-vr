@@ -62,6 +62,7 @@
 //   VRGunPitch      tilts the gun relative to the controller, degrees
 //                   (positive = barrel down)
 //   VRArms          0 = just hands (default), 1 = the game's full arms
+//   VRWristBack     how far the left wrist sits behind the controller, cm
 //
 // HANDS (see VRMgr.h): the left hand follows the left controller. Squeeze
 // the left grip with your left hand near where Cate's left hand sits on
@@ -94,6 +95,7 @@ static VarTrack g_vtVRGunHandY;
 static VarTrack g_vtVRGunHandZ;
 static VarTrack g_vtVRGunPitch;
 static VarTrack g_vtVRArms;
+static VarTrack g_vtVRWristBack;
 
 static const float kGrabDistanceMeters = 0.2f;	// how close the left hand must be to grab the gun
 static const float kArmLength = 0.12f;			// how much of the forearm's length is left when hiding arms
@@ -195,6 +197,7 @@ void CVRMgr::Init()
 	g_vtVRGunHandZ.Init(g_pLTClient, "VRGunHandZ", NULL, 30.0f);
 	g_vtVRGunPitch.Init(g_pLTClient, "VRGunPitch", NULL, 0.0f);
 	g_vtVRArms.Init(g_pLTClient, "VRArms", NULL, 0.0f);
+	g_vtVRWristBack.Init(g_pLTClient, "VRWristBack", NULL, 7.0f);
 
 	LoadGunFits();
 	LoadHandFit();
@@ -662,6 +665,18 @@ void CVRMgr::SetGunModelTransform(const LTVector& vPos, const LTRotation& rRot)
 	m_bGunPlaced = true;
 }
 
+// Whether a bone's matrix has collapsed (the game shrinks bones to nothing
+// to hide them, e.g. the arms while holstered). Undoing such a matrix
+// blows up, so collapsed bones are left alone.
+static bool VR_IsCollapsed(const LTMatrix& m)
+{
+	float fDet =
+		m.m[0][0] * (m.m[1][1] * m.m[2][2] - m.m[1][2] * m.m[2][1]) -
+		m.m[0][1] * (m.m[1][0] * m.m[2][2] - m.m[1][2] * m.m[2][0]) +
+		m.m[0][2] * (m.m[1][0] * m.m[2][1] - m.m[1][1] * m.m[2][0]);
+	return fabs(fDet) < 1e-4f;
+}
+
 // A controller's pose in the gun model's own space, as a matrix.
 static void VR_PoseInModel(const LTVector& vCam, const LTRotation& rCam, float fScale,
 	const LTVector& vGunPos, const LTRotation& rGunRot, LTMatrix& mOut)
@@ -708,6 +723,13 @@ bool CVRMgr::GetLeftWristTarget(LTMatrix& mWrist) const
 		mOffset = mRight.MakeInverse() * m_mLeftWristAnim;
 		mOffset.SetTranslation(0.0f, 0.0f, 0.0f);
 	}
+
+	// Only the hand's turn comes from the grab; the wrist always sits a
+	// little behind the palm (where the controller is held), so the hand
+	// turns about your hand rather than about some point off to the side.
+	float fUnitsPerMeter = m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 60.0f;
+	float fBack = g_vtVRWristBack.GetFloat(7.0f) * 0.01f * fUnitsPerMeter / GetGunScale();
+	mOffset.SetTranslation(0.0f, 0.0f, -fBack);
 
 	mWrist = mCtrl * mOffset;
 	return true;
@@ -821,6 +843,14 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 	if (hNode == p->m_hNodeWristL)
 	{
 		ppArm = &p->m_pArmLMatrix;
+
+		// Hidden by the game (shrunk to nothing): leave the arm alone.
+		if (VR_IsCollapsed(*data.m_pNodeTransform) || (*ppArm && VR_IsCollapsed(**ppArm)))
+		{
+			p->m_bLeftAnimValid = false;
+			*ppArm = NULL;
+			return;
+		}
 		p->m_mLeftWristAnim = *data.m_pNodeTransform;
 		p->m_bLeftAnimValid = true;
 
@@ -845,6 +875,11 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 	else if (hNode == p->m_hNodeWristR)
 	{
 		ppArm = &p->m_pArmRMatrix;
+		if (VR_IsCollapsed(*data.m_pNodeTransform) || (*ppArm && VR_IsCollapsed(**ppArm)))
+		{
+			*ppArm = NULL;
+			return;
+		}
 	}
 	else
 	{

@@ -133,7 +133,8 @@ positive = barrel down).
 - Shots leave from the hand along the gun. The crosshair (with the game's
   accuracy spread) is drawn into its own layer, placed on whatever the gun
   is aimed at, at a constant apparent size.
-- Activation (search, doors, pick lock) still uses where you look.
+- Activation (search, pick up, doors, pick lock) goes along the gun's aim,
+  where the crosshair is (Tre), with the action text beside the crosshair.
 - Adjust gun (left stick click while playing): the sticks slide, tilt and
   resize the current gun relative to the hand while the aim stays on the
   controller's pointing ray, so you line the sights up with the crosshair.
@@ -162,8 +163,12 @@ code rather than by editing models where possible.
   gun turns about the right hand so the line between the hands keeps its
   direction (steadier aim, aim follows). Let go to free it. Each grab also
   teaches how the hand sits on the controller (saved to
-  `run\vr_hands.txt`). Hand poses are kept as full bone matrices, since the
-  left arm's bones may be mirrored.
+  `run\vr_hands.txt`). Only the hand's turn is learnt; the wrist always
+  sits `VRWristBack` cm (7) behind the controller, so the hand turns about
+  your hand. Hand poses are kept as full bone matrices, since the left
+  arm's bones may be mirrored.
+- Bones the game has shrunk to nothing (e.g. arms while holstered) are left
+  alone: undoing a collapsed matrix blew the arms up into huge flat shapes.
 - Note: `LTVector::Cross` returns b x a; VR code writes the cross product
   out.
 - Next: open/close the free left hand (grip/trigger curl the fingers), tool animations

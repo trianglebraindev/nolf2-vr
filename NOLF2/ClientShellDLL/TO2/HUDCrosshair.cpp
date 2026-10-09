@@ -139,9 +139,11 @@ void CHUDCrosshair::Render()
 
 	if (g_VRMgr.IsActive())
 	{
-		// VR: not in the middle of your view but where the gun points.
+		// VR: not in the middle of your view but where the gun points, with
+		// the action text ("Search", "Pick lock"...) beside it.
 		if (!g_pPlayerMgr->IsPlayerDead())
 			RenderVR();
+		return;
 	}
 	else if (g_pPlayerMgr->IsPlayerDead())
 	{
@@ -607,6 +609,24 @@ void CHUDCrosshair::RenderVR()
 	{
 		g_pDrawPrim->SetTexture(m_hInaccurate);
 		g_pDrawPrim->DrawPrim(&m_Poly[1],1);
+	}
+
+	// The action text, where it sits relative to the crosshair on a monitor.
+	if (m_pStr)
+	{
+		float x = m_x - (float)g_pInterfaceResMgr->GetScreenWidth() * 0.5f + fCentre;
+		float y = m_y - (float)g_pInterfaceResMgr->GetScreenHeight() * 0.5f + fCentre;
+
+		m_pStr->SetPosition(x + 2.0f, y + 2.0f);
+		m_pStr->SetColor(argbBlack);
+		m_pStr->Render();
+
+		m_pStr->SetPosition(x, y);
+		if (m_bCanActivateTarget)
+			m_pStr->SetColor(m_nTargetTeam == INVALID_TEAM ? m_StrColor : m_TeamColor[m_nTargetTeam]);
+		else
+			m_pStr->SetColor(m_StrDisColor);
+		m_pStr->Render();
 	}
 
 	g_VRMgr.EndCrosshair();

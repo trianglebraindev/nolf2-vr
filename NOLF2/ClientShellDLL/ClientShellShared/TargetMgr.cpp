@@ -27,6 +27,7 @@
 #include "GadgetDisabler.h"
 #include "VehicleMgr.h"
 #include "DoomsdayPieceFX.h"
+#include "VRMgr.h"
 
 VarTrack	g_vtActivationDistance;
 VarTrack	g_vtReviveDistance;
@@ -568,6 +569,19 @@ void CTargetMgr::CheckForIntersect(float &fDistAway)
 	HLOCALOBJ hCamera = g_pPlayerMgr->GetCamera();
 	g_pLTClient->GetObjectPos(hCamera, &vPos);
 	g_pLTClient->GetObjectRotation(hCamera, &rRot);
+
+	// VR: search, pick up and use go where the crosshair is (along the gun
+	// in your hand), not where your head points.
+	if (g_VRMgr.IsActive())
+	{
+		LTVector vAimPos;
+		LTRotation rAim;
+		if (g_VRMgr.GetAimRay(vAimPos, rAim))
+		{
+			vPos = vAimPos;
+			rRot = rAim;
+		}
+	}
 
  	m_ActivationData.m_vPos = vPos;
 	m_ActivationData.m_rRot = rRot;
