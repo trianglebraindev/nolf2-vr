@@ -194,3 +194,25 @@ code rather than by editing models where possible.
 - Screen fades darken the whole headset view; the letterbox bars are off.
 - Later: health/ammo move to the wrist or the gun, and the crosshair goes
   away once aiming comes from the gun (stage 4).
+
+## Roadmap (after the first full play session, 20 min)
+
+Working: stereo + 6DoF, controllers, smooth/snap turn, interface layer,
+menus on a panel, gun in hand with per-weapon fit, aim from the gun,
+crosshair on target, activation at the crosshair, hands only, free left
+hand, two-hand grip. Holster = weapon "Holster", which has no model (the
+engine stand-in is hidden in VR).
+
+Next, in a suggested order:
+1. Weapon ring around the right hand (replaces grip = next weapon).
+2. HUD on the wrist (health / armour) and on the gun (ammo); subtitles and
+   choices on a lazy panel.
+3. VR settings menu in the game's options (console is compiled out):
+   scale, turning, HUD, hands, gun size.
+4. Laser pointer for menus.
+5. Recentre on a controller button; open/close left hand.
+6. Scopes / zoom / binoculars in VR; tool animations (lock pick etc.).
+Later: melee swinging (Tre wants it), comfort vignette, height
+calibration and real crouch, vehicles, cutscene options, the shutdown
+hang.
+
