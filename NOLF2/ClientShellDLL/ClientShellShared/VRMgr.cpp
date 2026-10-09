@@ -16,6 +16,9 @@
 //   Right B         holster
 //   Right stick     click = reload
 //   Right grip      hold: weapon ring (move your hand to one, let go)
+//   Left grip       on the weapon: hold it with both hands;
+//                   anywhere else: pick up / drop a body (where the
+//                   crosshair is), like the game's "move body" key
 //
 //   In menus: either stick moves the selection, trigger or A selects,
 //   B goes back.
@@ -156,6 +159,7 @@ CVRMgr::CVRMgr()
 	m_pfnEndLayer		= NULL;
 	m_pfnSetLayer		= NULL;
 	m_bRingOpen			= false;
+	m_bMoveBodyBound	= false;
 	m_vRingOffset.Init(0.0f, 0.0f, 0.0f);
 	m_vRingRight.Init(1.0f, 0.0f, 0.0f);
 	m_vRingUp.Init(0.0f, 1.0f, 0.0f);
@@ -287,6 +291,7 @@ void CVRMgr::Update(float fFrameTime)
 	if (nWantSet != s_nBoundSet)
 	{
 		s_nBoundSet = nWantSet;
+		m_bMoveBodyBound = false;
 		if (nWantSet == 1)
 		{
 			SetDefaultBindings();
@@ -305,6 +310,7 @@ void CVRMgr::Update(float fFrameTime)
 	{
 		UpdateGunAdjust(fFrameTime);
 		UpdateTwoHand();
+		UpdateMoveBody();
 		UpdateWeaponRing(fFrameTime);
 	}
 	else
@@ -801,6 +807,26 @@ void CVRMgr::SaveHandFit()
 	fclose(pFile);
 }
 
+// Left grip that didn't take hold of the gun: the game's "move body"
+// (pick up or drop a body). The grip is bound to that command while it's
+// held, so the game sees an ordinary key press.
+void CVRMgr::UpdateMoveBody()
+{
+	if (!m_pfnSetBinding)
+		return;
+	bool bGrip = (m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) != 0;
+	if (Pressed(LTVR_LEFT, LTVR_BTN_GRIP) && !m_bTwoHand && !m_bAdjusting && !IsDecisionOpen())
+	{
+		m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_GRIP, COMMAND_ID_MOVE_BODY);
+		m_bMoveBodyBound = true;
+	}
+	else if (m_bMoveBodyBound && !bGrip)
+	{
+		m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_GRIP, -1);
+		m_bMoveBodyBound = false;
+	}
+}
+
 // Left grip near Cate's left hand: hold the gun with both hands.
 void CVRMgr::UpdateTwoHand()
 {
@@ -1264,7 +1290,7 @@ bool CVRMgr::OpenWeaponRing()
 	const float kTwoPi = 6.2831853f;
 	if (m_nRingItems <= 10)
 	{
-		m_fRingIconSize = 0.15f;
+		m_fRingIconSize = 0.075f;
 		for (int i = 0; i < m_nRingItems; ++i)
 		{
 			float fAngle = kTwoPi * (float)i / (float)m_nRingItems;
@@ -1274,7 +1300,7 @@ bool CVRMgr::OpenWeaponRing()
 	}
 	else
 	{
-		m_fRingIconSize = 0.12f;
+		m_fRingIconSize = 0.06f;
 		int nInner = (m_nRingItems + 2) / 3;
 		int nOuter = m_nRingItems - nInner;
 		for (int i = 0; i < m_nRingItems; ++i)
@@ -1405,7 +1431,7 @@ void CVRMgr::RenderWeaponRing()
 
 		uint32 tw = 1, th = 1;
 		g_pTexInterface->GetTextureDims(hTex, tw, th);
-		float fHeight = m_fRingIconSize * (float)nSize * (i == m_nRingSel ? 1.35f : 1.0f);
+		float fHeight = m_fRingIconSize * (float)nSize * (i == m_nRingSel ? 1.3f : 1.0f);
 		float fWidth = (th > 0) ? fHeight * (float)tw / (float)th : fHeight;
 		float cx = fHalf + m_aRingX[i] * fHalf;
 		float cy = fHalf - m_aRingY[i] * fHalf;

@@ -165,6 +165,8 @@ private:
 	void		UpdateHudMode();
 	void		UpdateGunAdjust(float fFrameTime);
 	void		UpdateTwoHand();
+	void		UpdateMoveBody();
+	bool		m_bMoveBodyBound;		// left grip is bound to "move body" while held
 	void		UpdateWeaponRing(float fFrameTime);
 	bool		OpenWeaponRing();
 	void		CloseWeaponRing(bool bChoose);

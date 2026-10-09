@@ -1,56 +1,161 @@
-lithtech
-========
+# NOLF2 VR
 
-The engine code is from the apparent GPL release of the Jupiter Ex engine before Touchdown Entertainment disappeared. The GPL release was of the PC Enterprise Edition Build 69. Included were the game code and assets from NOLF2 and the game code from Tron 2.0. The code from the other games are from their respective public releases.
+A virtual reality conversion of **No One Lives Forever 2: A Spy in H.A.R.M.'s Way**
+(Monolith, 2002), built to feel as close to a native VR game as possible:
+full 6DoF head tracking, motion controllers with the gun in your hand, aiming
+where the gun points, and the game's own interface brought into the headset.
+It is not a "head-aimed" injector mod. It's a source-level port built on the
+open Jupiter EX (LithTech) engine release and the NOLF2 game code.
 
-Goal
-----
-I found the GPL release of the Jupiter Engine and couldn't find anyone else who had really seemed to do anything with it. I wanted to see how hard it would be to adapt it into a modern, multi-platform source port. I also wanted to see if it would be possible to port the other Lithtech release game code to the GPL release of the engine. Both have turned out to be much more work than I originally envisioned. Even though the effort is initially *extremely* rough, I thought I would put it up on GitHub so that I have a backup of my work and that no matter how far (or not) I get, my work will not disappear with me.
+> **Private repository.** The NOLF2 game code is covered by Monolith's
+> original SDK license, and the licensing of the engine release is unclear.
+> Don't make this repository public. No retail game data is stored here:
+> you need your own retail copy of NOLF2, patched to 1.3.
 
-Status
-------
-Currently the engine and NOLF2 game code will build.
+## What works
 
-There are a few reasons why I am implementing a new build system:
-* All code releases were either using VC++ 6 or Visual Studio 2003 (VC++ 7.1). Neither type of project file converted that well in VS2010.
-* Since the ultimate goal is a source port, I would like to be able to build the games on Linux and OS X as well. There was a homegrown converter for VC++ 7.1 project files to makefiles, but given then problems converting between versions of Visual Studio, I decided against it.
-* I don't want to require someone to use Visual Studio on Windows. It should at least be buildable by MinGW as well (if not OpenWatcom too).
+- **Stereo 3D with 6DoF head tracking**, at the headset's own frame rate
+  (tested at 90 Hz on Quest 3 through Virtual Desktop / VDXR), with true
+  world scale.
+- **Motion controllers**: walk where you look (or where your left hand
+  points), smooth or snap turning, all game actions on the controllers,
+  menus navigable with the sticks.
+- **The gun in your hand**: the game's own weapon models, at real size and
+  depth in your right hand, with a per-weapon fit you can adjust in the
+  headset. Shots leave from your hand along the barrel.
+- **Hands**: forearms trimmed to gloved hands; the left hand follows your left
+  controller; grip the weapon with your left hand for a steadier two-handed
+  aim.
+- **Crosshair on the target**: the game's own crosshair, accuracy spread
+  included, placed on whatever the gun points at. Searching, picking up and
+  using things work where the crosshair is.
+- **Weapon ring**: hold the right grip, reach for a weapon, let go.
+- **Interface in the headset**: the HUD, subtitles, conversation choices,
+  in-game menus and the console are drawn into their own layer. The HUD
+  stays in front of you, menus appear on a panel where you're looking,
+  screen fades darken your whole view, and the main menus and movies play on
+  a big floating screen.
+- **Crash reports**: a crash writes a readable report and a minidump to
+  `run\`.
 
-I can get NOLF2 running. Interestingly enough, a release build seems to run okay, but a debug build will trigger exceptions in the standard library. All the problem seem to have to do with Microsoft's secure CRT. Either things had slightly different semantics between compilers or certain iterator usages were technically not correct in the original code. I fixed maybe two of these. There are still probably another handful left. There also seems to be some differences in the NOLF2 retail data files and those supplied with the GPL release. I am not 100% certain of this, but I need to investigate more.
+Still to come (see `docs/VR-DESIGN.md`): HUD on the wrist and the gun, VR
+settings in the options menu, a laser pointer for menus, scopes and zoom in
+VR, melee swinging, comfort options.
 
-I also started an effort to port the Shogo source (originally from a really old version of the engine) to the engine in the GPL release. I have made a *ton* of changes, but it still doesn't compile completely. I decided to focus on getting a single tree build and debug version of NOLF2 running first.
+## Requirements
 
-TODO
-----
-* Have a way to build the engine with any or all of the game source code. (I think most of the infrastructure for this is in place.)
-* Fix the secure standard library exceptions so that a Debug build under VS2010 will run.
-* Port/adapt all the game code to run on the GPL engine. Each game was written to a different version of the engine. So, theoretically this is possible, but it could take a substantial amount of work.
-* Remove the Windows dependencies. The engine is heavily oriented towards Windows (even though there is a bit of Linux code).
-    * Replace the usage of MFC with wxWidgets in the tools. (MFC and wxWidgets are close enough that it shouldn't be too painful.)
-    * Replace DirectInput and other Windows specific code with SDL.
-    * Create a new audio driver based on SDL and/or OpenAL.
-    * Create a new OpenGL renderer.
-* Long term, it might be cool to bring back something similar to the renderer DLLs that Shogo used. In this version of the engine, the renderer is statically linked to the engine.
+- Retail **NOLF2 patched to 1.3**, by default at `D:\Games\No One Lives Forever 2`
+  (change `NOLF2DIR` in `setup_run_dir.bat` if yours is elsewhere)
+- A PC VR headset with an **OpenXR** runtime that supports Direct3D 11 and
+  32-bit programs. Developed on Quest 3 with Virtual Desktop and VDXR.
+- **Visual Studio 2022** with *Desktop development with C++*, *C++ CMake tools*
+  and *C++ ATL*
+- **DirectX SDK (June 2010)**. The S1023 error at the end of its installer
+  is harmless.
 
-Games I want to support and the order to work on them
------------------------------------------------------
-1. No One Lives Forever 2: A Spy in H.A.R.M.'s Way
-2. Tron 2.0 (if I can find a copy)
-3. Shogo
-4. The Operative: No One Lives Forever
-5. F.E.A.R.
-6. Blood II: The Chosen (if I can find a copy)
+## Building and playing
 
-These are all the Lithtech I am aware of that had a public source release. If there are more out there, I want to eventually support them too.
+| Command | What it does |
+|---|---|
+| `update.bat` | Pull the latest changes from GitHub, then build |
+| `build_vs2022.bat` | Build only (`clean` as an argument rebuilds from scratch) |
+| `run_nolf2_vr.bat` | Play in VR |
+| `run_nolf2.bat` | Play on the monitor, windowed |
+| `run_vrprobe.bat` | Headset test: a floating test picture, no game |
 
-Recent Developments
-===================
-Hai, MWisBest here.
+The game runs from the `run\` folder, never from the retail install. It's
+made by `setup_run_dir.bat` with links to the retail data, so the retail
+install stays untouched.
 
-It turns out that the NOLF2 assets included with the "GPL" release are indeed different than the retail NOLF2 assets. This code is technically working OK in its current state, but only with those "GPL" assets; the problem is that the "GPL" assets aren't complete. They really only include the first part of the first level (world) of the game for the campaign. The old (retail) versions of the WORLD files do not work directly with this newer Lithtech engine build.
+## Controls
 
-There's a few options to maybe get the entirety of NOLF2 working with this code:
+| Control | In play | In menus |
+|---|---|---|
+| Left stick | walk (push fully to run) | navigate |
+| Right stick left / right | turn | navigate |
+| Right stick up / down | jump / crouch toggle | navigate |
+| Right trigger | fire | select |
+| Right grip (hold) | weapon ring: reach for a weapon, let go | |
+| Right A / B | next ammo / holster | select / back |
+| Right stick click | reload | |
+| Left trigger | use, search, pick up (at the crosshair) | select |
+| Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
+| Left X | mission objectives | |
+| Left Y or menu button | pause menu | back |
+| Left stick click | adjust the gun's fit in your hand | |
+| Conversation choices | right stick up / down, right trigger or A to pick, B to say nothing | |
+| Home key (keyboard) | recentre | recentre |
 
-1. Figure out the difference between formats and rework the engine to support both. (very unlikely)
-2. Locate an old version of Maya or 3ds Max (version 3 or 4 of either) to use the retail game's import plugin for, and then this release's export plugin, to "convert" them to the new format. (haven't been able to find an old Maya or 3ds Max so far)
-3. Recreate the levels from scratch. Really give the entire game a proper remake. (beyond *my* capabilities)
+## Settings
+
+The engine's console is compiled out, so settings go on the launch line in
+`run_nolf2_vr.bat` as `+Name value`:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `VRUnitsPerMeter` | 60 | world scale (lower = everything bigger) |
+| `VRSnapTurn` | 0 | 1 = snap turning |
+| `VRTurnSpeed` / `VRSnapAngle` | 150 / 45 | smooth turn speed (degrees/s), snap step (degrees) |
+| `VRMoveWithHand` | 0 | 1 = walk where the left controller points |
+| `VRHudDistance` / `VRHudAngle` | 2 / 60 | HUD distance (m) and width (degrees) |
+| `VRHudFollow` / `VRHudFollowAngle` | 1 / 35 | HUD glides back after you turn this far; 0 = locked to view |
+| `VRScreenDistance` / `VRScreenAngle` | 2 / 62 | menus and the floating screen |
+| `VRGunScale` | 12 | size of the gun in your hand |
+| `VRArms` | 0 | 1 = the game's full arms instead of hands |
+| `VRWristBack` | 7 | how far the left wrist sits behind the controller (cm) |
+
+Files the game writes in `run\`:
+
+| File | What it is |
+|---|---|
+| `vr_guns.txt` | each weapon's fit in your hand (from the adjust mode) |
+| `vr_lefthand.txt` | how your left hand sits on the controller (learnt from two-hand grips) |
+| `xrbridge.log`, `vr_game.log`, `vr_models.log` | headset, game and model logs |
+| `crash_*.txt`, `crash_*.dmp` | crash reports |
+
+## How it works
+
+- **Engine** (`runtime/`): the Direct3D 9 renderer runs on Direct3D 9Ex so
+  its frames can be shared with the headset. When `-vr` is given,
+  `runtime/render_a/src/sys/d3d/d3d_vr.cpp` draws the main view once per
+  eye with each eye's own pose and field of view, catches the interface
+  drawn after the world in a transparent layer, places the gun's
+  "really close" space in the world, and exports a small plain-C interface
+  to the game (`sdk/inc/ltvr.h`).
+- **Headset bridge** (`vr/xrbridge/`): OpenXR through a private Direct3D 11
+  device that reads the shared textures. It submits the eyes, the
+  interface layer and small "spot" layers (crosshair, weapon ring), and
+  reads the controllers.
+- **Game** (`NOLF2/ClientShellDLL/`): `VRMgr.cpp` turns headset and
+  controller state into the camera, movement, turning, button bindings,
+  the gun's placement, the hands (on the models' skeletons, no model
+  edits), the weapon ring and the gun fit. Small hooks elsewhere hand it
+  the camera, weapon, crosshair, targeting and interface.
+
+Design notes, decisions and the roadmap: [`docs/VR-DESIGN.md`](docs/VR-DESIGN.md).
+
+## Changes to the original engine source (besides VR)
+
+- **Retail levels load**: world vertices are read in the retail 44-byte
+  layout (`d3d_renderblock.cpp`; fix credit: the MatzeLoCal macOS port).
+- **Builds with VS2022 and the June 2010 DirectX SDK**: DirectX paths,
+  library names, missing standard includes, `winres.h` in place of MFC's
+  `afxres.h`.
+- **DirectMusic** (the adaptive music): headers from the Wine project
+  (LGPL 2.1, see `runtime/compat/directmusic/README.txt`) and the interface
+  IDs in `runtime/kernel/src/sys/win/dmusic_guids.cpp`.
+- **Direct3D 9Ex**: no managed texture pool, so textures upload through a
+  staging copy and the few small lockable ones are dynamic textures.
+
+## Credits
+
+- *No One Lives Forever 2* and its game code: Monolith Productions.
+- The engine source: the GPL release of the Jupiter EX engine (LithTech PC
+  Enterprise Edition build 69), via the
+  [lithtech project](https://github.com/bwrsandman/lithtech), whose history
+  this repository continues.
+- OpenXR SDK: the Khronos Group (Apache 2.0), in `external/OpenXR-SDK`.
+- DirectMusic headers: the Wine project (LGPL 2.1).
+
+This is an unofficial fan project, not affiliated with Monolith, Warner
+Bros. or Activision.
