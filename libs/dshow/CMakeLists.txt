@@ -1,7 +1,7 @@
 project(LIB_DShow)
 
 include_directories(.
-	"C:\\Program Files (x86)\\Microsoft DirectX SDK (August 2007)\\Include")
+	"$ENV{DXSDK_DIR}Include")
 
 add_library(${PROJECT_NAME} STATIC
 	amfilter.cpp

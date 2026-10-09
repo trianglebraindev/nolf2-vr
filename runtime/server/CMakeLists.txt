@@ -159,8 +159,8 @@ if(ENABLE_D3D)
 	include_directories(../render_a/src/sys/d3d)
 endif(ENABLE_D3D)
 
-if(ENABLE_DIRECTX)	# FIXME: set to find DirectX path
-	include_directories("C:\\Program Files (x86)\\Microsoft DirectX SDK (August 2007)\\Include")
+if(ENABLE_DIRECTX)
+	include_directories("$ENV{DXSDK_DIR}Include")
 endif(ENABLE_DIRECTX)
 
 add_library(${PROJECT_NAME} SHARED ${libsources})

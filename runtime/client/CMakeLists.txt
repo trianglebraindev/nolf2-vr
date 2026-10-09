@@ -2,6 +2,17 @@ project(EXE_Lithtech)
 
 add_definitions(-DDE_LOCAL_SERVERBIND -DDE_CLIENT_COMPILE -DDSNDMGR_NO_MFC -DDIRECTENGINE_COMPILE -DMODEL_SUPPORT_ABC)
 
+# link_directories only affects targets created AFTER it, so it must come
+# before add_executable (this is why the original "FIXME: Why is this not
+# working??" link setup further down never took effect).
+if(ENABLE_DIRECTX)
+	if(CMAKE_CL_64)
+		link_directories("$ENV{DXSDK_DIR}Lib/x64")
+	else(CMAKE_CL_64)
+		link_directories("$ENV{DXSDK_DIR}Lib/x86")
+	endif(CMAKE_CL_64)
+endif(ENABLE_DIRECTX)
+
 add_executable(${PROJECT_NAME} WIN32
 	../controlfilemgr/controlfilemgr.cpp
 	src/client_filemgr.cpp
@@ -211,31 +222,18 @@ if(WIN32)
 		../shared/src/sys/win)
 endif(WIN32)
 
-if(ENABLE_DIRECTX)	# FIXME: set to find DirectX path
-    if(CMAKE_CL_64)
-        link_directories("C:\\Program Files (x86)\\Microsoft DirectX SDK (August 2007)\\Lib\\x64")
-    else(CMAKE_CL_64)
-        link_directories("C:\\Program Files (x86)\\Microsoft DirectX SDK (August 2007)\\Lib\\x86")
-    endif(CMAKE_CL_64)
+if(ENABLE_DIRECTX)
 	include_directories(../../libs/dshow
-		"C:\\Program Files (x86)\\Microsoft DirectX SDK (August 2007)\\Include")
-		#if(CMAKE_CL_64)
-		#	link_directories("C:\\Program Files (x86)\\Microsoft DirectX SDK (August 2007)\\Lib\\x64")
-		#else(CMAKE_CL_64)
-			
-			# FIXME: Why is this not working??
-			
-		
-		#endif(CMAKE_CL_64)
-		target_link_libraries(${PROJECT_NAME}
-			ddraw
-			d3dx9
-			d3d9
-			DxErr9
-			dxguid
-			dplayx
-			dinput8
-			strmiids)
+		"$ENV{DXSDK_DIR}Include")
+	target_link_libraries(${PROJECT_NAME}
+		ddraw
+		d3dx9
+		d3d9
+		DxErr					# June 2010 SDK name (was DxErr9)
+		legacy_stdio_definitions	# DxErr.lib was built against the pre-2015 C runtime
+		dxguid
+		dinput8
+		strmiids)
 endif(ENABLE_DIRECTX)
 
 target_link_libraries(${PROJECT_NAME}

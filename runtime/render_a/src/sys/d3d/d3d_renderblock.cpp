@@ -548,17 +548,27 @@ bool CD3D_RenderBlock::Load(ILTStream *pStream)
 	{
 		LT_MEM_TRACK_ALLOC(m_aVertices = new SRBVertex[m_nVertexCount],LT_MEM_TYPE_RENDER_WORLD);
 
-		//read in all the vertices in a single read, this makes the structure layout dependant
-		//upon the file format, but saves millions of reads.
-		pStream->Read(m_aVertices, sizeof(SRBVertex) * m_nVertexCount);
-
-		/*
-		//This is the alternative, where it loads it in vertex by vertex.
+		// RETAIL COMPATIBILITY: the shipped NOLF2 world files store each vertex
+		// as 44 bytes: position(12) + UV0(8) + UV1(8) + color(4) + normal(12).
+		// This later engine build's SRBVertex also carries a tangent and a
+		// binormal (24 more bytes), so the original single bulk read of
+		// sizeof(SRBVertex) over-read 24 bytes per vertex and scrambled every
+		// world after the first vertex. Read only the fields the file contains.
+		// (Fix credit: the MatzeLoCal macOS port.)
 		for (uint32 nVertLoop = 0; nVertLoop < m_nVertexCount; ++nVertLoop)
 		{
-			*pStream >> m_aVertices[nVertLoop];
+			SRBVertex &cVert = m_aVertices[nVertLoop];
+			*pStream >> cVert.m_vPos;
+			*pStream >> cVert.m_fU0;
+			*pStream >> cVert.m_fV0;
+			*pStream >> cVert.m_fU1;
+			*pStream >> cVert.m_fV1;
+			*pStream >> cVert.m_nColor;
+			*pStream >> cVert.m_vNormal;
+			// Not present in the retail format.
+			cVert.m_vTangent.Init(0.0f, 0.0f, 0.0f);
+			cVert.m_vBinormal.Init(0.0f, 0.0f, 0.0f);
 		}
-		*/
 	}
 
 	// Get the triangle count

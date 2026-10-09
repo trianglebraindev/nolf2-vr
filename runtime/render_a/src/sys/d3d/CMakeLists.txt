@@ -100,6 +100,10 @@ include_directories(.
 set_property(TARGET ${PROJECT_NAME}
 	PROPERTY COMPILE_DEFINITIONS_DEBUG D3D_DEBUG_INFO)
 
-if(WIN32) # FIXME: find directx path
-	include_directories("C:\\Program Files (x86)\\Microsoft DirectX SDK (August 2007)\\Include")
+if(WIN32)
+	include_directories("$ENV{DXSDK_DIR}Include")
 endif(WIN32)
+
+if(MSVC)
+	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "/wd4996")
+endif(MSVC)

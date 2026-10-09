@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 project(Lithtech)
 
 option(BUILD_ENGINE "Build engine" ON)
@@ -31,6 +31,13 @@ endif(WIN32)
 
 if(MSVC)
 	add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE)
+	# VS2019+ turns use of the old stdext::hash_map into a hard error unless silenced.
+	add_definitions(-D_SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS)
+	add_definitions(-D_WINSOCK_DEPRECATED_NO_WARNINGS)
+	# /MP: compile each project's files in parallel across all CPU cores.
+	# /Z7: keep debug symbols in Release builds so crashes show real function names.
+	add_compile_options(/MP /Z7)
+	add_link_options(/DEBUG /OPT:REF /OPT:ICF)
 endif(MSVC)
 
 if(DEBUG)
