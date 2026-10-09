@@ -269,6 +269,119 @@ void CVRMgr::Init()
 
 	LoadGunFits();
 	LoadHandFit();
+	LoadSettings();
+}
+
+// ----------------------------------------------------------------------- //
+//
+//	Settings file (vr_settings.txt)
+//
+// ----------------------------------------------------------------------- //
+
+static const char* const kSettingsFile = "vr_settings.txt";
+
+struct VRSettingDef
+{
+	const char*	pszName;
+	float		fDefault;
+};
+
+// Every VR setting the file keeps, with its default. (The engine's own ones,
+// VRUnitsPerMeter and VRHud* / VRScreen*, are read by the renderer by name.)
+static const VRSettingDef s_aVRSettings[] =
+{
+	{ "VRUnitsPerMeter",	60.0f },
+	{ "VRSnapTurn",			0.0f },
+	{ "VRTurnSpeed",		150.0f },
+	{ "VRSnapAngle",		45.0f },
+	{ "VRMoveWithHand",		0.0f },
+	{ "VRHudDistance",		2.0f },
+	{ "VRHudAngle",			60.0f },
+	{ "VRHudFollow",		1.0f },
+	{ "VRHudFollowAngle",	35.0f },
+	{ "VRScreenDistance",	2.0f },
+	{ "VRScreenAngle",		62.0f },
+	{ "VRWristHud",			1.0f },
+	{ "VRWristHudWatch",	1.0f },
+	{ "VRWristHudX",		-3.0f },
+	{ "VRWristHudY",		0.0f },
+	{ "VRWristHudZ",		-9.0f },
+	{ "VRWristHudSize",		9.0f },
+	{ "VRGunHud",			1.0f },
+	{ "VRGunHudX",			-6.0f },
+	{ "VRGunHudY",			-2.0f },
+	{ "VRGunHudZ",			6.0f },
+	{ "VRGunHudSize",		10.0f },
+	{ "VRArms",				0.0f },
+	{ "VRWristBack",		7.0f },
+	{ "VRGunScale",			12.0f },
+	{ "VRGunHandX",			12.0f },
+	{ "VRGunHandY",			-18.0f },
+	{ "VRGunHandZ",			30.0f },
+	{ "VRGunPitch",			0.0f },
+};
+static const int kNumVRSettings = sizeof(s_aVRSettings) / sizeof(s_aVRSettings[0]);
+
+static const VRSettingDef* VR_FindSetting(const char* pszName)
+{
+	for (int i = 0; i < kNumVRSettings; ++i)
+	{
+		if (stricmp(s_aVRSettings[i].pszName, pszName) == 0)
+			return &s_aVRSettings[i];
+	}
+	return NULL;
+}
+
+float CVRMgr::GetSettingDefault(const char* pszName)
+{
+	const VRSettingDef* pDef = VR_FindSetting(pszName);
+	return pDef ? pDef->fDefault : 0.0f;
+}
+
+float CVRMgr::GetSetting(const char* pszName)
+{
+	HCONSOLEVAR hVar = g_pLTClient->GetConsoleVar((char*)pszName);
+	if (hVar)
+		return g_pLTClient->GetVarValueFloat(hVar);
+	return GetSettingDefault(pszName);
+}
+
+void CVRMgr::SetSetting(const char* pszName, float fValue)
+{
+	char szCmd[128];
+	LTSNPrintF(szCmd, sizeof(szCmd), "\"%s\" \"%g\"", pszName, fValue);
+	g_pLTClient->RunConsoleString(szCmd);
+}
+
+void CVRMgr::LoadSettings()
+{
+	FILE* pFile = fopen(kSettingsFile, "r");
+	if (!pFile)
+		return;
+	char szLine[256];
+	while (fgets(szLine, sizeof(szLine), pFile))
+	{
+		char szName[64];
+		float fValue;
+		if (szLine[0] == '#' || sscanf(szLine, "%63s %f", szName, &fValue) != 2)
+			continue;
+		const VRSettingDef* pDef = VR_FindSetting(szName);
+		if (pDef)
+			SetSetting(pDef->pszName, fValue);
+	}
+	fclose(pFile);
+}
+
+void CVRMgr::SaveSettings()
+{
+	FILE* pFile = fopen(kSettingsFile, "w");
+	if (!pFile)
+		return;
+	fprintf(pFile, "# NOLF2 VR settings, written by Options > VR. One \"Name value\" per line;\n");
+	fprintf(pFile, "# see README.md for what each one does. Delete this file for the defaults.\n");
+	for (int i = 0; i < kNumVRSettings; ++i)
+		fprintf(pFile, "%s %g\n", s_aVRSettings[i].pszName, GetSetting(s_aVRSettings[i].pszName));
+	fclose(pFile);
 }
 
 void CVRMgr::SetDefaultBindings()

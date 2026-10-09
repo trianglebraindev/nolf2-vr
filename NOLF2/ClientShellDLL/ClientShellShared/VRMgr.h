@@ -171,6 +171,18 @@ public:
 	// (not VR, not one of those items, or that hand isn't tracked).
 	bool		RenderHudItem(CHUDItem* pItem);
 
+	// --- Settings ---
+	//
+	// The VR settings (console variables, see the top of VRMgr.cpp) are kept
+	// in vr_settings.txt in the run folder: read when the game starts,
+	// written by the VR page of the Options menu (it can also be edited by
+	// hand: one "Name value" per line).
+	static float	GetSetting(const char* pszName);
+	static float	GetSettingDefault(const char* pszName);
+	static void		SetSetting(const char* pszName, float fValue);
+	static void		LoadSettings();
+	static void		SaveSettings();
+
 private:
 
 	bool		GetWristHudPose(LTVector& vPos, LTRotation& rRot, float& fOpacity) const;

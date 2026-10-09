@@ -40,7 +40,10 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
 - **Crash reports**: a crash writes a readable report and a minidump to
   `run\`.
 
-Still to come (see `docs/VR-DESIGN.md`): VR settings in the options menu, a laser pointer for menus, scopes and zoom in
+- **VR settings in the game**: Options > VR (turning, walking direction,
+  world size, HUD distance and size, wrist and gun read-outs, hands or arms).
+
+Still to come (see `docs/VR-DESIGN.md`): a laser pointer for menus, scopes and zoom in
 VR, melee swinging, comfort options.
 
 ## Requirements
@@ -89,8 +92,11 @@ install stays untouched.
 
 ## Settings
 
-The engine's console is compiled out, so settings go on the launch line in
-`run_nolf2_vr.bat` as `+Name value`:
+The everyday ones are on the **Options > VR** page in the game. Everything
+below is kept in `run\vr_settings.txt` (written when you leave that page),
+which you can also edit by hand: one `Name value` per line, read when the
+game starts. Values in that file win over the same setting given on the
+launch line in `run_nolf2_vr.bat` as `+Name value`.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -113,6 +119,7 @@ Files the game writes in `run\`:
 
 | File | What it is |
 |---|---|
+| `vr_settings.txt` | your VR settings (Options > VR, or edit by hand) |
 | `vr_guns.txt` | each weapon's fit in your hand (from the adjust mode) |
 | `vr_lefthand.txt` | how your left hand sits on the controller (learnt from two-hand grips) |
 | `xrbridge.log`, `vr_game.log`, `vr_models.log` | headset, game and model logs |

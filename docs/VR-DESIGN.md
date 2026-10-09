@@ -235,13 +235,30 @@ Next, in a suggested order:
 2. HUD on the wrist (health / armour) and on the gun (ammo); subtitles and
    choices on a lazy panel (first pass done).
 3. VR settings menu in the game's options (console is compiled out):
-   scale, turning, HUD, hands, gun size.
+   first pass done, Options > VR (see below). Gun size stays with the
+   in-headset adjust mode (it's per weapon).
 4. Laser pointer for menus.
 5. Recentre on a controller button; open/close left hand.
 6. Scopes / zoom / binoculars in VR; tool animations (lock pick etc.).
 Later: melee swinging (Tre wants it), comfort vignette, height
 calibration and real crouch, vehicles, cutscene options, the shutdown
 hang.
+
+## VR settings page (first pass)
+
+- Options > VR (TO2/ScreenVR.cpp): turning (smooth / snap), smooth turn
+  speed, snap step, walk toward (head / left hand), world size (percent;
+  100% = 60 game units per metre), HUD distance, HUD size, HUD stays put,
+  health on wrist (off / like a watch / always), ammo on gun, arms (hands
+  only / full arms), reset to defaults. Changes apply at once.
+- Kept in `run\vr_settings.txt` (every VR setting, including the ones not
+  on the page, so they can be edited by hand); read at start-up by
+  CVRMgr::LoadSettings, written by CVRMgr::SaveSettings when you leave the
+  page.
+- The page's screen name is "ScreenGame" (ScreenEnum.h), so it uses the
+  Game options page's layout entries (frame, fonts, positions, background)
+  without needing new entries in the game's layout file. Help lines are
+  the page's own text (GetHelpString override).
 
 ## Weapon ring (first pass)
 

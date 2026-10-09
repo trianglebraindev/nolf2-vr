@@ -78,6 +78,11 @@ ADD_SCREEN(END_COOP_MISSION,ScreenEndCoopMission)
 ADD_SCREEN(PRELOAD,ScreenPreload)
 ADD_SCREEN(POSTLOAD,ScreenPostload)
 
+//options - VR (NOLF2 VR project). Its name is the Game options page's on
+//purpose: layout lookups go by name, so it looks like that page. (Looking
+//a screen up by name finds the Game page first, which is what we want.)
+ADD_SCREEN(VR,ScreenGame)
+
 // Tron's player management screen
 ADD_SCREEN(SUBROUTINES,ScreenSubroutines)
 

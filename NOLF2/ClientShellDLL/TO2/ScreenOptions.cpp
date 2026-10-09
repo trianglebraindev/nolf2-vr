@@ -12,6 +12,7 @@
 #include "ScreenOptions.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
+#include "ScreenVR.h"
 
 #include "GameClientShell.h"
 extern CGameClientShell* g_pGameClientShell;
@@ -46,6 +47,7 @@ LTBOOL CScreenOptions::Build()
 	CLTGUITextCtrl* pControls = AddTextItem(IDS_CONTROLS, CMD_CONTROLS, IDS_HELP_CONTROLS);
 	CLTGUITextCtrl* pGame = AddTextItem(IDS_GAME_OPTIONS, CMD_GAME, IDS_HELP_GAME_OPTIONS);
 	CLTGUITextCtrl* pPerf = AddTextItem(IDS_PERFORMANCE, CMD_PERFORMANCE, IDS_HELP_PERFORMANCE);
+	AddTextItem((char*)"VR", CMD_VR_OPTIONS, 0);	// NOLF2 VR project
 
 	// Make sure to call the base class
 	if (! CBaseScreen::Build()) return LTFALSE;
@@ -81,6 +83,11 @@ uint32 CScreenOptions::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwPar
 	case CMD_CONTROLS:
 		{
 			m_pScreenMgr->SetCurrentScreen(SCREEN_ID_CONTROLS);
+			break;
+		}
+	case CMD_VR_OPTIONS:
+		{
+			m_pScreenMgr->SetCurrentScreen(SCREEN_ID_VR);
 			break;
 		}
 	default:

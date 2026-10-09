@@ -269,6 +269,7 @@ add_library(${PROJECT_NAME} SHARED
 	ScreenSave.cpp
 	ScreenSingle.cpp
 	ScreenTeam.cpp
+	ScreenVR.cpp
 	Stdafx.cpp
 	TO2ClientWeaponAllocator.cpp
 	TO2GameClientShell.cpp
