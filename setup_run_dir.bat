@@ -44,6 +44,11 @@ for %%D in (Movies Custom) do (
     )
 )
 
+REM Player profiles live in run\Profiles. New profiles are built from the
+REM retail Default.prf template, which the game reads as a loose file.
+if not exist "%RUNDIR%\Profiles" mkdir "%RUNDIR%\Profiles"
+if not exist "%RUNDIR%\Profiles\Default.prf" copy /Y "%NOLF2DIR%\Profiles\Default.prf" "%RUNDIR%\Profiles\Default.prf" >nul
+
 if not exist "%RUNDIR%\autoexec.cfg" copy /Y "%NOLF2DIR%\autoexec.cfg" "%RUNDIR%\autoexec.cfg" >nul
 
 exit /b 0
