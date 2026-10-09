@@ -72,6 +72,14 @@ add_subdirectory(libs/stdlith)							# LIB_StdLith
 add_subdirectory(libs/ltmem)							# LIB_LTMem
 add_subdirectory(libs/rezmgr)							# LIB_RezMgr
 
+if(WIN32)
+	# OpenXR loader (static), from the vendored Khronos OpenXR SDK.
+	set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+	set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+	add_subdirectory(external/OpenXR-SDK EXCLUDE_FROM_ALL)
+	add_subdirectory(vr)							# LIB_XRBridge, EXE_VRProbe
+endif(WIN32)
+
 if(BUILD_ENGINE)
 	add_subdirectory(runtime/ui)						# LIB_UI
 	add_subdirectory(runtime/info)						# LIB_Info

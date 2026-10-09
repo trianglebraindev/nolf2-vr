@@ -12,3 +12,6 @@ run/
 build_log.txt
 build_errors.txt
 build_configure_log.txt
+
+# VR test log
+xrbridge.log
