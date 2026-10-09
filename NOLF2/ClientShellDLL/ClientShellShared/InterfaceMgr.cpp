@@ -3124,6 +3124,9 @@ LTBOOL CInterfaceMgr::Draw()
 			// Draw the player stats (health,armor,ammo) if appropriate...
 			GetHUDMgr()->Render();
 
+			// VR: the weapon ring, when it's open.
+			g_VRMgr.RenderWeaponRing();
+
 			if (m_Credits.IsInited())
 			{
 				if (m_Credits.IsDone())

@@ -15,7 +15,7 @@
 //   Right A         next ammo type
 //   Right B         holster
 //   Right stick     click = reload
-//   Right grip      next weapon (until the weapon ring exists)
+//   Right grip      hold: weapon ring (move your hand to one, let go)
 //
 //   In menus: either stick moves the selection, trigger or A selects,
 //   B goes back.
@@ -79,6 +79,12 @@
 #include "HUDMgr.h"
 #include "HUDDecision.h"
 #include "PlayerMgr.h"
+#include "PlayerStats.h"
+#include "ClientWeaponMgr.h"
+#include "ClientWeaponBase.h"
+#include "InterfaceResMgr.h"
+#include "LayoutMgr.h"
+#include "ltquaduvutils.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -98,6 +104,8 @@ static VarTrack g_vtVRArms;
 static VarTrack g_vtVRWristBack;
 
 static const float kGrabDistanceMeters = 0.2f;	// how close the left hand must be to grab the gun
+static const float kRingWidthMeters = 0.36f;	// the weapon ring's size
+static const float kRingDeadZone = 0.2f;		// hand this close to the middle (of the half-width): no choice
 static const float kArmLength = 0.12f;			// how much of the forearm's length is left when hiding arms
 static const char* kHandFitFile = "vr_lefthand.txt";	// (vr_hands.txt was from a version that worked it out wrongly)
 
@@ -144,6 +152,17 @@ CVRMgr::CVRMgr()
 	m_pfnEndCrosshair	= NULL;
 	m_pfnSetCrosshair	= NULL;
 	m_pfnLogModel		= NULL;
+	m_pfnBeginLayer		= NULL;
+	m_pfnEndLayer		= NULL;
+	m_pfnSetLayer		= NULL;
+	m_bRingOpen			= false;
+	m_vRingOffset.Init(0.0f, 0.0f, 0.0f);
+	m_vRingRight.Init(1.0f, 0.0f, 0.0f);
+	m_vRingUp.Init(0.0f, 1.0f, 0.0f);
+	m_nRingItems		= 0;
+	m_fRingIconSize		= 0.15f;
+	m_nRingSel			= -1;
+	m_pRingText			= NULL;
 	memset(m_aGunFits, 0, sizeof(m_aGunFits));
 	m_nGunFits			= 0;
 	m_nCurrentFit		= -1;
@@ -186,6 +205,9 @@ void CVRMgr::Init()
 	m_pfnEndCrosshair	= (LTVR_EndCrosshairFn)GetProcAddress(hEngine, "LTVR_EndCrosshair");
 	m_pfnSetCrosshair	= (LTVR_SetCrosshairFn)GetProcAddress(hEngine, "LTVR_SetCrosshair");
 	m_pfnLogModel		= (LTVR_LogModelFn)GetProcAddress(hEngine, "LTVR_LogModel");
+	m_pfnBeginLayer		= (LTVR_BeginLayerFn)GetProcAddress(hEngine, "LTVR_BeginLayer");
+	m_pfnEndLayer		= (LTVR_EndLayerFn)GetProcAddress(hEngine, "LTVR_EndLayer");
+	m_pfnSetLayer		= (LTVR_SetLayerFn)GetProcAddress(hEngine, "LTVR_SetLayer");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
 	g_vtVRTurnSpeed.Init(g_pLTClient, "VRTurnSpeed", NULL, 150.0f);
@@ -219,7 +241,6 @@ void CVRMgr::SetDefaultBindings()
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK,			COMMAND_ID_RELOAD);
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK_UP,		COMMAND_ID_JUMP);
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK_DOWN,	COMMAND_ID_DUCKLOCK);
-	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_GRIP,			COMMAND_ID_NEXT_WEAPON);
 }
 
 void CVRMgr::Update(float fFrameTime)
@@ -284,10 +305,13 @@ void CVRMgr::Update(float fFrameTime)
 	{
 		UpdateGunAdjust(fFrameTime);
 		UpdateTwoHand();
+		UpdateWeaponRing(fFrameTime);
 	}
 	else
 	{
 		m_bTwoHand = false;
+		if (m_bRingOpen)
+			CloseWeaponRing(false);
 	}
 
 	if (m_pfnSetCloseScale)
@@ -930,12 +954,16 @@ bool CVRMgr::GetAimRay(LTVector& vFrom, LTRotation& rRot) const
 
 int CVRMgr::BeginCrosshair()
 {
+	if (m_pfnBeginLayer)
+		return m_pfnBeginLayer(LTVR_LAYER_CROSSHAIR);
 	return m_pfnBeginCrosshair ? m_pfnBeginCrosshair() : 0;
 }
 
 void CVRMgr::EndCrosshair()
 {
-	if (m_pfnEndCrosshair)
+	if (m_pfnEndLayer)
+		m_pfnEndLayer();
+	else if (m_pfnEndCrosshair)
 		m_pfnEndCrosshair();
 }
 
@@ -1164,3 +1192,269 @@ void CVRMgr::Recenter()
 	if (m_pfnRecenter)
 		m_pfnRecenter();
 }
+
+// ----------------------------------------------------------------------- //
+// Weapon ring
+// ----------------------------------------------------------------------- //
+
+bool CVRMgr::GetRingCentre(LTVector& vCentre) const
+{
+	HOBJECT hCamera = g_pPlayerMgr ? g_pPlayerMgr->GetCamera() : LTNULL;
+	if (!hCamera)
+		return false;
+	LTVector vCamPos;
+	g_pLTClient->GetObjectPos(hCamera, &vCamPos);
+	vCentre = vCamPos + m_vRingOffset;
+	return true;
+}
+
+bool CVRMgr::OpenWeaponRing()
+{
+	CClientWeaponMgr* pWeaponMgr = g_pPlayerMgr ? g_pPlayerMgr->GetClientWeaponMgr() : NULL;
+	if (!pWeaponMgr || !g_pWeaponMgr || !g_pPlayerStats)
+		return false;
+
+	// Every weapon and gadget you can switch to, in the game's own order.
+	m_nRingItems = 0;
+	int nFirst = g_pWeaponMgr->GetFirstWeaponCommandId();
+	int nLast = g_pWeaponMgr->GetLastWeaponCommandId();
+	for (int nCommand = nFirst; nCommand <= nLast && m_nRingItems < kMaxRingItems; ++nCommand)
+	{
+		uint8 nWeapon = g_pWeaponMgr->GetWeaponId(nCommand);
+		if (!g_pWeaponMgr->IsPlayerWeapon(nWeapon) || !g_pPlayerStats->HaveWeapon(nWeapon) ||
+			!pWeaponMgr->CanChangeToWeapon(nWeapon))
+			continue;
+		m_aRingWeapon[m_nRingItems++] = nWeapon;
+	}
+	if (!m_nRingItems)
+		return false;
+
+	// Where: centred on the hand, facing the head, upright.
+	LTVector vHand;
+	LTRotation rAim;
+	HOBJECT hCamera = g_pPlayerMgr->GetCamera();
+	if (!hCamera || !GetAimRay(vHand, rAim))
+		return false;
+	LTVector vCamPos;
+	g_pLTClient->GetObjectPos(hCamera, &vCamPos);
+	m_vRingOffset = vHand - vCamPos;
+
+	LTVector vAway = m_vRingOffset;
+	float fLen = vAway.Mag();
+	if (fLen < 0.001f)
+		return false;
+	vAway /= fLen;
+	// (Cross products written out: LTVector::Cross is reversed.)
+	LTVector vUpWorld(0.0f, 1.0f, 0.0f);
+	LTVector vRight(vUpWorld.y * vAway.z - vUpWorld.z * vAway.y,
+					vUpWorld.z * vAway.x - vUpWorld.x * vAway.z,
+					vUpWorld.x * vAway.y - vUpWorld.y * vAway.x);
+	float fRightLen = vRight.Mag();
+	if (fRightLen < 0.001f)
+		vRight.Init(1.0f, 0.0f, 0.0f);	// looking straight up or down
+	else
+		vRight /= fRightLen;
+	m_vRingRight = vRight;
+	m_vRingUp.Init(vAway.y * vRight.z - vAway.z * vRight.y,
+				   vAway.z * vRight.x - vAway.x * vRight.z,
+				   vAway.x * vRight.y - vAway.y * vRight.x);
+
+	// Layout: one ring for up to 10, an inner and an outer ring for more.
+	// Positions run clockwise from the top, -1..1 across the ring.
+	const float kTwoPi = 6.2831853f;
+	if (m_nRingItems <= 10)
+	{
+		m_fRingIconSize = 0.15f;
+		for (int i = 0; i < m_nRingItems; ++i)
+		{
+			float fAngle = kTwoPi * (float)i / (float)m_nRingItems;
+			m_aRingX[i] = 0.66f * (float)sin(fAngle);
+			m_aRingY[i] = 0.66f * (float)cos(fAngle);
+		}
+	}
+	else
+	{
+		m_fRingIconSize = 0.12f;
+		int nInner = (m_nRingItems + 2) / 3;
+		int nOuter = m_nRingItems - nInner;
+		for (int i = 0; i < m_nRingItems; ++i)
+		{
+			bool bInner = i < nInner;
+			int nIndex = bInner ? i : i - nInner;
+			int nCount = bInner ? nInner : nOuter;
+			float fRadius = bInner ? 0.40f : 0.80f;
+			float fAngle = kTwoPi * ((float)nIndex + (bInner ? 0.0f : 0.5f)) / (float)nCount;
+			m_aRingX[i] = fRadius * (float)sin(fAngle);
+			m_aRingY[i] = fRadius * (float)cos(fAngle);
+		}
+	}
+
+	m_nRingSel = -1;
+	m_bRingOpen = true;
+	g_pClientSoundMgr->PlayInterfaceSound((char*)g_pInterfaceResMgr->GetSoundSelect());
+	return true;
+}
+
+void CVRMgr::CloseWeaponRing(bool bChoose)
+{
+	if (!m_bRingOpen)
+		return;
+	m_bRingOpen = false;
+	if (!bChoose || m_nRingSel < 0 || m_nRingSel >= m_nRingItems || !g_pPlayerMgr)
+		return;
+
+	uint8 nWeapon = m_aRingWeapon[m_nRingSel];
+	IClientWeaponBase* pCurrent = g_pPlayerMgr->GetCurrentClientWeapon();
+	if (pCurrent && pCurrent->GetWeaponId() == nWeapon)
+		return;
+	g_pPlayerMgr->ChangeWeapon(nWeapon);
+}
+
+void CVRMgr::UpdateWeaponRing(float fFrameTime)
+{
+	bool bGrip = (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_GRIP) != 0;
+
+	if (!m_bRingOpen)
+	{
+		if (Pressed(LTVR_RIGHT, LTVR_BTN_GRIP) && !m_bAdjusting && !IsDecisionOpen())
+			OpenWeaponRing();
+		return;
+	}
+
+	if (!bGrip || m_bAdjusting)
+	{
+		CloseWeaponRing(!m_bAdjusting);
+		return;
+	}
+
+	// Which item the hand is nearest, seen from your eyes (the hand's
+	// offset from the centre, along the ring's own axes).
+	LTVector vCentre, vHand;
+	LTRotation rAim;
+	if (!GetRingCentre(vCentre) || !GetAimRay(vHand, rAim))
+		return;
+	LTVector vOffset = vHand - vCentre;
+	float fHalf = kRingWidthMeters * 0.5f * (m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 60.0f);
+	float x = vOffset.Dot(m_vRingRight) / fHalf;
+	float y = vOffset.Dot(m_vRingUp) / fHalf;
+
+	int nSel = -1;
+	if (x * x + y * y > kRingDeadZone * kRingDeadZone)
+	{
+		float fBest = 1e9f;
+		for (int i = 0; i < m_nRingItems; ++i)
+		{
+			float dx = x - m_aRingX[i], dy = y - m_aRingY[i];
+			float fDist = dx * dx + dy * dy;
+			if (fDist < fBest)
+			{
+				fBest = fDist;
+				nSel = i;
+			}
+		}
+	}
+	if (nSel != m_nRingSel)
+	{
+		m_nRingSel = nSel;
+		if (nSel >= 0)
+			g_pClientSoundMgr->PlayInterfaceSound((char*)g_pInterfaceResMgr->GetSoundSelect());
+	}
+}
+
+void CVRMgr::RenderWeaponRing()
+{
+	if (!m_bRingOpen || !m_pfnBeginLayer || !m_pfnEndLayer || !m_pfnSetLayer)
+		return;
+
+	LTVector vCentre;
+	if (!GetRingCentre(vCentre))
+		return;
+	float aPos[3] = { vCentre.x, vCentre.y, vCentre.z };
+	m_pfnSetLayer(LTVR_LAYER_HAND, 1, aPos, kRingWidthMeters);
+
+	int nSize = m_pfnBeginLayer(LTVR_LAYER_HAND);
+	if (!nSize)
+		return;
+
+	g_pDrawPrim->SetTransformType(DRAWPRIM_TRANSFORM_SCREEN);
+	g_pDrawPrim->SetZBufferMode(DRAWPRIM_NOZ);
+	g_pDrawPrim->SetClipMode(DRAWPRIM_NOCLIP);
+	g_pDrawPrim->SetFillMode(DRAWPRIM_FILL);
+	g_pDrawPrim->SetColorOp(DRAWPRIM_MODULATE);
+	g_pDrawPrim->SetAlphaTestMode(DRAWPRIM_NOALPHATEST);
+	g_pDrawPrim->SetAlphaBlendMode(DRAWPRIM_BLEND_MOD_SRCALPHA);
+
+	const float fHalf = (float)nSize * 0.5f;
+	const float fTexScale = g_pLayoutMgr->GetChooserTextureScale(GetConsoleInt("HUDLayout", 0), 0.75f);
+	IClientWeaponBase* pCurrent = g_pPlayerMgr ? g_pPlayerMgr->GetCurrentClientWeapon() : NULL;
+	uint8 nCurrent = pCurrent ? pCurrent->GetWeaponId() : WMGR_INVALID_ID;
+
+	for (int i = 0; i < m_nRingItems; ++i)
+	{
+		WEAPON const* pWeapon = g_pWeaponMgr->GetWeapon(m_aRingWeapon[i]);
+		if (!pWeapon)
+			continue;
+
+		// The game's own icons: the "normal" one for the highlighted item
+		// (and the one in your hand), "unselected" for the rest.
+		bool bLit = (i == m_nRingSel) || (m_nRingSel < 0 && m_aRingWeapon[i] == nCurrent);
+		std::string icon = bLit ? pWeapon->GetNormalIcon() : pWeapon->GetUnselectedIcon();
+		HTEXTURE hTex = g_pInterfaceResMgr->GetTexture(icon.c_str());
+		if (!hTex)
+			continue;
+
+		uint32 tw = 1, th = 1;
+		g_pTexInterface->GetTextureDims(hTex, tw, th);
+		float fHeight = m_fRingIconSize * (float)nSize * (i == m_nRingSel ? 1.35f : 1.0f);
+		float fWidth = (th > 0) ? fHeight * (float)tw / (float)th : fHeight;
+		float cx = fHalf + m_aRingX[i] * fHalf;
+		float cy = fHalf - m_aRingY[i] * fHalf;
+
+		LTPoly_GT4 poly;
+		memset(&poly, 0, sizeof(poly));
+		g_pDrawPrim->SetRGBA(&poly, argbWhite);
+		g_pDrawPrim->SetXYWH(&poly, cx - fWidth * 0.5f, cy - fHeight * 0.5f, fWidth, fHeight);
+		g_pDrawPrim->SetTexture(hTex);
+		SetupQuadUVs(poly, hTex, 0.0f, 0.0f, fTexScale, fTexScale);
+		g_pDrawPrim->DrawPrim(&poly, 1);
+	}
+
+	// The highlighted item's name in the middle.
+	if (!m_pRingText)
+	{
+		CUIFont* pFont = g_pInterfaceResMgr->GetFont(g_pLayoutMgr->GetHUDFont());
+		if (pFont)
+		{
+			m_pRingText = g_pFontManager->CreateFormattedPolyString(pFont, "", 0.0f, 0.0f);
+			if (m_pRingText)
+				m_pRingText->SetAlignmentH(CUI_HALIGN_CENTER);
+		}
+	}
+	if (m_pRingText)
+	{
+		const char* pszName = "";
+		int nShow = m_nRingSel;
+		if (nShow < 0)
+		{
+			for (int i = 0; i < m_nRingItems; ++i)
+			{
+				if (m_aRingWeapon[i] == nCurrent)
+					nShow = i;
+			}
+		}
+		WEAPON const* pWeapon = (nShow >= 0) ? g_pWeaponMgr->GetWeapon(m_aRingWeapon[nShow]) : NULL;
+		if (pWeapon && pWeapon->szShortName)
+			pszName = pWeapon->szShortName;
+		m_pRingText->SetText(pszName);
+		m_pRingText->SetCharScreenHeight((uint8)(nSize / 18));
+		m_pRingText->SetPosition(fHalf + 2.0f, fHalf - (float)(nSize / 36) + 2.0f);
+		m_pRingText->SetColor(argbBlack);
+		m_pRingText->Render();
+		m_pRingText->SetPosition(fHalf, fHalf - (float)(nSize / 36));
+		m_pRingText->SetColor(argbWhite);
+		m_pRingText->Render();
+	}
+
+	m_pfnEndLayer();
+}
+

@@ -41,11 +41,11 @@
 //  view, so it has real depth. The game moves the gun within that space
 //  to where the controller is.
 //
-//  THE CROSSHAIR
-//  The game draws its crosshair into a small layer of its own
-//  (LTVR_BeginCrosshair / LTVR_EndCrosshair) and says where in the world
-//  the gun is pointing (LTVR_SetCrosshair). The layer is shown there,
-//  facing you, at a constant apparent size.
+//  SPOT LAYERS (crosshair, weapon ring)
+//  Small layers the game draws into (LTVR_BeginLayer / LTVR_EndLayer)
+//  and places at a point in the world (LTVR_SetLayer), facing you: the
+//  crosshair where the gun points (constant apparent size), the weapon
+//  ring at your hand (a fixed size in metres).
 //
 //  COORDINATES
 //  OpenXR:   metres, right-handed, +X right, +Y up, -Z forward.
@@ -107,14 +107,19 @@ static LTVector				g_vVRBodyPosUsed;
 static LTRotation			g_rVRBodyUsed;
 static bool					g_bVRBodyUsedValid	= false;
 
-// Crosshair layer.
-static const uint32			kVRCrosshairSize	= 512;
-static int					g_nVRCrosshairLayer	= -1;
-static IDirect3DSurface9*	g_pVRCrosshairSurf	= NULL;
-static bool					g_bVRCrosshairDrawn	= false;	// drawn into this frame
-static bool					g_bVRCrosshairDrawing = false;
-static bool					g_bVRCrosshairSet	= false;	// a target point was given this frame
-static LTVector				g_vVRCrosshairPos;
+// Spot layers (see the top of this file). Index = LTVR_LAYER_*.
+static const uint32			kVRSpotSize			= 512;
+struct VRSpot
+{
+	int					nLayer;			// bridge layer, -1 = none
+	IDirect3DSurface9*	pSurf;
+	bool				bDrawn;			// drawn into this frame
+	bool				bSet;			// placed this frame
+	LTVector			vPos;			// world position of its centre
+	float				fWidth;			// metres; 0 = keep the HUD's size per degree
+};
+static VRSpot				g_aVRSpots[LTVR_NUM_LAYERS];
+static int					g_nVRSpotDrawing	= -1;		// layer being drawn into, -1 = none
 
 // Where the game says the player's eyes are this frame, and the body's
 // heading (see LTVR_SetOrigin). Falls back to the camera if not set.
@@ -176,9 +181,14 @@ static void VR_Destroy()
 	}
 	if (g_pVREyeDepth)		{ g_pVREyeDepth->Release();		g_pVREyeDepth = NULL; }
 	if (g_pVRScreenSurf)	{ g_pVRScreenSurf->Release();	g_pVRScreenSurf = NULL; }
-	if (g_pVRCrosshairSurf)	{ g_pVRCrosshairSurf->Release();	g_pVRCrosshairSurf = NULL; }
-	g_nVRCrosshairLayer = -1;
-	g_bVRCrosshairDrawn = g_bVRCrosshairDrawing = g_bVRCrosshairSet = false;
+	for (int i = 0; i < LTVR_NUM_LAYERS; ++i)
+	{
+		if (g_aVRSpots[i].pSurf)
+			g_aVRSpots[i].pSurf->Release();
+		memset(&g_aVRSpots[i], 0, sizeof(g_aVRSpots[i]));
+		g_aVRSpots[i].nLayer = -1;
+	}
+	g_nVRSpotDrawing = -1;
 	g_bVRBodyUsedValid = false;
 	if (g_pVRBridge)
 	{
@@ -284,10 +294,14 @@ void d3d_VR_PostDeviceCreate(IDirect3DDevice9Ex* pDevice, uint32 nScreenWidth, u
 		g_nVRScreenHeight = screenDesc.Height;
 	}
 
-	// The crosshair's own layer (not fatal if it fails).
-	g_nVRCrosshairLayer = g_pVRBridge->CreateLayer(kVRCrosshairSize, kVRCrosshairSize);
-	if (g_nVRCrosshairLayer >= 0 && g_pVRBridge->GetLayerTexture(g_nVRCrosshairLayer))
-		g_pVRBridge->GetLayerTexture(g_nVRCrosshairLayer)->GetSurfaceLevel(0, &g_pVRCrosshairSurf);
+	// The spot layers (not fatal if one fails).
+	for (int i = 0; i < LTVR_NUM_LAYERS; ++i)
+	{
+		VRSpot& spot = g_aVRSpots[i];
+		spot.nLayer = g_pVRBridge->CreateLayer(kVRSpotSize, kVRSpotSize);
+		if (spot.nLayer >= 0 && g_pVRBridge->GetLayerTexture(spot.nLayer))
+			g_pVRBridge->GetLayerTexture(spot.nLayer)->GetSurfaceLevel(0, &spot.pSurf);
+	}
 
 	// Put the world origin wherever the head is when tracking starts.
 	g_pVRBridge->Recenter();
@@ -992,47 +1006,71 @@ extern "C" __declspec(dllexport) void LTVR_SetCloseScale(float fScale)
 	g_fVRCloseScale = (fScale > 0.01f && fScale < 1000.0f) ? fScale : 1.0f;
 }
 
-extern "C" __declspec(dllexport) int LTVR_BeginCrosshair(void)
+extern "C" __declspec(dllexport) int LTVR_BeginLayer(int nLayer)
 {
-	if (!g_bVRHudActive || !g_pVRCrosshairSurf || g_bVRCrosshairDrawing || !PD3DDEVICE)
+	if (nLayer < 0 || nLayer >= LTVR_NUM_LAYERS || !g_bVRHudActive || g_nVRSpotDrawing >= 0 || !PD3DDEVICE)
+		return 0;
+	VRSpot& spot = g_aVRSpots[nLayer];
+	if (!spot.pSurf)
 		return 0;
 	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
-	if (FAILED(pDevice->SetRenderTarget(0, g_pVRCrosshairSurf)))
+	if (FAILED(pDevice->SetRenderTarget(0, spot.pSurf)))
 		return 0;
 	g_Device.InvalidateViewport();
-	if (!g_bVRCrosshairDrawn)
+	if (!spot.bDrawn)
 		pDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_ARGB(0, 0, 0, 0), 1.0f, 0);
-	g_bVRCrosshairDrawing = true;
-	g_bVRCrosshairDrawn = true;
-	return (int)kVRCrosshairSize;
+	spot.bDrawn = true;
+	g_nVRSpotDrawing = nLayer;
+	return (int)kVRSpotSize;
 }
 
-extern "C" __declspec(dllexport) void LTVR_EndCrosshair(void)
+extern "C" __declspec(dllexport) void LTVR_EndLayer(void)
 {
-	if (!g_bVRCrosshairDrawing || !PD3DDEVICE)
+	if (g_nVRSpotDrawing < 0 || !PD3DDEVICE)
 		return;
-	g_bVRCrosshairDrawing = false;
+	g_nVRSpotDrawing = -1;
 	PD3DDEVICE->GetDevice()->SetRenderTarget(0, g_pVRScreenSurf);
 	g_Device.InvalidateViewport();
 }
 
-extern "C" __declspec(dllexport) void LTVR_SetCrosshair(int bVisible, const float pos[3])
+extern "C" __declspec(dllexport) void LTVR_SetLayer(int nLayer, int bVisible, const float pos[3], float fWidthMeters)
 {
-	g_bVRCrosshairSet = bVisible && pos;
-	if (g_bVRCrosshairSet)
-		g_vVRCrosshairPos.Init(pos[0], pos[1], pos[2]);
+	if (nLayer < 0 || nLayer >= LTVR_NUM_LAYERS)
+		return;
+	VRSpot& spot = g_aVRSpots[nLayer];
+	spot.bSet = bVisible && pos;
+	if (spot.bSet)
+		spot.vPos.Init(pos[0], pos[1], pos[2]);
+	spot.fWidth = fWidthMeters > 0.0f ? fWidthMeters : 0.0f;
 }
 
-// Where the crosshair layer goes: at the target point, facing the head,
-// keeping the size it had on the HUD (same pixels per degree).
-static bool VR_GetCrosshairPlacement(xrb::ScreenPlacement& place)
+// The crosshair calls of version 3: layer 0.
+extern "C" __declspec(dllexport) int LTVR_BeginCrosshair(void)
 {
-	if (!g_bVRCrosshairDrawn || !g_bVRCrosshairSet || !g_bVRBodyUsedValid || !g_nVRScreenWidth)
+	return LTVR_BeginLayer(LTVR_LAYER_CROSSHAIR);
+}
+
+extern "C" __declspec(dllexport) void LTVR_EndCrosshair(void)
+{
+	LTVR_EndLayer();
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetCrosshair(int bVisible, const float pos[3])
+{
+	LTVR_SetLayer(LTVR_LAYER_CROSSHAIR, bVisible, pos, 0.0f);
+}
+
+// Where a spot layer goes: at its point, facing the head; its size either
+// fixed in metres or (crosshair) keeping the HUD's pixels per degree.
+static bool VR_GetSpotPlacement(int nSpot, xrb::ScreenPlacement& place)
+{
+	const VRSpot& spot = g_aVRSpots[nSpot];
+	if (spot.nLayer < 0 || !spot.bDrawn || !spot.bSet || !g_bVRBodyUsedValid || !g_nVRScreenWidth)
 		return false;
 
 	// World -> tracking space (undo the body transform), then to OpenXR.
 	const float fUnitsPerMeter = VR_UnitsPerMeter();
-	LTVector vRel = g_vVRCrosshairPos - g_vVRBodyPosUsed;
+	LTVector vRel = spot.vPos - g_vVRBodyPosUsed;
 	xrb::Vec3 p;
 	p.x =  vRel.Dot(g_rVRBodyUsed.Right()) / fUnitsPerMeter;
 	p.y =  vRel.Dot(g_rVRBodyUsed.Up()) / fUnitsPerMeter;
@@ -1045,9 +1083,10 @@ static bool VR_GetCrosshairPlacement(xrb::ScreenPlacement& place)
 		return false;
 	dx /= fDist; dy /= fDist; dz /= fDist;
 
-	// Too close to focus on comfortably: slide it out along the line of sight.
+	// A crosshair too close to focus on comfortably slides out along the
+	// line of sight (same look, further away).
 	const float kMinDist = 0.5f;
-	if (fDist < kMinDist)
+	if (spot.fWidth <= 0.0f && fDist < kMinDist)
 	{
 		p.x = h.x - dx * kMinDist;
 		p.y = h.y - dy * kMinDist;
@@ -1055,7 +1094,8 @@ static bool VR_GetCrosshairPlacement(xrb::ScreenPlacement& place)
 		fDist = kMinDist;
 	}
 
-	// Face the head: the quad's +Z points at it (yaw, then pitch).
+	// Face the head: the quad's +Z points at it (yaw, then pitch; no roll,
+	// so its X axis stays level).
 	float fYaw = (float)atan2(dx, dz);
 	float fPitch = -(float)asin(dy < -1.0f ? -1.0f : (dy > 1.0f ? 1.0f : dy));
 	float cy = (float)cos(fYaw * 0.5f), sy = (float)sin(fYaw * 0.5f);
@@ -1066,11 +1106,18 @@ static bool VR_GetCrosshairPlacement(xrb::ScreenPlacement& place)
 	place.pose.orientation.w = cy * cp;
 	place.pose.position = p;
 
-	float fHudAngle = g_CV_VRHudAngle.m_Val;
-	if (fHudAngle < 10.0f) fHudAngle = 10.0f;
-	if (fHudAngle > 150.0f) fHudAngle = 150.0f;
-	float fAngle = (float)kVRCrosshairSize * fHudAngle / (float)g_nVRScreenWidth;
-	place.widthMeters = VR_WidthForAngle(fDist, fAngle);
+	if (spot.fWidth > 0.0f)
+	{
+		place.widthMeters = spot.fWidth;
+	}
+	else
+	{
+		float fHudAngle = g_CV_VRHudAngle.m_Val;
+		if (fHudAngle < 10.0f) fHudAngle = 10.0f;
+		if (fHudAngle > 150.0f) fHudAngle = 150.0f;
+		float fAngle = (float)kVRSpotSize * fHudAngle / (float)g_nVRScreenWidth;
+		place.widthMeters = VR_WidthForAngle(fDist, fAngle);
+	}
 	place.headLocked = false;
 	place.alpha = true;
 	return true;
@@ -1172,10 +1219,14 @@ void d3d_VR_OnSwapBuffers()
 					}
 					place.widthMeters = VR_WidthForAngle(fHudDistance, g_CV_VRHudAngle.m_Val);
 				}
-				xrb::LayerSubmit crosshair;
-				crosshair.layer = g_nVRCrosshairLayer;
-				bool bCrosshair = VR_GetCrosshairPlacement(crosshair.place);
-				g_pVRBridge->EndFrame(true, &place, bCrosshair ? &crosshair : NULL, bCrosshair ? 1 : 0);
+				xrb::LayerSubmit aSpots[LTVR_NUM_LAYERS];
+				unsigned nSpots = 0;
+				for (int i = 0; i < LTVR_NUM_LAYERS; ++i)
+				{
+					if (VR_GetSpotPlacement(i, aSpots[nSpots].place))
+						aSpots[nSpots++].layer = g_aVRSpots[i].nLayer;
+				}
+				g_pVRBridge->EndFrame(true, &place, nSpots ? aSpots : NULL, nSpots);
 			}
 			else
 			{
@@ -1209,9 +1260,12 @@ void d3d_VR_OnSwapBuffers()
 	}
 	g_bVREyesJustDrawn = false;
 	g_fVRFade = 0.0f;
-	g_bVRCrosshairDrawn = false;
-	g_bVRCrosshairDrawing = false;
-	g_bVRCrosshairSet = false;
+	for (int i = 0; i < LTVR_NUM_LAYERS; ++i)
+	{
+		g_aVRSpots[i].bDrawn = false;
+		g_aVRSpots[i].bSet = false;
+	}
+	g_nVRSpotDrawing = -1;
 	g_bVRBodyUsedValid = false;
 
 	// The game sets the origin again each frame it draws the world.

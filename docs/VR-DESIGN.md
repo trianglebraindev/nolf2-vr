@@ -97,7 +97,7 @@ needs. Not ordered within a group yet.
 | Right stick left/right | smooth turn (snap optional) | navigate |
 | Right stick up / down | jump / crouch toggle | navigate |
 | Right trigger | fire | select |
-| Right grip | next weapon (until the hand ring exists) | |
+| Right grip (hold) | weapon ring: move your hand to a weapon, let go to switch (let go in the middle to cancel) | |
 | Right A / B | next ammo / holster | select / back |
 | Right stick click | reload | |
 | Left trigger | activate (use, talk, search) | select |
@@ -204,7 +204,7 @@ hand, two-hand grip. Holster = weapon "Holster", which has no model (the
 engine stand-in is hidden in VR).
 
 Next, in a suggested order:
-1. Weapon ring around the right hand (replaces grip = next weapon).
+1. Weapon ring around the right hand (first pass done: hold right grip).
 2. HUD on the wrist (health / armour) and on the gun (ammo); subtitles and
    choices on a lazy panel.
 3. VR settings menu in the game's options (console is compiled out):
@@ -215,4 +215,16 @@ Next, in a suggested order:
 Later: melee swinging (Tre wants it), comfort vignette, height
 calibration and real crouch, vehicles, cutscene options, the shutdown
 hang.
+
+## Weapon ring (first pass)
+
+- Hold the right grip: every weapon and gadget you can switch to (the
+  game's own list and order) fans out in a ring centred on your hand,
+  facing you, 36 cm across; more than 10 items use an inner and an outer
+  ring. Move your hand toward one (nearest wins; the middle is a dead
+  zone) and let go to switch. The game's own icons: "normal" for the
+  highlighted one, "unselected" for the rest; its short name in the
+  middle.
+- Drawn into a spot layer (LTVR_LAYER_HAND); the crosshair is the other
+  spot layer. The ring moves with you (kept relative to the camera).
 

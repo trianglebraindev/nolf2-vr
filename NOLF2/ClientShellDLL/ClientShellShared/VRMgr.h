@@ -16,6 +16,8 @@
 
 #include "ltvr.h"
 
+class CUIFormattedPolyString;
+
 // Rotates a vector by a rotation, and back.
 inline LTVector VR_Rotate(const LTRotation& r, const LTVector& v)
 {
@@ -144,6 +146,17 @@ public:
 
 	static void	HandsNodeControl(const NodeControlData& data, void* pUser);
 
+	// --- Weapon ring ---
+	//
+	// Hold the right grip: your weapons fan out in a ring around your hand,
+	// facing you. Move your hand toward one and let go to switch to it (let
+	// go with your hand back in the middle to keep what you have). Drawn
+	// into its own small layer (LTVR_LAYER_HAND).
+
+	// From the interface drawing, every frame.
+	void		RenderWeaponRing();
+	bool		IsWeaponRingOpen() const	{ return m_bRingOpen; }
+
 private:
 
 	void		Init();
@@ -152,6 +165,22 @@ private:
 	void		UpdateHudMode();
 	void		UpdateGunAdjust(float fFrameTime);
 	void		UpdateTwoHand();
+	void		UpdateWeaponRing(float fFrameTime);
+	bool		OpenWeaponRing();
+	void		CloseWeaponRing(bool bChoose);
+	bool		GetRingCentre(LTVector& vCentre) const;
+
+	enum { kMaxRingItems = 24 };
+	bool		m_bRingOpen;
+	LTVector	m_vRingOffset;			// centre, relative to the camera (moves with you)
+	LTVector	m_vRingRight, m_vRingUp;	// the ring's axes in the world (it faces you)
+	int			m_nRingItems;
+	uint8		m_aRingWeapon[kMaxRingItems];
+	float		m_aRingX[kMaxRingItems];	// item centres, -1..1 across the ring (y up)
+	float		m_aRingY[kMaxRingItems];
+	float		m_fRingIconSize;			// item size, fraction of the ring's width
+	int			m_nRingSel;					// highlighted item, -1 = none
+	CUIFormattedPolyString*	m_pRingText;
 
 	// The right hand's position and aim, and the gun's rotation (fit and
 	// two-hand steadying applied), in camera space.
@@ -216,6 +245,9 @@ private:
 	LTVR_EndCrosshairFn		m_pfnEndCrosshair;
 	LTVR_SetCrosshairFn		m_pfnSetCrosshair;
 	LTVR_LogModelFn			m_pfnLogModel;
+	LTVR_BeginLayerFn		m_pfnBeginLayer;
+	LTVR_EndLayerFn			m_pfnEndLayer;
+	LTVR_SetLayerFn			m_pfnSetLayer;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];
