@@ -132,4 +132,8 @@ typedef void (*LTVR_EndCrosshairFn)(void);
 // aimed at). Not called / bVisible 0 = no crosshair this frame.
 typedef void (*LTVR_SetCrosshairFn)(int bVisible, const float pos[3]);
 
+// Writes a model's pieces, skeleton and sockets to vr_models.log (for
+// working out how the first-person gun models are built).
+typedef void (*LTVR_LogModelFn)(HOBJECT hObj, const char* pszTag);
+
 #endif // __LTVR_H__

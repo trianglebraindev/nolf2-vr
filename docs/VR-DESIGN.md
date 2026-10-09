@@ -103,6 +103,7 @@ needs. Not ordered within a group yet.
 | Left trigger | activate (use, talk, search) | select |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
+| Left stick click | adjust gun (again: done, saves) | |
 | Conversation choices | right stick up/down highlights, right trigger or A picks, B says nothing | |
 | Home key (keyboard) | recentre | recentre |
 
@@ -114,7 +115,7 @@ line): `VRSnapTurn 0/1`, `VRTurnSpeed 150` (degrees per second),
 `VRHudFollow 1` (0 = HUD locked to your view), `VRHudFollowAngle 35`.
 
 Gun in the hand (tune while testing; the log `run\vr_game.log` lists each
-weapon's numbers): `VRGunScale 6` (size), `VRGunHandX 12`, `VRGunHandY -18`,
+weapon's numbers): `VRGunScale 12` (size), `VRGunHandX 12`, `VRGunHandY -18`,
 `VRGunHandZ 30` (cm from the eye where the normal view holds the gun;
 changing them slides the gun in your hand), `VRGunPitch 0` (degrees,
 positive = barrel down).
@@ -132,6 +133,23 @@ positive = barrel down).
   accuracy spread) is drawn into its own layer, placed on whatever the gun
   is aimed at, at a constant apparent size.
 - Activation (search, doors, pick lock) still uses where you look.
+- Adjust gun (left stick click while playing): the sticks slide, tilt and
+  resize the current gun relative to the hand while the aim stays on the
+  controller's pointing ray, so you line the sights up with the crosshair.
+  Saved per weapon to `run\vr_guns.txt`; once good, it becomes the shipped
+  default.
+- The engine's console key is compiled out in this ("final") build, so
+  settings go on the launch line (`+Name value`) or through the in-game
+  adjust mode.
+
+## Hands (next)
+
+Goal (Tre): hands separate like Half-Life: Alyx / Titanfall 2 VR. The right
+hand holds the gun; the left hand is free; optional two-hand grip for
+stability. The game's gun models include both arms, so first we look at
+how they're built (`run\vr_models.log`: pieces, bones and sockets per
+weapon) to decide between hiding the left arm and driving it to the left
+controller.
 
 ## Interface in the headset (first pass)
 

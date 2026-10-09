@@ -41,7 +41,18 @@
 //   VRMoveWithHand  0 = walk where you look (default),
 //                   1 = walk where the left controller points
 //
-//   The gun in your hand (see GetGunPlacement):
+//   ADJUST GUN (click the left stick while playing; click again when done)
+//     Left stick              slide the gun in your hand
+//     Right stick             tilt (up/down) and turn (left/right) it
+//     Right grip + right stick up/down   raise / lower it
+//     A / B                   bigger / smaller
+//     Right trigger           fire, to check where shots go
+//   Aiming always follows the controller's pointing direction (the
+//   crosshair shows it); the adjusting moves the gun model so its sights
+//   line up with that. Saved per weapon to vr_guns.txt in the run folder.
+//
+//   The gun in your hand (see GetGunPlacement), starting values for every
+//   weapon before any adjusting:
 //   VRGunScale      how much bigger than the game's miniature gun model
 //                   (bigger number = bigger gun)
 //   VRGunHandX/Y/Z  where the game's normal view holds the gun, in cm
@@ -63,6 +74,8 @@
 #include "HUDDecision.h"
 #include "PlayerMgr.h"
 #include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
 
 CVRMgr g_VRMgr;
 
@@ -118,6 +131,12 @@ CVRMgr::CVRMgr()
 	m_pfnBeginCrosshair	= NULL;
 	m_pfnEndCrosshair	= NULL;
 	m_pfnSetCrosshair	= NULL;
+	m_pfnLogModel		= NULL;
+	memset(m_aGunFits, 0, sizeof(m_aGunFits));
+	m_nGunFits			= 0;
+	m_nCurrentFit		= -1;
+	m_szCurrentGun[0]	= '\0';
+	m_bAdjusting		= false;
 	memset(&m_State, 0, sizeof(m_State));
 	m_aPrevButtons[0] = m_aPrevButtons[1] = 0;
 	m_bSnapLatched		= false;
@@ -144,16 +163,19 @@ void CVRMgr::Init()
 	m_pfnBeginCrosshair	= (LTVR_BeginCrosshairFn)GetProcAddress(hEngine, "LTVR_BeginCrosshair");
 	m_pfnEndCrosshair	= (LTVR_EndCrosshairFn)GetProcAddress(hEngine, "LTVR_EndCrosshair");
 	m_pfnSetCrosshair	= (LTVR_SetCrosshairFn)GetProcAddress(hEngine, "LTVR_SetCrosshair");
+	m_pfnLogModel		= (LTVR_LogModelFn)GetProcAddress(hEngine, "LTVR_LogModel");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
 	g_vtVRTurnSpeed.Init(g_pLTClient, "VRTurnSpeed", NULL, 150.0f);
 	g_vtVRSnapAngle.Init(g_pLTClient, "VRSnapAngle", NULL, 45.0f);
 	g_vtVRMoveWithHand.Init(g_pLTClient, "VRMoveWithHand", NULL, 0.0f);
-	g_vtVRGunScale.Init(g_pLTClient, "VRGunScale", NULL, 6.0f);
+	g_vtVRGunScale.Init(g_pLTClient, "VRGunScale", NULL, 12.0f);
 	g_vtVRGunHandX.Init(g_pLTClient, "VRGunHandX", NULL, 12.0f);
 	g_vtVRGunHandY.Init(g_pLTClient, "VRGunHandY", NULL, -18.0f);
 	g_vtVRGunHandZ.Init(g_pLTClient, "VRGunHandZ", NULL, 30.0f);
 	g_vtVRGunPitch.Init(g_pLTClient, "VRGunPitch", NULL, 0.0f);
+
+	LoadGunFits();
 }
 
 void CVRMgr::SetDefaultBindings()
@@ -206,17 +228,35 @@ void CVRMgr::Update(float fFrameTime)
 		bPlaying = false;
 	}
 
-	if (bPlaying != s_bBindingsOn)
+	if (!bPlaying && m_bAdjusting)
 	{
-		s_bBindingsOn = bPlaying;
-		if (bPlaying)
+		m_bAdjusting = false;		// left play (menu, death, level change): stop adjusting
+		SaveGunFits();
+	}
+
+	// 0 = none, 1 = normal play, 2 = adjusting the gun (fire only).
+	static int s_nBoundSet = 0;
+	int nWantSet = bPlaying ? (m_bAdjusting ? 2 : 1) : 0;
+	s_bBindingsOn = bPlaying;
+	if (nWantSet != s_nBoundSet)
+	{
+		s_nBoundSet = nWantSet;
+		if (nWantSet == 1)
+		{
 			SetDefaultBindings();
+		}
 		else if (m_pfnClearBindings)
+		{
 			m_pfnClearBindings();
+			if (nWantSet == 2 && m_pfnSetBinding)
+				m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_TRIGGER, COMMAND_ID_FIRING);
+		}
 	}
 
 	UpdateMenuControls(fFrameTime);
 	UpdateHudMode();
+	if (bPlaying)
+		UpdateGunAdjust(fFrameTime);
 
 	if (m_pfnSetCloseScale)
 		m_pfnSetCloseScale(GetGunScale());
@@ -260,8 +300,11 @@ bool CVRMgr::GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot) const
 
 float CVRMgr::GetGunScale() const
 {
-	float fScale = g_vtVRGunScale.GetFloat(6.0f);
-	return (fScale > 0.05f) ? fScale : 6.0f;
+	const GunFit* pFit = GetCurrentFit();
+	if (pFit && pFit->fScale > 0.05f)
+		return pFit->fScale;
+	float fScale = g_vtVRGunScale.GetFloat(12.0f);
+	return (fScale > 0.05f) ? fScale : 12.0f;
 }
 
 bool CVRMgr::GetGunPlacement(const LTVector& vModelPos, LTVector& vObjPos, LTRotation& rObjRot) const
@@ -277,10 +320,204 @@ bool CVRMgr::GetGunPlacement(const LTVector& vModelPos, LTVector& vObjPos, LTRot
 	LTVector vNatural(g_vtVRGunHandX.GetFloat() * fUnitsPerCm, g_vtVRGunHandY.GetFloat() * fUnitsPerCm,
 		g_vtVRGunHandZ.GetFloat() * fUnitsPerCm);
 
-	// A point X of the normal view moves to: hand + handRot * (X - natural).
-	vObjPos = vHand / fScale + VR_Rotate(rHand, vModelPos - vNatural / fScale);
-	rObjRot = rHand;
+	// This weapon's own fit: slide (along the controller's axes), then turn
+	// and tilt about the hand.
+	LTRotation rGun = rHand;
+	const GunFit* pFit = GetCurrentFit();
+	if (pFit)
+	{
+		vHand += VR_Rotate(rHand, LTVector(pFit->fX, pFit->fY, pFit->fZ) * fUnitsPerCm);
+		rGun = rHand * LTRotation(LTVector(0.0f, 1.0f, 0.0f), DEG2RAD(pFit->fYaw)) *
+			LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(pFit->fPitch));
+	}
+
+	// A point X of the normal view moves to: hand + gunRot * (X - natural).
+	vObjPos = vHand / fScale + VR_Rotate(rGun, vModelPos - vNatural / fScale);
+	rObjRot = rGun;
 	return true;
+}
+
+// ----------------------------------------------------------------------- //
+// Gun fit per weapon, and the "adjust gun" mode
+// ----------------------------------------------------------------------- //
+
+static const char* kGunFitFile = "vr_guns.txt";
+
+const CVRMgr::GunFit* CVRMgr::GetCurrentFit() const
+{
+	return (m_nCurrentFit >= 0 && m_nCurrentFit < m_nGunFits) ? &m_aGunFits[m_nCurrentFit] : NULL;
+}
+
+CVRMgr::GunFit* CVRMgr::GetOrAddCurrentFit()
+{
+	if (m_nCurrentFit >= 0 && m_nCurrentFit < m_nGunFits)
+		return &m_aGunFits[m_nCurrentFit];
+	if (!m_szCurrentGun[0] || m_nGunFits >= kMaxGunFits)
+		return NULL;
+	GunFit& fit = m_aGunFits[m_nGunFits];
+	memset(&fit, 0, sizeof(fit));
+	strncpy(fit.szName, m_szCurrentGun, sizeof(fit.szName) - 1);
+	fit.fScale = GetGunScale();
+	m_nCurrentFit = m_nGunFits++;
+	return &fit;
+}
+
+void CVRMgr::SetCurrentGun(const char* pszName, HOBJECT hModel)
+{
+	if (!pszName)
+		pszName = "";
+	if (strcmp(pszName, m_szCurrentGun) != 0)
+	{
+		if (m_bAdjusting)
+		{
+			m_bAdjusting = false;
+			SaveGunFits();
+		}
+		strncpy(m_szCurrentGun, pszName, sizeof(m_szCurrentGun) - 1);
+		m_szCurrentGun[sizeof(m_szCurrentGun) - 1] = '\0';
+		m_nCurrentFit = -1;
+		for (int i = 0; i < m_nGunFits; ++i)
+		{
+			if (!stricmp(m_aGunFits[i].szName, m_szCurrentGun))
+			{
+				m_nCurrentFit = i;
+				break;
+			}
+		}
+	}
+
+	// The model's make-up, once per weapon per session.
+	static char s_aLogged[kMaxGunFits][64];
+	static int s_nLogged = 0;
+	if (hModel && m_pfnLogModel && pszName[0])
+	{
+		for (int i = 0; i < s_nLogged; ++i)
+		{
+			if (!stricmp(s_aLogged[i], pszName))
+				return;
+		}
+		if (s_nLogged < kMaxGunFits)
+		{
+			strncpy(s_aLogged[s_nLogged], pszName, 63);
+			s_aLogged[s_nLogged][63] = '\0';
+			++s_nLogged;
+			m_pfnLogModel(hModel, pszName);
+		}
+	}
+}
+
+// vr_guns.txt: one line per weapon:  "Name" x y z yaw pitch scale
+void CVRMgr::LoadGunFits()
+{
+	m_nGunFits = 0;
+	FILE* pFile = fopen(kGunFitFile, "r");
+	if (!pFile)
+		return;
+	char szLine[256];
+	while (m_nGunFits < kMaxGunFits && fgets(szLine, sizeof(szLine), pFile))
+	{
+		char* pStart = strchr(szLine, '"');
+		char* pEnd = pStart ? strchr(pStart + 1, '"') : NULL;
+		if (!pStart || !pEnd || pEnd == pStart + 1)
+			continue;
+		GunFit fit;
+		memset(&fit, 0, sizeof(fit));
+		int nLen = (int)(pEnd - pStart - 1);
+		if (nLen > (int)sizeof(fit.szName) - 1)
+			nLen = (int)sizeof(fit.szName) - 1;
+		strncpy(fit.szName, pStart + 1, nLen);
+		fit.szName[nLen] = '\0';
+		if (sscanf(pEnd + 1, "%f %f %f %f %f %f", &fit.fX, &fit.fY, &fit.fZ, &fit.fYaw, &fit.fPitch, &fit.fScale) >= 5)
+			m_aGunFits[m_nGunFits++] = fit;
+	}
+	fclose(pFile);
+}
+
+void CVRMgr::SaveGunFits()
+{
+	FILE* pFile = fopen(kGunFitFile, "w");
+	if (!pFile)
+		return;
+	fprintf(pFile, "# NOLF2 VR: how each gun sits in your hand. Made by the in-game\n");
+	fprintf(pFile, "# \"adjust gun\" mode (click the left stick while playing).\n");
+	fprintf(pFile, "# \"weapon\"  slide right / up / forward (cm)  turn  tilt (degrees)  size\n");
+	for (int i = 0; i < m_nGunFits; ++i)
+	{
+		const GunFit& fit = m_aGunFits[i];
+		fprintf(pFile, "\"%s\"  %.2f %.2f %.2f  %.2f %.2f  %.2f\n", fit.szName, fit.fX, fit.fY, fit.fZ,
+			fit.fYaw, fit.fPitch, fit.fScale);
+	}
+	fclose(pFile);
+}
+
+void CVRMgr::Message(const char* pszText)
+{
+	if (g_pChatMsgs && pszText)
+		g_pChatMsgs->AddMessage(pszText);
+}
+
+void CVRMgr::UpdateGunAdjust(float fFrameTime)
+{
+	// Click the left stick: start / finish adjusting.
+	if (Pressed(LTVR_LEFT, LTVR_BTN_STICK) && !IsDecisionOpen())
+	{
+		if (!m_bAdjusting)
+		{
+			if (!m_szCurrentGun[0] || !GetOrAddCurrentFit())
+				return;
+			m_bAdjusting = true;
+			Message("ADJUST GUN: left stick slides it, right stick tilts and turns it.");
+			Message("Right grip + right stick up/down raises it. A / B: bigger / smaller.");
+			Message("Line the sights up with the crosshair. Click the left stick when done.");
+		}
+		else
+		{
+			m_bAdjusting = false;
+			SaveGunFits();
+			char szMsg[128];
+			_snprintf(szMsg, sizeof(szMsg), "Gun fit saved (%s).", m_szCurrentGun);
+			szMsg[sizeof(szMsg) - 1] = '\0';
+			Message(szMsg);
+		}
+		return;
+	}
+	if (!m_bAdjusting)
+		return;
+	GunFit* pFit = GetOrAddCurrentFit();
+	if (!pFit)
+	{
+		m_bAdjusting = false;
+		return;
+	}
+
+	const float kSlideCmPerSec = 6.0f;
+	const float kTurnDegPerSec = 15.0f;
+
+	float lx = m_State.hand[LTVR_LEFT].stick[0], ly = m_State.hand[LTVR_LEFT].stick[1];
+	float rx = m_State.hand[LTVR_RIGHT].stick[0], ry = m_State.hand[LTVR_RIGHT].stick[1];
+	ApplyDeadZone(lx, ly);
+	ApplyDeadZone(rx, ry);
+
+	pFit->fX += lx * kSlideCmPerSec * fFrameTime;
+	pFit->fZ += ly * kSlideCmPerSec * fFrameTime;
+	if (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_GRIP)
+	{
+		pFit->fY += ry * kSlideCmPerSec * fFrameTime;
+	}
+	else
+	{
+		pFit->fYaw += rx * kTurnDegPerSec * fFrameTime;
+		pFit->fPitch -= ry * kTurnDegPerSec * fFrameTime;	// stick up = barrel up
+	}
+
+	if (pFit->fScale <= 0.05f)
+		pFit->fScale = GetGunScale();
+	if (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_PRIMARY)
+		pFit->fScale *= 1.0f + 0.4f * fFrameTime;
+	if (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_SECONDARY)
+		pFit->fScale /= 1.0f + 0.4f * fFrameTime;
+	if (pFit->fScale < 1.0f)	pFit->fScale = 1.0f;
+	if (pFit->fScale > 60.0f)	pFit->fScale = 60.0f;
 }
 
 bool CVRMgr::GetAimRay(LTVector& vFrom, LTRotation& rRot) const
@@ -475,7 +712,7 @@ void CVRMgr::SetOrigin(const LTVector& vEyePos, float fBodyYaw)
 
 float CVRMgr::GetTurnDelta(float fFrameTime)
 {
-	if (!IsActive())
+	if (!IsActive() || m_bAdjusting)
 		return 0.0f;
 
 	float fX = m_State.hand[LTVR_RIGHT].stick[0];
@@ -512,7 +749,7 @@ float CVRMgr::GetTurnDelta(float fFrameTime)
 
 LTVector CVRMgr::GetMoveVector(float fBodyYaw) const
 {
-	if (!IsActive())
+	if (!IsActive() || m_bAdjusting)
 		return LTVector(0.0f, 0.0f, 0.0f);
 
 	float fX = m_State.hand[LTVR_LEFT].stick[0];

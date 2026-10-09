@@ -2042,6 +2042,12 @@ void CClientWeapon::SetDisable( bool bDisable /*=true*/)
 
 void CClientWeapon::Select()
 {
+	// VR: this weapon's fit in your hand.
+	if ( m_pWeapon )
+	{
+		g_VRMgr.SetCurrentGun( m_pWeapon->szName, m_hObject );
+	}
+
 	if ( W_INACTIVE == GetState() )
 	{
 		// if its inactive, make it active and visible
@@ -2330,6 +2336,8 @@ bool CClientWeapon::Activate()
 		}
 	}
 
+	// VR: this weapon's fit in your hand (and its make-up, for the log).
+	g_VRMgr.SetCurrentGun( m_pWeapon->szName, m_hObject );
 
     return true;
 }

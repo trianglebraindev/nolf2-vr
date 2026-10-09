@@ -103,12 +103,42 @@ public:
 	// Appends a line to vr_game.log (run folder). printf-style.
 	static void	Log(const char* pszFormat, ...);
 
+	// The weapon now in your hand (its fit is per weapon). Also writes the
+	// model's make-up to vr_models.log the first time each one is seen.
+	void		SetCurrentGun(const char* pszName, HOBJECT hModel);
+
+	// "Adjust gun" mode (click the left stick while playing): the sticks
+	// slide, tilt and resize the gun in your hand; saved to vr_guns.txt.
+	bool		IsAdjustingGun() const	{ return m_bAdjusting; }
+
 private:
 
 	void		Init();
 	void		SetDefaultBindings();
 	void		UpdateMenuControls(float fFrameTime);
 	void		UpdateHudMode();
+	void		UpdateGunAdjust(float fFrameTime);
+
+	// How a gun sits in your hand, on top of the VRGun* settings.
+	struct GunFit
+	{
+		char	szName[64];
+		float	fX, fY, fZ;			// slide, cm: right, up, forward (controller axes)
+		float	fYaw, fPitch;		// turn / tilt, degrees (pitch positive = barrel down)
+		float	fScale;				// size; 0 = use VRGunScale
+	};
+	enum { kMaxGunFits = 64 };
+	GunFit		m_aGunFits[kMaxGunFits];
+	int			m_nGunFits;
+	int			m_nCurrentFit;		// index into m_aGunFits, -1 = none
+	char		m_szCurrentGun[64];
+	bool		m_bAdjusting;
+
+	const GunFit*	GetCurrentFit() const;
+	GunFit*		GetOrAddCurrentFit();
+	void		LoadGunFits();
+	void		SaveGunFits();
+	void		Message(const char* pszText);
 	bool		Pressed(int nHand, unsigned nButton) const;		// went down this frame
 	void		SendKey(int nKey);
 	int			StickRepeat(unsigned nDirs, float fFrameTime);	// stick as arrow keys, with repeat
@@ -128,6 +158,7 @@ private:
 	LTVR_BeginCrosshairFn	m_pfnBeginCrosshair;
 	LTVR_EndCrosshairFn		m_pfnEndCrosshair;
 	LTVR_SetCrosshairFn		m_pfnSetCrosshair;
+	LTVR_LogModelFn			m_pfnLogModel;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

@@ -47,6 +47,7 @@ add_executable(${PROJECT_NAME} WIN32
 	../server/src/classmgr.cpp
 	../kernel/src/sys/win/client.cpp
 	../kernel/src/sys/win/crashreport.cpp
+	src/vr_modelinfo.cpp
 	src/client_formatmgr.cpp
 	src/client_graphmgr.cpp
 	src/client_ticks.cpp
