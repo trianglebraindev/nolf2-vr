@@ -10,7 +10,7 @@ questions stay marked **(open)** until Tre decides them.
 | 0 | Engine builds from source on VS2022, runs the retail campaign | done |
 | 1a | Headset plumbing (D3D9Ex -> D3D11 -> OpenXR), stand-alone probe | done |
 | 1b | Game on a floating screen in the headset | done |
-| 2 | Stereo 3D world + head tracking (mouse/keys still drive the body) | in progress |
+| 2 | Stereo 3D world + head tracking (mouse/keys still drive the body) | done (90 fps held at 3072x3264/eye) |
 | 3 | Game-side camera: head drives look; mouse/stick only turns the body; bob/roll/shake tamed | |
 | 4 | Motion controllers: weapon in hand, aim from the muzzle, two-hand stabilising | |
 | 5 | Locomotion and turning options (below), controller bindings | |
@@ -26,10 +26,10 @@ needs. Not ordered within a group yet.
 ### Movement and comfort
 - **Smooth locomotion** (stick). The natural fit: NOLF2's stealth is about
   pacing and sight lines.
-- **Teleport (open).** Gold standard for comfort, but in NOLF2 it can skip
-  trigger volumes (scripted events, alarms, conversations fire when you walk
-  through them) and breaks stealth timing. Options to weigh: a fast "dash"
-  that still travels the path, or teleport that sweeps through triggers.
+- **Teleport (decided: Claude's call).** Plan: a quick "dash" that physically
+  travels the path in a fraction of a second, so trigger volumes (scripted
+  events, alarms, conversations) still fire and collision still applies, with
+  the view faded or vignetted during the dash.
 - **Snap turn / smooth turn**, with adjustable snap angle and smooth speed.
   Easy: the bridge already separates body heading from head direction.
 - **Comfort vignette** during movement/turning, adjustable strength. Drawn in
@@ -63,8 +63,9 @@ needs. Not ordered within a group yet.
   objectives/messages on a small panel that follows the gaze lazily.
 - **Subtitles/conversation choices** (NOLF2 has dialogue choices) on a panel
   in front, not stuck to the face.
-- **Cutscenes (open):** in-engine cutscenes could play in 3D around you, or on
-  the floating screen (more comfortable when the camera moves on its own).
+- **Cutscenes (decided):** in-engine cutscenes play in 3D around you by default,
+  with an option to show them on the floating screen instead. Pre-rendered
+  movies (Bink) always play on the floating screen.
 
 ## Technical decisions so far
 
@@ -74,5 +75,8 @@ needs. Not ordered within a group yet.
   VDXR (Virtual Desktop) is the target runtime; it supports 32-bit apps.
 - The bridge restores full FPU precision around every OpenXR call (LithTech
   runs the FPU at 24 bits).
-- World scale: `VRUnitsPerMeter` console variable, default 60 pending
-  calibration from the player's measured size (`run/vr_game.log`).
+- World scale: `VRUnitsPerMeter` = 60. Measured: the player is 106 units tall
+  with the eye 94 units above the feet; a ~1.58 m eye height gives ~60.
+- Recentre only once the head is actively tracked and the session is visible
+  (an early placeholder pose put the view high above the character). The
+  runtime's own recentre is followed. Interim recentre key: Home.

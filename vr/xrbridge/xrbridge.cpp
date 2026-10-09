@@ -861,7 +861,10 @@ void Bridge::Impl::PollEvents()
 			m_bQuit = true;
 			break;
 		case XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING:
-			Log("Reference space changed (runtime recentre)");
+			// The runtime moved its own origin (e.g. the headset's
+			// long-press recentre). Ours is built on top of it, so redo it.
+			Log("Reference space changed (runtime recentre); recentring");
+			m_bRecenterPending = true;
 			break;
 		default:
 			break;
@@ -1110,12 +1113,24 @@ bool Bridge::Impl::DoRecenter()
 {
 	// New origin = where the head is now, turned to face where the head
 	// faces now (yaw only, so the floor stays level).
+	//
+	// Only once the headset is really showing our frames (FOCUSED or
+	// VISIBLE) and the head is actively tracked. Earlier than that the
+	// runtime can report a placeholder pose (the bare origin), and
+	// recentring on it put the origin at the runtime's floor-level point:
+	// the view then sat high above the character and the menu screen sat
+	// low and off to the side.
+	if (m_eSessionState != XR_SESSION_STATE_FOCUSED && m_eSessionState != XR_SESSION_STATE_VISIBLE)
+		return false;
+
 	XrSpaceLocation loc;
 	ZeroMemory(&loc, sizeof(loc));
 	loc.type = XR_TYPE_SPACE_LOCATION;
+	const XrSpaceLocationFlags kNeeded =
+		XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT |
+		XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT | XR_SPACE_LOCATION_POSITION_TRACKED_BIT;
 	if (XR_FAILED(xrLocateSpace(m_hViewSpace, m_hLocalSpace, m_FrameState.predictedDisplayTime, &loc)) ||
-		!(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) ||
-		!(loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT))
+		(loc.locationFlags & kNeeded) != kNeeded)
 	{
 		return false;	// head not tracked yet; try again next frame
 	}
@@ -1133,7 +1148,8 @@ bool Bridge::Impl::DoRecenter()
 	offset.orientation.w = cosf(fYaw * 0.5f);
 	offset.position = loc.pose.position;
 	CreateAppSpace(offset);
-	Log("Recentred (yaw %.1f deg)", fYaw * 57.29578f);
+	Log("Recentred: head at %.2f %.2f %.2f m, yaw %.1f deg", loc.pose.position.x, loc.pose.position.y,
+		loc.pose.position.z, fYaw * 57.29578f);
 	return true;
 }
 

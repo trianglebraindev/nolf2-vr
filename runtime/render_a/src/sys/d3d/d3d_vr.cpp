@@ -415,6 +415,14 @@ void d3d_VR_OnSwapBuffers()
 
 	VR_UpdateCursorClip();
 
+	// Recentre on the Home key (stand-in until it's on a controller button;
+	// the headset's own long-press recentre also works).
+	static bool s_bRecenterKeyWasDown = false;
+	bool bRecenterKeyDown = g_hWnd && GetForegroundWindow() == g_hWnd && (GetAsyncKeyState(VK_HOME) & 0x8000) != 0;
+	if (bRecenterKeyDown && !s_bRecenterKeyWasDown)
+		g_pVRBridge->Recenter();
+	s_bRecenterKeyWasDown = bRecenterKeyDown;
+
 	// Wait for the next frame slot now, so the next frame is simulated
 	// and drawn with fresh head poses.
 	VR_EnsureFrameOpen();
