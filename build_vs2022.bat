@@ -53,7 +53,7 @@ if errorlevel 1 (
 
 echo [2/2] Building... text will scroll. Lots of "warning" lines are normal.
 echo.
-"%CMAKE%" --build build --config Release -- /m /nologo /v:minimal "/flp:logfile=build_log.txt;verbosity=normal" "/flp1:logfile=build_errors.txt;errorsonly"
+"%CMAKE%" --build build --config Release -- /m /nologo /v:minimal "/flp:logfile=%~dp0build_log.txt;verbosity=normal" "/flp1:logfile=%~dp0build_errors.txt;errorsonly"
 set "RESULT=%errorlevel%"
 
 echo.
