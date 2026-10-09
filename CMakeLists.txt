@@ -15,9 +15,6 @@ option(ENABLE_DIRECTSHOW "Enable DirectShow" ON)
 option(USE_INTERNAL_ZLIB "Use bundled zlib" ON)			# eventually want default to be OFF
 option(USE_INTERNAL_FREETYPE "Use bundled freetype" ON)	# eventually want default to be OFF
 
-# Where the retail NOLF2 install lives (only ever read from).
-set(NOLF2_RETAIL_DIR "D:/Games/No One Lives Forever 2" CACHE PATH "Retail NOLF2 install folder")
-
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/OUT")
 
@@ -156,15 +153,12 @@ if(BUILD_ENGINE AND BUILD_NOLF2)
 		COMMENT "Copying game modules to run/gamedll")
 	add_dependencies(STAGE_GAMEDLL NOLF2_ClientShellDLL NOLF2_ObjectDLL NOLF2_ClientRes NOLF2_ServerRes NOLF2_ClientFXDLL)
 
-	# Make F5 in Visual Studio launch the engine on the retail data, exactly
-	# like run_nolf2.bat, so crashes stop in the debugger at the faulting line.
+	# Make F5 in Visual Studio launch the engine exactly like run_nolf2.bat
+	# (working folder = run\, see setup_run_dir.bat), so a crash stops in the
+	# debugger on the faulting line.
 	set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT EXE_Lithtech)
-	# The engine expects Windows-style backslash paths on its command line.
-	file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/run/autoexec.cfg" _cfg)
-	file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/run/display.cfg" _disp)
-	file(TO_NATIVE_PATH "${NOLF2_GAMEDLL_DIR}" _gamedll)
-	file(TO_NATIVE_PATH "${NOLF2_RETAIL_DIR}" _retail)
+	file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/run" _rundir)
 	set_target_properties(EXE_Lithtech PROPERTIES
-		VS_DEBUGGER_WORKING_DIRECTORY "${_retail}"
-		VS_DEBUGGER_COMMAND_ARGUMENTS "-windowtitle \"NOLF2 (source build)\" -config \"${_cfg}\" -display \"${_disp}\" -rez Game.rez -rez Game2.rez -rez Sound.rez -rez custom -rez Update_v1x3.rez -rez \"${_gamedll}\" +Windowed 1 +ScreenWidth 1280 +ScreenHeight 720 +BitDepth 32")
+		VS_DEBUGGER_WORKING_DIRECTORY "${_rundir}"
+		VS_DEBUGGER_COMMAND_ARGUMENTS "-windowtitle \"NOLF2 (source build)\" -rez Game.rez -rez Game2.rez -rez Sound.rez -rez Custom -rez Update_v1x3.rez -rez gamedll +Windowed 1 +ScreenWidth 1280 +ScreenHeight 720 +BitDepth 32")
 endif()

@@ -42,6 +42,8 @@ if not defined CMAKE (
     exit /b 1
 )
 
+call "%~dp0setup_run_dir.bat" || exit /b 1
+
 echo.
 echo [1/2] Configuring...  (details in build_configure_log.txt)
 "%CMAKE%" -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 > build_configure_log.txt 2>&1
