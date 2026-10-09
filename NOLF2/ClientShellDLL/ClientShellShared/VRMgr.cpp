@@ -825,12 +825,21 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 		p->m_bLeftAnimValid = true;
 
 		// Free left hand: put it on the left controller (the fingers, which
-		// hang off the wrist, come along).
+		// hang off the wrist, come along). The forearm moves with it, keeping
+		// the same hold on the hand as in the animation; otherwise its skin
+		// stretches from where the animation left it to the hand.
 		if (p->IsActive() && !p->m_bTwoHand)
 		{
 			LTMatrix mWrist;
 			if (p->GetLeftWristTarget(mWrist))
+			{
+				if (p->m_pArmLMatrix)
+				{
+					LTMatrix mMove = mWrist * data.m_pNodeTransform->MakeInverse();
+					*p->m_pArmLMatrix = mMove * (*p->m_pArmLMatrix);
+				}
 				*data.m_pNodeTransform = mWrist;
+			}
 		}
 	}
 	else if (hNode == p->m_hNodeWristR)
