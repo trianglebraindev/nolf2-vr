@@ -30,7 +30,13 @@ public:
 
     void        UpdateLayout();
 
+	// VR: shown on the gun.
+	eHUDVRSpot	GetVRSpot() { return kHUDVRGun; }
+	bool		GetVRRect(float rect[4]) { return m_VRRect.Get(rect); }
+
 private:
+	CHUDVRRect	m_VRRect;
+
 
     LTIntPt		m_BasePos;
 

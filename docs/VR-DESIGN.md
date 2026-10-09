@@ -14,7 +14,7 @@ questions stay marked **(open)** until Tre decides them.
 | 3 | Game-side camera: head drives look; mouse/stick only turns the body; bob/roll/shake tamed | done (in test) |
 | 4 | Motion controllers: weapon in hand, aim from the muzzle, two-hand stabilising | first pass in test: gun in the right hand, shots from the hand along the gun, crosshair on the target |
 | 5 | Locomotion and turning options (below), controller bindings | first pass in test: smooth/snap turn, head/hand-relative analog walk, bindings |
-| 6 | HUD in the world (wrist / weapon), menus with a laser pointer | first pass in test: HUD fixed in front of the eyes, in-game menus on a panel, fades darken the view; laser pointer next |
+| 6 | HUD in the world (wrist / weapon), menus with a laser pointer | first pass in test: health on the left wrist, ammo on the gun, rest of the HUD on a lazy panel, in-game menus on a panel, fades darken the view; laser pointer next |
 | 7 | Gadgets and interactions (search, lockpick, pick up), vehicles, cutscenes | |
 | later | Manual reloading (Tre: fine to skip at first) | |
 
@@ -188,12 +188,30 @@ code rather than by editing models where possible.
   choices, in-game menus, cursor, console) is drawn into a transparent
   layer instead of the monitor picture, and shown over the world.
 - While playing it stays put in front of you at eye height and glides back
-  around when you turn your head well away (stand-in until the wrist / gun
-  HUD). In-game menus, popups
+  around when you turn your head well away. In-game menus, popups
   and message boxes appear on a panel where you're looking and stay put.
 - Screen fades darken the whole headset view; the letterbox bars are off.
-- Later: health/ammo move to the wrist or the gun, and the crosshair goes
-  away once aiming comes from the gun (stage 4).
+
+## Wrist and gun HUD (first pass)
+
+- Health and armour float by the back of your left wrist, ammo by the
+  left side of the gun; each faces you. The rest of the HUD (subtitles,
+  choices, objectives, pickups...) stays on the lazy panel.
+- They are the game's own HUD pieces (CHUDHealth, CHUDAmmo), unchanged:
+  each works out the part of the screen it draws in (CHUDVRRect, built in
+  its Update). In VR, CHUDMgr::Render hands them to
+  CVRMgr::RenderHudItem, which asks the engine for a spare screen-sized
+  canvas (LTVR_BeginLayerFromScreen), lets the item draw as usual, and the
+  engine copies that part of the canvas into a small layer
+  (LTVR_LAYER_WRIST / LTVR_LAYER_GUN, 512 x 256), as large as fits.
+- If the hand isn't tracked (or the setting is 0) the piece goes back on
+  the panel.
+- Settings: `VRWristHud` 1, `VRWristHudX/Y/Z` -5 / 3 / -10 cm from the left
+  grip (right, up, forward along the controller), `VRWristHudSize` 12 cm;
+  `VRGunHud` 1, `VRGunHudX/Y/Z` -6 / -2 / 6 cm from the right hand along
+  the gun, `VRGunHudSize` 10 cm.
+- Later: only show the wrist when you turn it toward you (like a watch),
+  if Tre wants that.
 
 ## Roadmap (after the first full play session, 20 min)
 
@@ -206,7 +224,7 @@ engine stand-in is hidden in VR).
 Next, in a suggested order:
 1. Weapon ring around the right hand (first pass done: hold right grip).
 2. HUD on the wrist (health / armour) and on the gun (ammo); subtitles and
-   choices on a lazy panel.
+   choices on a lazy panel (first pass done).
 3. VR settings menu in the game's options (console is compiled out):
    scale, turning, HUD, hands, gun size.
 4. Laser pointer for menus.

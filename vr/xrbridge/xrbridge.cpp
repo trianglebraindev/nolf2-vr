@@ -1374,7 +1374,7 @@ void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen, const La
 	SlowCallLog slow("EndFrame", false);
 	Impl& im = *m_pImpl;
 
-	const unsigned kMaxExtra = 4;
+	const unsigned kMaxExtra = 8;
 	bool bEyes = bSubmitEyes && im.m_bViewsValid && im.m_FrameState.shouldRender;
 	bool bScreen = pScreen && im.m_ScreenChain.m_hSwapchain != XR_NULL_HANDLE && im.m_FrameState.shouldRender;
 

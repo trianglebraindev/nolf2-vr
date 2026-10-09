@@ -17,6 +17,7 @@
 #include "ltvr.h"
 
 class CUIFormattedPolyString;
+class CHUDItem;
 
 // Rotates a vector by a rotation, and back.
 inline LTVector VR_Rotate(const LTRotation& r, const LTVector& v)
@@ -157,7 +158,22 @@ public:
 	void		RenderWeaponRing();
 	bool		IsWeaponRingOpen() const	{ return m_bRingOpen; }
 
+	// --- Wrist and gun HUD ---
+	//
+	// Health and armour sit on your left wrist, ammo on the gun, each the
+	// game's own HUD piece in its own small layer (LTVR_LAYER_WRIST / _GUN)
+	// facing you. The rest of the HUD stays on the panel in front of you.
+
+	// From the HUD drawing, for every item: draws it on the wrist or the
+	// gun if that's where it goes. false = not handled, draw it as usual
+	// (not VR, not one of those items, or that hand isn't tracked).
+	bool		RenderHudItem(CHUDItem* pItem);
+
 private:
+
+	bool		GetWristHudPos(LTVector& vPos) const;
+	bool		GetGunHudPos(LTVector& vPos) const;
+	bool		CameraToWorld(const LTVector& vCam, LTVector& vWorld) const;
 
 	void		Init();
 	void		SetDefaultBindings();
@@ -250,6 +266,7 @@ private:
 	LTVR_BeginLayerFn		m_pfnBeginLayer;
 	LTVR_EndLayerFn			m_pfnEndLayer;
 	LTVR_SetLayerFn			m_pfnSetLayer;
+	LTVR_BeginLayerFromScreenFn	m_pfnBeginLayerFromScreen;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

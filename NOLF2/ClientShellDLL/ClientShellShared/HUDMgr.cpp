@@ -13,6 +13,7 @@
 #include "stdafx.h"
 #include "HUDMgr.h"
 #include "GameClientShell.h"
+#include "VRMgr.h"
 
 
 CHUDMgr*			g_pHUDMgr = LTNULL;
@@ -174,7 +175,9 @@ void CHUDMgr::Render()
 		if (m_UpdateFlags & (*iter)->GetUpdateFlags())
 			(*iter)->Update();
 
-		if ((*iter)->GetRenderLevel() <= m_eLevel)
+		// (In VR some pieces, like health and ammo, go on your wrist or
+		// the gun instead.)
+		if ((*iter)->GetRenderLevel() <= m_eLevel && !g_VRMgr.RenderHudItem(*iter))
 			(*iter)->Render();
 		iter++;
 	}

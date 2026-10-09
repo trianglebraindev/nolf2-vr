@@ -127,8 +127,19 @@ void CHUDAmmo::Render()
 	}
 }
 
+// VR: adds a poly string's area to a rect (estimated if it can't say).
+static void VR_AddString(CHUDVRRect& rect, CUIPolyString* pStr, const char* pszText, float x, float y, float h)
+{
+	CUIRECT rc;
+	if (pStr && pStr->GetRect(&rc) == CUIR_OK && rc.width > 0.0f && rc.height > 0.0f)
+		rect.Add(rc.x, rc.y, rc.width, rc.height);
+	else
+		rect.Add(x, y, h * 0.7f * (float)strlen(pszText), h);
+}
+
 void CHUDAmmo::Update()
 {
+	m_VRRect.Reset();
 
 	WEAPON const *pWeapon = g_pWeaponMgr->GetWeapon(g_pPlayerStats->GetCurrentWeapon());
 	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo(g_pPlayerStats->GetCurrentAmmo());
@@ -160,7 +171,15 @@ void CHUDAmmo::Update()
 		float maxW = 100.0f * m_fBarScale * g_pInterfaceResMgr->GetXRatio();
 
 		m_Bar.Update(x,y,w,maxW,h);
+		m_VRRect.Add(x,y,maxW,h);
 
+		// The clip, drawn leftwards from its offset (see Render).
+		float cx = (float)(m_BasePos.x + m_ClipOffset.x) * g_pInterfaceResMgr->GetXRatio();
+		float cy = (float)(m_BasePos.y + m_ClipOffset.y) * g_pInterfaceResMgr->GetYRatio();
+		float cw = (float)m_ClipUnitSize.x * g_pInterfaceResMgr->GetXRatio();
+		float ch = (float)m_ClipUnitSize.y * g_pInterfaceResMgr->GetYRatio();
+		float fClipW = cw * (float)(m_nFull + m_nEmpty);
+		m_VRRect.Add(cx - fClipW, cy, fClipW, ch);
 	}
 
 	if (m_bUseText && !m_bInfinite)
@@ -176,8 +195,7 @@ void CHUDAmmo::Update()
 		m_pStr->SetText(str);
 		m_pStr->SetPosition(x,y);
 		m_pStr->SetCharScreenHeight(h);
-
-		
+		VR_AddString(m_VRRect, m_pStr, str, x, y, (float)h);
 	}
 
 
@@ -188,6 +206,8 @@ void CHUDAmmo::Update()
 	std::string icon = pAmmo->GetNormalIcon();
 	m_hIcon = g_pInterfaceResMgr->GetTexture(icon.c_str());
 	g_pDrawPrim->SetXYWH(&m_Poly[1],x,y,w,h);
+	if (m_hIcon)
+		m_VRRect.Add(x,y,w,h);
 
 }
 

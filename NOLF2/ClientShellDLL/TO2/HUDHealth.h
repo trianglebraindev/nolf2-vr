@@ -31,7 +31,13 @@ public:
 
     void        UpdateLayout();
 
+	// VR: shown on the left wrist.
+	eHUDVRSpot	GetVRSpot() { return kHUDVRWrist; }
+	bool		GetVRRect(float rect[4]) { return m_VRRect.Get(rect); }
+
 private:
+	CHUDVRRect	m_VRRect;
+
     LTIntPt		m_HealthBasePos;
 
     LTBOOL		m_bUseHealthBar;

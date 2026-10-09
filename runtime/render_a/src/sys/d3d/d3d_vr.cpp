@@ -41,11 +41,15 @@
 //  view, so it has real depth. The game moves the gun within that space
 //  to where the controller is.
 //
-//  SPOT LAYERS (crosshair, weapon ring)
+//  SPOT LAYERS (crosshair, weapon ring, wrist and gun read-outs)
 //  Small layers the game draws into (LTVR_BeginLayer / LTVR_EndLayer)
 //  and places at a point in the world (LTVR_SetLayer), facing you: the
 //  crosshair where the gun points (constant apparent size), the weapon
-//  ring at your hand (a fixed size in metres).
+//  ring at your hand, health on your wrist and ammo on the gun (a fixed
+//  size in metres). The wrist and gun read-outs are the game's own HUD
+//  pieces: the game draws them where they'd be on the monitor, onto a
+//  spare screen-sized canvas, and the engine copies that part of the
+//  canvas into the layer (LTVR_BeginLayerFromScreen).
 //
 //  COORDINATES
 //  OpenXR:   metres, right-handed, +X right, +Y up, -Z forward.
@@ -108,7 +112,8 @@ static LTRotation			g_rVRBodyUsed;
 static bool					g_bVRBodyUsedValid	= false;
 
 // Spot layers (see the top of this file). Index = LTVR_LAYER_*.
-static const uint32			kVRSpotSize			= 512;
+static const uint32			kVRSpotWidth[LTVR_NUM_LAYERS]	= { 512, 512, 512, 512 };
+static const uint32			kVRSpotHeight[LTVR_NUM_LAYERS]	= { 512, 512, 256, 256 };
 struct VRSpot
 {
 	int					nLayer;			// bridge layer, -1 = none
@@ -120,6 +125,14 @@ struct VRSpot
 };
 static VRSpot				g_aVRSpots[LTVR_NUM_LAYERS];
 static int					g_nVRSpotDrawing	= -1;		// layer being drawn into, -1 = none
+
+// The spare canvas for LTVR_BeginLayerFromScreen (the size of the screen),
+// and the part of it being copied into the layer.
+static IDirect3DSurface9*	g_pVRCanvas			= NULL;
+static uint32				g_nVRCanvasWidth	= 0;
+static uint32				g_nVRCanvasHeight	= 0;
+static bool					g_bVRSpotFromCanvas	= false;
+static RECT					g_rcVRCanvasSrc;
 
 // Where the game says the player's eyes are this frame, and the body's
 // heading (see LTVR_SetOrigin). Falls back to the camera if not set.
@@ -137,6 +150,17 @@ static int					g_nVRBindings		= 0;
 
 static void VR_BuildState();
 static void VR_EndHud();
+
+static void VR_ReleaseCanvas()
+{
+	if (g_pVRCanvas)
+	{
+		g_pVRCanvas->Release();
+		g_pVRCanvas = NULL;
+	}
+	g_nVRCanvasWidth = g_nVRCanvasHeight = 0;
+	g_bVRSpotFromCanvas = false;
+}
 
 //------------------------------------------------------------------
 // Set-up and tear-down
@@ -189,6 +213,7 @@ static void VR_Destroy()
 		g_aVRSpots[i].nLayer = -1;
 	}
 	g_nVRSpotDrawing = -1;
+	VR_ReleaseCanvas();
 	g_bVRBodyUsedValid = false;
 	if (g_pVRBridge)
 	{
@@ -298,7 +323,7 @@ void d3d_VR_PostDeviceCreate(IDirect3DDevice9Ex* pDevice, uint32 nScreenWidth, u
 	for (int i = 0; i < LTVR_NUM_LAYERS; ++i)
 	{
 		VRSpot& spot = g_aVRSpots[i];
-		spot.nLayer = g_pVRBridge->CreateLayer(kVRSpotSize, kVRSpotSize);
+		spot.nLayer = g_pVRBridge->CreateLayer(kVRSpotWidth[i], kVRSpotHeight[i]);
 		if (spot.nLayer >= 0 && g_pVRBridge->GetLayerTexture(spot.nLayer))
 			g_pVRBridge->GetLayerTexture(spot.nLayer)->GetSurfaceLevel(0, &spot.pSurf);
 	}
@@ -318,6 +343,7 @@ void d3d_VR_OnModeChange(uint32 nScreenWidth, uint32 nScreenHeight)
 		return;
 
 	VR_EndHud();
+	VR_ReleaseCanvas();		// made again at the new size when next needed
 	if (g_pVRScreenSurf)
 	{
 		g_pVRScreenSurf->Release();
@@ -1021,15 +1047,100 @@ extern "C" __declspec(dllexport) int LTVR_BeginLayer(int nLayer)
 		pDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_ARGB(0, 0, 0, 0), 1.0f, 0);
 	spot.bDrawn = true;
 	g_nVRSpotDrawing = nLayer;
-	return (int)kVRSpotSize;
+	g_bVRSpotFromCanvas = false;
+	return (int)kVRSpotWidth[nLayer];
+}
+
+extern "C" __declspec(dllexport) int LTVR_BeginLayerFromScreen(int nLayer, const float rect[4])
+{
+	if (nLayer < 0 || nLayer >= LTVR_NUM_LAYERS || !rect || !g_bVRHudActive || g_nVRSpotDrawing >= 0 ||
+		!PD3DDEVICE || !g_nVRScreenWidth || !g_nVRScreenHeight)
+		return 0;
+	VRSpot& spot = g_aVRSpots[nLayer];
+	if (!spot.pSurf)
+		return 0;
+
+	// The part of the screen to copy, a little padded, kept on the screen.
+	const float kPad = 4.0f;
+	float l = rect[0] - kPad, t = rect[1] - kPad, r = rect[2] + kPad, b = rect[3] + kPad;
+	if (l < 0.0f) l = 0.0f;
+	if (t < 0.0f) t = 0.0f;
+	if (r > (float)g_nVRScreenWidth)	r = (float)g_nVRScreenWidth;
+	if (b > (float)g_nVRScreenHeight)	b = (float)g_nVRScreenHeight;
+	if (!(r - l >= 2.0f && b - t >= 2.0f))	// also catches NaN
+		return 0;
+
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	if (g_pVRCanvas && (g_nVRCanvasWidth != g_nVRScreenWidth || g_nVRCanvasHeight != g_nVRScreenHeight))
+		VR_ReleaseCanvas();
+	if (!g_pVRCanvas)
+	{
+		HRESULT hr = pDevice->CreateRenderTarget(g_nVRScreenWidth, g_nVRScreenHeight, D3DFMT_A8R8G8B8,
+			D3DMULTISAMPLE_NONE, 0, FALSE, &g_pVRCanvas, NULL);
+		if (FAILED(hr) || !g_pVRCanvas)
+		{
+			static bool s_bLogged = false;
+			if (!s_bLogged)
+				xrb::Log("Could not make the HUD canvas (hr=0x%08X)", (unsigned)hr);
+			s_bLogged = true;
+			g_pVRCanvas = NULL;
+			return 0;
+		}
+		g_nVRCanvasWidth = g_nVRScreenWidth;
+		g_nVRCanvasHeight = g_nVRScreenHeight;
+	}
+
+	if (FAILED(pDevice->SetRenderTarget(0, g_pVRCanvas)))
+		return 0;
+	g_Device.InvalidateViewport();
+
+	g_rcVRCanvasSrc.left	= (LONG)l;
+	g_rcVRCanvasSrc.top		= (LONG)t;
+	g_rcVRCanvasSrc.right	= (LONG)(r + 0.999f);
+	g_rcVRCanvasSrc.bottom	= (LONG)(b + 0.999f);
+	if (g_rcVRCanvasSrc.right > (LONG)g_nVRScreenWidth)		g_rcVRCanvasSrc.right = (LONG)g_nVRScreenWidth;
+	if (g_rcVRCanvasSrc.bottom > (LONG)g_nVRScreenHeight)	g_rcVRCanvasSrc.bottom = (LONG)g_nVRScreenHeight;
+	D3DRECT clear = { g_rcVRCanvasSrc.left, g_rcVRCanvasSrc.top, g_rcVRCanvasSrc.right, g_rcVRCanvasSrc.bottom };
+	pDevice->Clear(1, &clear, D3DCLEAR_TARGET, D3DCOLOR_ARGB(0, 0, 0, 0), 1.0f, 0);
+
+	g_nVRSpotDrawing = nLayer;
+	g_bVRSpotFromCanvas = true;
+	return 1;
 }
 
 extern "C" __declspec(dllexport) void LTVR_EndLayer(void)
 {
 	if (g_nVRSpotDrawing < 0 || !PD3DDEVICE)
 		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+
+	if (g_bVRSpotFromCanvas && g_pVRCanvas)
+	{
+		// Copy the drawn part of the canvas into the layer, as large as fits
+		// without stretching it, centred, on a transparent background.
+		VRSpot& spot = g_aVRSpots[g_nVRSpotDrawing];
+		const float fSrcW = (float)(g_rcVRCanvasSrc.right - g_rcVRCanvasSrc.left);
+		const float fSrcH = (float)(g_rcVRCanvasSrc.bottom - g_rcVRCanvasSrc.top);
+		const float fDstW = (float)kVRSpotWidth[g_nVRSpotDrawing];
+		const float fDstH = (float)kVRSpotHeight[g_nVRSpotDrawing];
+		float fScale = fDstW / fSrcW;
+		if (fSrcH * fScale > fDstH)
+			fScale = fDstH / fSrcH;
+		RECT dst;
+		dst.left	= (LONG)((fDstW - fSrcW * fScale) * 0.5f);
+		dst.top		= (LONG)((fDstH - fSrcH * fScale) * 0.5f);
+		dst.right	= dst.left + (LONG)(fSrcW * fScale);
+		dst.bottom	= dst.top + (LONG)(fSrcH * fScale);
+		if (dst.right <= dst.left)	dst.right = dst.left + 1;
+		if (dst.bottom <= dst.top)	dst.bottom = dst.top + 1;
+
+		pDevice->ColorFill(spot.pSurf, NULL, D3DCOLOR_ARGB(0, 0, 0, 0));
+		if (SUCCEEDED(pDevice->StretchRect(g_pVRCanvas, &g_rcVRCanvasSrc, spot.pSurf, &dst, D3DTEXF_LINEAR)))
+			spot.bDrawn = true;
+	}
+	g_bVRSpotFromCanvas = false;
 	g_nVRSpotDrawing = -1;
-	PD3DDEVICE->GetDevice()->SetRenderTarget(0, g_pVRScreenSurf);
+	pDevice->SetRenderTarget(0, g_pVRScreenSurf);
 	g_Device.InvalidateViewport();
 }
 
@@ -1115,7 +1226,7 @@ static bool VR_GetSpotPlacement(int nSpot, xrb::ScreenPlacement& place)
 		float fHudAngle = g_CV_VRHudAngle.m_Val;
 		if (fHudAngle < 10.0f) fHudAngle = 10.0f;
 		if (fHudAngle > 150.0f) fHudAngle = 150.0f;
-		float fAngle = (float)kVRSpotSize * fHudAngle / (float)g_nVRScreenWidth;
+		float fAngle = (float)kVRSpotWidth[nSpot] * fHudAngle / (float)g_nVRScreenWidth;
 		place.widthMeters = VR_WidthForAngle(fDist, fAngle);
 	}
 	place.headLocked = false;
@@ -1266,6 +1377,7 @@ void d3d_VR_OnSwapBuffers()
 		g_aVRSpots[i].bSet = false;
 	}
 	g_nVRSpotDrawing = -1;
+	g_bVRSpotFromCanvas = false;
 	g_bVRBodyUsedValid = false;
 
 	// The game sets the origin again each frame it draws the world.

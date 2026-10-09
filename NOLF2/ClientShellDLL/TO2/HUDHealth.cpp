@@ -108,8 +108,20 @@ void CHUDHealth::Render()
 
 }
 
+// VR: adds a poly string's area to a rect (estimated if it can't say).
+static void VR_AddString(CHUDVRRect& rect, CUIPolyString* pStr, const char* pszText, float x, float y, float h)
+{
+	CUIRECT rc;
+	if (pStr && pStr->GetRect(&rc) == CUIR_OK && rc.width > 0.0f && rc.height > 0.0f)
+		rect.Add(rc.x, rc.y, rc.width, rc.height);
+	else
+		rect.Add(x, y, h * 0.7f * (float)strlen(pszText), h);
+}
+
 void CHUDHealth::Update()
 {
+	m_VRRect.Reset();
+
 	if (m_bUseHealthBar)
 	{
 		float x = (float)(m_HealthBasePos.x + m_HealthBarOffset.x) * g_pInterfaceResMgr->GetXRatio();
@@ -120,6 +132,7 @@ void CHUDHealth::Update()
 		float maxW = (float)g_pPlayerStats->GetMaxHealth() * m_fBarScale * g_pInterfaceResMgr->GetXRatio();
 
 		m_HealthBar.Update(x,y,w,maxW,h);
+		m_VRRect.Add(x,y,maxW,h);
 
 
 		x = (float)(m_HealthBasePos.x + m_ArmorBarOffset.x) * g_pInterfaceResMgr->GetXRatio();
@@ -129,6 +142,7 @@ void CHUDHealth::Update()
 		maxW = (float)g_pPlayerStats->GetMaxArmor() * m_fBarScale * g_pInterfaceResMgr->GetXRatio();
 
 		m_ArmorBar.Update(x,y,w,maxW,h);
+		m_VRRect.Add(x,y,maxW,h);
 
 	}
 
@@ -144,6 +158,7 @@ void CHUDHealth::Update()
 		char szTmp[16] = "";
 		sprintf(szTmp,"%d",g_pPlayerStats->GetHealth());
 		m_pHealthStr->SetText(szTmp);
+		VR_AddString(m_VRRect, m_pHealthStr, szTmp, x, y, (float)h);
 
 		x = (float)(m_HealthBasePos.x + m_ArmorTextOffset.x) * g_pInterfaceResMgr->GetXRatio();
 		y = (float)(m_HealthBasePos.y + m_ArmorTextOffset.y) * g_pInterfaceResMgr->GetYRatio();
@@ -152,6 +167,7 @@ void CHUDHealth::Update()
 		m_pArmorStr->SetCharScreenHeight(h);
 		sprintf(szTmp,"%d",g_pPlayerStats->GetArmor());
 		m_pArmorStr->SetText(szTmp);
+		VR_AddString(m_VRRect, m_pArmorStr, szTmp, x, y, (float)h);
 
 	}
 
@@ -163,11 +179,13 @@ void CHUDHealth::Update()
 		float w = (float)m_nHealthIconSize * g_pInterfaceResMgr->GetYRatio();
 
 		g_pDrawPrim->SetXYWH(&m_Poly[0],x,y,w,w);
+		m_VRRect.Add(x,y,w,w);
 
 		x = (float)(m_HealthBasePos.x + m_ArmorIconOffset.x) * g_pInterfaceResMgr->GetXRatio();
 		y = (float)(m_HealthBasePos.y + m_ArmorIconOffset.y) * g_pInterfaceResMgr->GetYRatio();
 
 		g_pDrawPrim->SetXYWH(&m_Poly[1],x,y,w,w);
+		m_VRRect.Add(x,y,w,w);
 
 	}
 

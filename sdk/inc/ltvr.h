@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	4
+#define LTVR_VERSION	5
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -142,13 +142,24 @@ typedef void (*LTVR_SetCrosshairFn)(int bVisible, const float pos[3]);
 // HUD's size per degree (the crosshair). The crosshair calls above are
 // layer LTVR_LAYER_CROSSHAIR.
 
-#define LTVR_LAYER_CROSSHAIR	0
-#define LTVR_LAYER_HAND			1	// the weapon ring
-#define LTVR_NUM_LAYERS			2
+#define LTVR_LAYER_CROSSHAIR	0	// 512 x 512
+#define LTVR_LAYER_HAND			1	// 512 x 512, the weapon ring
+#define LTVR_LAYER_WRIST		2	// 512 x 256, health and armour (version 5)
+#define LTVR_LAYER_GUN			3	// 512 x 256, ammo (version 5)
+#define LTVR_NUM_LAYERS			4
 
 typedef int  (*LTVR_BeginLayerFn)(int layer);
 typedef void (*LTVR_EndLayerFn)(void);
 typedef void (*LTVR_SetLayerFn)(int layer, int bVisible, const float pos[3], float fWidthMeters);
+
+// --- Screen pieces in a spot layer (version 5) ---
+//
+// For putting a piece of the normal HUD in a spot layer without changing
+// how it draws: after Begin, draw it exactly where it would go on the
+// screen; End copies that part of the screen (rect: left, top, right,
+// bottom, in pixels) into the layer, as large as fits without stretching.
+// Returns 0 = not now, draw nothing (End is then not needed).
+typedef int  (*LTVR_BeginLayerFromScreenFn)(int layer, const float rect[4]);
 
 // Writes a model's pieces, skeleton and sockets to vr_models.log (for
 // working out how the first-person gun models are built).

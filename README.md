@@ -31,15 +31,15 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   using things work where the crosshair is.
 - **Weapon ring**: hold the right grip, reach for a weapon, let go.
 - **Interface in the headset**: the HUD, subtitles, conversation choices,
-  in-game menus and the console are drawn into their own layer. The HUD
+  in-game menus and the console are drawn into their own layer. Health and
+  armour sit on your left wrist and ammo on the gun; the rest of the HUD
   stays in front of you, menus appear on a panel where you're looking,
   screen fades darken your whole view, and the main menus and movies play on
   a big floating screen.
 - **Crash reports**: a crash writes a readable report and a minidump to
   `run\`.
 
-Still to come (see `docs/VR-DESIGN.md`): HUD on the wrist and the gun, VR
-settings in the options menu, a laser pointer for menus, scopes and zoom in
+Still to come (see `docs/VR-DESIGN.md`): VR settings in the options menu, a laser pointer for menus, scopes and zoom in
 VR, melee swinging, comfort options.
 
 ## Requirements
@@ -103,6 +103,9 @@ The engine's console is compiled out, so settings go on the launch line in
 | `VRGunScale` | 12 | size of the gun in your hand |
 | `VRArms` | 0 | 1 = the game's full arms instead of hands |
 | `VRWristBack` | 7 | how far the left wrist sits behind the controller (cm) |
+| `VRWristHud` / `VRGunHud` | 1 / 1 | 0 = health / ammo back on the HUD panel |
+| `VRWristHudX/Y/Z`, `VRWristHudSize` | -5 / 3 / -10, 12 | where health floats by the left wrist (cm), its width (cm) |
+| `VRGunHudX/Y/Z`, `VRGunHudSize` | -6 / -2 / 6, 10 | where ammo floats by the gun (cm), its width (cm) |
 
 Files the game writes in `run\`:
 
