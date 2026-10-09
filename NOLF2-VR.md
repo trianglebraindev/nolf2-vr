@@ -24,6 +24,8 @@ retail NOLF2 install (patched to 1.3).
 | `update.bat` | Pull the latest changes from GitHub, then build |
 | `build_vs2022.bat` | Build only (`clean` as an argument rebuilds from scratch) |
 | `run_nolf2.bat` | Play the built game, windowed |
+| `run_nolf2_vr.bat` | Play in VR (current stage: the game on a floating screen) |
+| `run_vrprobe.bat` | Headset plumbing test (floating test picture) |
 | F5 in Visual Studio (`build\Lithtech.sln`, Release) | Play under the debugger |
 
 The game runs from the `run\` folder, never from the retail install. See
@@ -35,6 +37,11 @@ The game runs from the `run\` folder, never from the retail install. See
   layout (`d3d_renderblock.cpp`; fix credit: the MatzeLoCal macOS port).
 - **Builds on VS2022 + DirectX SDK June 2010**: DirectX paths, library names,
   missing standard includes, `winres.h` in place of MFC's `afxres.h`.
+- **Direct3D 9Ex**: the renderer creates a 9Ex device (needed to share frames
+  with the headset). 9Ex has no managed texture pool, so textures are uploaded
+  through a staging copy (`d3d_TransferTexture`) and the few small lockable
+  ones become dynamic textures (`d3d_device_wrapper.h`).
+- **VR hooks**: `runtime/render_a/src/sys/d3d/d3d_vr.cpp`, switched on by `-vr`.
 - **DirectMusic** (the adaptive music): headers from the Wine project
   (LGPL 2.1, see `runtime/compat/directmusic/README.txt`) and the interface
   IDs in `runtime/kernel/src/sys/win/dmusic_guids.cpp`.

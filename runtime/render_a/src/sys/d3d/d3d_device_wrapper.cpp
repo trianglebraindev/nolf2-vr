@@ -53,7 +53,8 @@ bool g_aValidTSSList [33] =
 
 CDirect3DDevice9Wrapper::CDirect3DDevice9Wrapper() :
 	m_nDirtyCount(0),
-	m_nRefCount(0)
+	m_nRefCount(0),
+	m_bIsEx(false)
 {
 }
 

@@ -86,6 +86,10 @@ public:
 
 	// Note: m_pD3D is public for quick access...
     LPDIRECT3D9				m_pD3D;			// The main D3D object
+	// The same object as m_pD3D when Direct3D 9Ex is available (always on
+	// Windows Vista and later), else NULL. 9Ex is needed for VR. Not a
+	// separate reference: only m_pD3D is released.
+	LPDIRECT3D9EX			m_pD3DEx;
 
 private:
 	D3DDISPLAYMODE			m_DesktopFormat;// Desktop display mode (mainly for window mode)...

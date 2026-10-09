@@ -25,9 +25,37 @@
 #include "d3d_draw.h"
 #include "rendererconsolevars.h"
 #include "ConsoleCommands.h"
+#include "d3d_vr.h"
 
 // The global D3D Shell...
 CD3D_Device g_Device;
+
+// Creates the device as a Direct3D 9Ex device when 9Ex is available
+// (needed for VR), otherwise as a plain Direct3D 9 device.
+static HRESULT d3d_CreateDevice9OrEx(UINT iAdapter, D3DDEVTYPE eDevType, DWORD BehaviorFlags,
+	D3DPRESENT_PARAMETERS* pPresentationParam, IDirect3DDevice9** ppDevice)
+{
+	*ppDevice = NULL;
+	if (g_D3DShell.m_pD3DEx)
+	{
+		// 9Ex wants the full-screen mode spelled out (and none when windowed).
+		D3DDISPLAYMODEEX FullscreenMode;
+		ZeroMemory(&FullscreenMode, sizeof(FullscreenMode));
+		FullscreenMode.Size				= sizeof(FullscreenMode);
+		FullscreenMode.Width			= pPresentationParam->BackBufferWidth;
+		FullscreenMode.Height			= pPresentationParam->BackBufferHeight;
+		FullscreenMode.RefreshRate		= pPresentationParam->FullScreen_RefreshRateInHz;
+		FullscreenMode.Format			= pPresentationParam->BackBufferFormat;
+		FullscreenMode.ScanLineOrdering	= D3DSCANLINEORDERING_PROGRESSIVE;
+
+		IDirect3DDevice9Ex* pDeviceEx = NULL;
+		HRESULT hResult = g_D3DShell.m_pD3DEx->CreateDeviceEx(iAdapter, eDevType, g_hWnd, BehaviorFlags,
+			pPresentationParam, pPresentationParam->Windowed ? NULL : &FullscreenMode, &pDeviceEx);
+		*ppDevice = pDeviceEx;
+		return hResult;
+	}
+	return PDIRECT3D->CreateDevice(iAdapter, eDevType, g_hWnd, BehaviorFlags, pPresentationParam, ppDevice);
+}
 
 // Create the Sucka...
 bool CD3D_Device::CreateDevice(D3DAdapterInfo* pAdapter,D3DDeviceInfo* pDevice,D3DModeInfo* pMode)
@@ -48,15 +76,19 @@ bool CD3D_Device::CreateDevice(D3DAdapterInfo* pAdapter,D3DDeviceInfo* pDevice,D
 
 	D3DPRESENT_PARAMETERS PresentationParam;
 	SetPresentationParams(PresentationParam,pMode);
+
+	// VR (-vr): connect to the headset before creating the device.
+	bool bVR = d3d_VR_PreDeviceCreate(pAdapter->iAdapterNum);
+
 	IDirect3DDevice9 *pD3DDevice;
-	HRESULT hResult = PDIRECT3D->CreateDevice(pAdapter->iAdapterNum,pDevice->DeviceType,g_hWnd,BehaviorFlags,&PresentationParam,&pD3DDevice);
+	HRESULT hResult = d3d_CreateDevice9OrEx(pAdapter->iAdapterNum,pDevice->DeviceType,BehaviorFlags,&PresentationParam,&pD3DDevice);
 	if ((hResult != D3D_OK) || !pD3DDevice)
 	{
 		// Give it more more try - Presentation params might have been changed by D3D to something acceptable...
 		OUTPUT_D3D_ERROR(1,hResult);			// Report the error...
 		OutputDebugString("Warning: Create failed. Attempting to fall back...\n");
 		TryFallingBack_OnFailedDevCreate(&PresentationParam);
-		hResult = PDIRECT3D->CreateDevice(pAdapter->iAdapterNum,pDevice->DeviceType,g_hWnd,BehaviorFlags,&PresentationParam,&pD3DDevice);
+		hResult = d3d_CreateDevice9OrEx(pAdapter->iAdapterNum,pDevice->DeviceType,BehaviorFlags,&PresentationParam,&pD3DDevice);
 		if ((hResult != D3D_OK) || !pD3DDevice)
 		{
 			OUTPUT_D3D_ERROR(0,hResult); FreeDevice(); return false;
@@ -66,6 +98,7 @@ bool CD3D_Device::CreateDevice(D3DAdapterInfo* pAdapter,D3DDeviceInfo* pDevice,D
 	// Create our wrapper, which we're going to present to the world as an actual D3D device
 	LT_MEM_TRACK_ALLOC(m_pD3DDevice = new CDirect3DDevice9Wrapper,LT_MEM_TYPE_RENDERER);
 	m_pD3DDevice->SetDevice(pD3DDevice);
+	m_pD3DDevice->SetIsEx(g_D3DShell.m_pD3DEx != NULL);	// see d3d_CreateDevice9OrEx
 
 	if (FAILED(m_pD3DDevice->GetDeviceCaps(&m_DeviceCaps)))
 	{
@@ -93,6 +126,12 @@ bool CD3D_Device::CreateDevice(D3DAdapterInfo* pAdapter,D3DDeviceInfo* pDevice,D
 
 	// Initialize the render target manager.
 	CRenderTargetMgr::GetSingleton().Init();
+
+	// VR: start the headset session and create the textures shared with it.
+	if (bVR)
+		d3d_VR_PostDeviceCreate(m_pD3DDevice->GetDeviceEx(), PresentationParam.BackBufferWidth, PresentationParam.BackBufferHeight);
+	else
+		d3d_VR_Term();
 
 	return true;
 }
@@ -144,6 +183,9 @@ bool CD3D_Device::SetMode(D3DModeInfo* pMode)
 // Releases the device (and resets all that should be reset on device release)...
 void CD3D_Device::FreeDevice()
 {
+	// The VR bridge holds the device and textures made on it; let go first.
+	d3d_VR_Term();
+
 	if (m_pD3DDevice)
 	{
 		uint32 iRefCnt = m_pD3DDevice->Release();
@@ -346,7 +388,9 @@ void CD3D_Device::SetPresentationParams(D3DPRESENT_PARAMETERS& PresentationParam
 	PresentationParam.AutoDepthStencilFormat			= GetDefaultDepthStencilFormat(g_CV_ZBitDepth,g_CV_StencilBitDepth);
 	PresentationParam.Flags								= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;	// puffs, but need it for the console (should get rid of this eventually)...
 	PresentationParam.FullScreen_RefreshRateInHz		= D3DPRESENT_RATE_DEFAULT; //D3DPRESENT_RATE_UNLIMITED
-	PresentationParam.PresentationInterval				= g_CV_VSyncOnFlip.m_Val ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
+	// In VR the headset sets the pace; waiting for the monitor's vsync as
+	// well would drag the headset down to the monitor's refresh rate.
+	PresentationParam.PresentationInterval				= (g_CV_VSyncOnFlip.m_Val && !d3d_VR_Requested()) ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
 }
 
 // Go for the best one that works and fallback till we find one...

@@ -19,6 +19,31 @@ public:
 		// Remember that the device is created with a positive refcount
 		m_nRefCount = 1;
 		m_pDevice = pDevice; 
+		m_bIsEx = false;
+	}
+
+	// Tell the wrapper the device was created by CreateDeviceEx (and so
+	// really is an IDirect3DDevice9Ex).
+	void SetIsEx(bool bIsEx) { m_bIsEx = bIsEx; }
+
+	// True when the device is a Direct3D 9Ex device (needed for VR, which
+	// shares textures with Direct3D 11).
+	bool IsEx() const { return m_bIsEx; }
+	IDirect3DDevice9Ex* GetDeviceEx() { return m_bIsEx ? (IDirect3DDevice9Ex*)m_pDevice : NULL; }
+
+	// Direct3D 9Ex has no "managed" pool (where D3D keeps a CPU copy and
+	// re-uploads it for you). The engine creates a handful of small
+	// textures there and then writes them with LockRect, so on 9Ex they
+	// are created as lockable "dynamic" textures in the default pool
+	// instead. (The main texture path uploads through a staging copy
+	// instead; see d3d_TransferTexture.)
+	void AdjustPoolForEx(DWORD& Usage, D3DPOOL& Pool) const
+	{
+		if (m_bIsEx && Pool == D3DPOOL_MANAGED)
+		{
+			Pool = D3DPOOL_DEFAULT;
+			Usage |= D3DUSAGE_DYNAMIC;
+		}
 	}
 
 
@@ -89,9 +114,9 @@ public:
     HRESULT GetRasterStatus(D3DRASTER_STATUS* pRasterStatus) { return m_pDevice->GetRasterStatus(0, pRasterStatus); }
     void SetGammaRamp(DWORD Flags,CONST D3DGAMMARAMP* pRamp) { m_pDevice->SetGammaRamp(0, Flags, pRamp); }
     void GetGammaRamp(D3DGAMMARAMP* pRamp) { m_pDevice->GetGammaRamp(0, pRamp); }
-    HRESULT CreateTexture(UINT Width,UINT Height,UINT Levels,DWORD Usage,D3DFORMAT Format,D3DPOOL Pool,IDirect3DTexture9** ppTexture) { return m_pDevice->CreateTexture(Width,Height,Levels,Usage,Format,Pool,ppTexture, NULL); }
-    HRESULT CreateVolumeTexture(UINT Width,UINT Height,UINT Depth,UINT Levels,DWORD Usage,D3DFORMAT Format,D3DPOOL Pool,IDirect3DVolumeTexture9** ppVolumeTexture) { return m_pDevice->CreateVolumeTexture(Width,Height,Depth,Levels,Usage,Format,Pool,ppVolumeTexture, NULL); }
-    HRESULT CreateCubeTexture(UINT EdgeLength,UINT Levels,DWORD Usage,D3DFORMAT Format,D3DPOOL Pool,IDirect3DCubeTexture9** ppCubeTexture) { return m_pDevice->CreateCubeTexture(EdgeLength,Levels,Usage,Format,Pool,ppCubeTexture, NULL); }
+    HRESULT CreateTexture(UINT Width,UINT Height,UINT Levels,DWORD Usage,D3DFORMAT Format,D3DPOOL Pool,IDirect3DTexture9** ppTexture) { AdjustPoolForEx(Usage, Pool); return m_pDevice->CreateTexture(Width,Height,Levels,Usage,Format,Pool,ppTexture, NULL); }
+    HRESULT CreateVolumeTexture(UINT Width,UINT Height,UINT Depth,UINT Levels,DWORD Usage,D3DFORMAT Format,D3DPOOL Pool,IDirect3DVolumeTexture9** ppVolumeTexture) { AdjustPoolForEx(Usage, Pool); return m_pDevice->CreateVolumeTexture(Width,Height,Depth,Levels,Usage,Format,Pool,ppVolumeTexture, NULL); }
+    HRESULT CreateCubeTexture(UINT EdgeLength,UINT Levels,DWORD Usage,D3DFORMAT Format,D3DPOOL Pool,IDirect3DCubeTexture9** ppCubeTexture) { AdjustPoolForEx(Usage, Pool); return m_pDevice->CreateCubeTexture(EdgeLength,Levels,Usage,Format,Pool,ppCubeTexture, NULL); }
     HRESULT CreateVertexBuffer(UINT Length,DWORD Usage,DWORD FVF,D3DPOOL Pool,IDirect3DVertexBuffer9** ppVertexBuffer) { return m_pDevice->CreateVertexBuffer(Length,Usage,FVF,Pool,ppVertexBuffer, NULL); }
     HRESULT CreateIndexBuffer(UINT Length,DWORD Usage,D3DFORMAT Format,D3DPOOL Pool,IDirect3DIndexBuffer9** ppIndexBuffer) { return m_pDevice->CreateIndexBuffer(Length,Usage,Format,Pool,ppIndexBuffer, NULL); }
     HRESULT CreateRenderTarget(UINT Width,UINT Height,D3DFORMAT Format,D3DMULTISAMPLE_TYPE MultiSample,DWORD MultisampleQuality,BOOL Lockable,IDirect3DSurface9** ppSurface) { return m_pDevice->CreateRenderTarget(Width,Height,Format,MultiSample,MultisampleQuality,Lockable,ppSurface, NULL); }
@@ -243,6 +268,7 @@ private:
 
 	// Refcount so we know when to let go of the device
 	uint32 m_nRefCount;
+	bool m_bIsEx;
 
 	// Read the current device state from the device
 	void ReadCurrentDeviceState();

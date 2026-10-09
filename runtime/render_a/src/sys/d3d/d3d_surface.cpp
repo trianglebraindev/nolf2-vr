@@ -1,4 +1,5 @@
 #include "precompile.h"
+#include "d3d_vr.h"
 
 #include "interface_helpers.h"
 #include "pixelformat.h"
@@ -639,6 +640,9 @@ void d3d_SwapBuffers(uint flags)
 	
 	if (!PD3DDEVICE)
 		return;
+
+	// VR: send the finished frame to the headset (also paces the game to it).
+	d3d_VR_OnSwapBuffers();
 
 	if ((flags & FLIPSCREEN_DIRTY) != 0) 
 	{

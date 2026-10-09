@@ -30,6 +30,7 @@ add_library(${PROJECT_NAME} STATIC
 	d3d_texture.cpp
 	d3d_utils.cpp
 	d3d_viewparams.cpp
+	d3d_vr.cpp
 	d3dmeshrendobj_rigid.cpp
 	d3dmeshrendobj_skel.cpp
 	d3dmeshrendobj_vertanim.cpp
@@ -107,3 +108,6 @@ endif(WIN32)
 if(MSVC)
 	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "/wd4996")
 endif(MSVC)
+
+# VR: the OpenXR bridge (vr/xrbridge). Only active with -vr on the command line.
+target_link_libraries(${PROJECT_NAME} LIB_XRBridge)

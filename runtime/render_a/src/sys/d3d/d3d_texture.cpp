@@ -63,17 +63,72 @@ bool d3d_TransferTexture(RTexture* pTexture, TextureData* pTextureData)
 		AddDebugMessage(1, "d3d_TransferTexture: mipmap count is invalid!"); return false; 
 	}
 
+	// Direct3D 9Ex: the texture lives in video memory, which the CPU can't
+	// write directly. Fill a temporary system-memory copy instead, then have
+	// the GPU copy it across with UpdateTexture. (On plain Direct3D 9 the
+	// texture is "managed" and is written directly, as originally.)
+	IDirect3DBaseTexture9* pFinalTexture	= NULL;
+	IDirect3DBaseTexture9* pStagingTexture	= NULL;
+	if (PD3DDEVICE->IsEx())
+	{
+		D3DSURFACE_DESC Desc;
+		HRESULT hResult;
+		if (pTexture->IsCubeMap())
+		{
+			pTexture->m_pD3DCubeTexture->GetLevelDesc(0, &Desc);
+			LPDIRECT3DCUBETEXTURE9 pStagingCube = NULL;
+			hResult = PD3DDEVICE->GetDevice()->CreateCubeTexture(Desc.Width, iRTextureMipLevels, 0, Desc.Format,
+				D3DPOOL_SYSTEMMEM, &pStagingCube, NULL);
+			pFinalTexture	= pTexture->m_pD3DCubeTexture;
+			pStagingTexture	= pStagingCube;
+			if (SUCCEEDED(hResult)) pTexture->m_pD3DCubeTexture = pStagingCube;
+		}
+		else
+		{
+			pTexture->m_pD3DTexture->GetLevelDesc(0, &Desc);
+			LPDIRECT3DTEXTURE9 pStaging2D = NULL;
+			hResult = PD3DDEVICE->GetDevice()->CreateTexture(Desc.Width, Desc.Height, iRTextureMipLevels, 0, Desc.Format,
+				D3DPOOL_SYSTEMMEM, &pStaging2D, NULL);
+			pFinalTexture	= pTexture->m_pD3DTexture;
+			pStagingTexture	= pStaging2D;
+			if (SUCCEEDED(hResult)) pTexture->m_pD3DTexture = pStaging2D;
+		}
+		if (FAILED(hResult) || !pStagingTexture)
+		{
+			AddDebugMessage(1, "d3d_TransferTexture: could not create the staging texture!");
+			return false;
+		}
+	}
+
 	// Go thru each mipmap and copy it.
+	bool bResult = true;
 	for (uint32 i = 0; i < iRTextureMipLevels; ++i) 
 	{
 		uint32 iSrcLvl = i + pTexture->m_iStartMipmap;
 		if (!g_TextureManager.UploadRTexture(pTextureData, iSrcLvl, pTexture, i)) 
 		{ 
-			return false; 
+			bResult = false;
+			break;
 		} 
 	} 
 
-	return true;
+	if (pStagingTexture)
+	{
+		// Put the real texture back and copy the staging data into it.
+		if (pTexture->IsCubeMap())
+			pTexture->m_pD3DCubeTexture = (LPDIRECT3DCUBETEXTURE9)pFinalTexture;
+		else
+			pTexture->m_pD3DTexture = (LPDIRECT3DTEXTURE9)pFinalTexture;
+
+		if (bResult && FAILED(PD3DDEVICE->UpdateTexture(pStagingTexture, pFinalTexture)))
+		{
+			AddDebugMessage(1, "d3d_TransferTexture: UpdateTexture failed!");
+			bResult = false;
+		}
+		pStagingTexture->Release();
+	}
+
+	return bResult;
 }
 
 // Updates the aspect ratio so it's valid for the current settings.
@@ -539,7 +594,10 @@ RTexture* CTextureManager::CreateRTexture(SharedTexture* pSharedTexture, Texture
 		if ((g_Device.GetDeviceCaps()->TextureCaps & D3DPTEXTURECAPS_MIPCUBEMAP) == 0)
 			nMipsToCreate = 0;
 
-		HRESULT hResult = PD3DDEVICE->CreateCubeTexture(max(iTexWidth,iTexHeight),nMipsToCreate,NULL,iFormat,D3DPOOL_MANAGED,&pRTexture->m_pD3DCubeTexture);
+		// Direct3D 9Ex has no managed pool; use video memory (filled through
+		// a staging copy in d3d_TransferTexture).
+		D3DPOOL ePool = PD3DDEVICE->IsEx() ? D3DPOOL_DEFAULT : D3DPOOL_MANAGED;
+		HRESULT hResult = PD3DDEVICE->CreateCubeTexture(max(iTexWidth,iTexHeight),nMipsToCreate,NULL,iFormat,ePool,&pRTexture->m_pD3DCubeTexture);
 		if (hResult != D3D_OK) 
 		{
 			AddDebugMessage(4, "Unable to create (%d) cube texture surface.", max(iTexWidth,iTexHeight));
@@ -557,7 +615,10 @@ RTexture* CTextureManager::CreateRTexture(SharedTexture* pSharedTexture, Texture
 	else 
 	{	
 		// It's just a normal texture...
-		HRESULT hResult = PD3DDEVICE->CreateTexture(iTexWidth,iTexHeight,nMipsToCreate,NULL,iFormat,D3DPOOL_MANAGED,&pRTexture->m_pD3DTexture);
+		// Direct3D 9Ex has no managed pool; use video memory (filled through
+		// a staging copy in d3d_TransferTexture).
+		D3DPOOL ePool = PD3DDEVICE->IsEx() ? D3DPOOL_DEFAULT : D3DPOOL_MANAGED;
+		HRESULT hResult = PD3DDEVICE->CreateTexture(iTexWidth,iTexHeight,nMipsToCreate,NULL,iFormat,ePool,&pRTexture->m_pD3DTexture);
 		if (hResult != D3D_OK) 
 		{
 			AddDebugMessage(4, "Unable to create (%dx%d) texture surface.", iTexWidth, iTexHeight);

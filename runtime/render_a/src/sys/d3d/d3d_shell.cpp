@@ -30,7 +30,16 @@ bool CD3D_Shell::Create()
 	FreeAll();								// Make sure everything is all clean before we start...
 
 	// Create the D3D Object (it lets us Query/Create devices)...
-	m_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+	// Prefer Direct3D 9Ex: it can share textures with Direct3D 11, which
+	// is how frames get to a VR headset. Fall back to plain Direct3D 9.
+	m_pD3DEx = NULL;
+	if (SUCCEEDED(Direct3DCreate9Ex(D3D_SDK_VERSION, &m_pD3DEx)) && m_pD3DEx)
+		m_pD3D = m_pD3DEx;
+	else
+	{
+		m_pD3DEx = NULL;
+		m_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+	}
 	if (!m_pD3D) return false;
 
 	// Get the Desktop display mode...
@@ -45,6 +54,7 @@ bool CD3D_Shell::Create()
 void CD3D_Shell::Reset()
 {
 	m_pD3D = NULL;
+	m_pD3DEx = NULL;
 
 	m_AdapterList.clear();
 }

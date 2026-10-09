@@ -329,8 +329,21 @@ LTRESULT BinkVideoInst::InitScreen()
 
 	D3DFORMAT TexFormat = r_GetRenderStruct()->GetTextureDDFormat1(BPP_32, 0);
 
+	// Direct3D 9Ex (used for VR) has no managed pool: use a lockable
+	// "dynamic" texture in video memory instead. The video is rewritten
+	// every frame anyway, which is exactly what dynamic textures are for.
+	D3DPOOL ePool = D3DPOOL_MANAGED;
+	DWORD dwUsage = 0;
+	IDirect3DDevice9Ex* pDeviceEx = NULL;
+	if (SUCCEEDED(pD3DDevice->QueryInterface(IID_IDirect3DDevice9Ex, (void**)&pDeviceEx)) && pDeviceEx)
+	{
+		pDeviceEx->Release();
+		ePool = D3DPOOL_DEFAULT;
+		dwUsage = D3DUSAGE_DYNAMIC;
+	}
+
 	//now try and actually allocate this texture
-	if(FAILED(pD3DDevice->CreateTexture(nTexWidth, nTexHeight, 1, 0, TexFormat, D3DPOOL_MANAGED, &m_pTexture, NULL)))
+	if(FAILED(pD3DDevice->CreateTexture(nTexWidth, nTexHeight, 1, dwUsage, TexFormat, ePool, &m_pTexture, NULL)))
 	{
 		//we may want to put a fallback for cards that don't support dynamic textures, but I don't
 		//think we will run across any of those...
