@@ -366,7 +366,10 @@ void CPlayerViewAttachmentMgr::ShowPVAttachment( uint8 nPVAttachIndex, bool bVis
 	
 	if( hModel )
 	{
-		g_pCommonLT->SetObjectFlags( hModel, OFT_Flags, (bVisible ? FLAG_VISIBLE : 0), FLAG_VISIBLE );
+		// VR, hands only: sleeves at the (shrunk) forearms stay hidden, even
+		// when the weapon is shown again (e.g. holstering).
+		bool bShow = bVisible && !( m_lstPVAttachments[nPVAttachIndex].m_bAtCuff && g_VRMgr.HideArms() );
+		g_pCommonLT->SetObjectFlags( hModel, OFT_Flags, (bShow ? FLAG_VISIBLE : 0), FLAG_VISIBLE );
 	}
 
 	m_lstPVAttachments[nPVAttachIndex].m_bHidden = !bVisible;

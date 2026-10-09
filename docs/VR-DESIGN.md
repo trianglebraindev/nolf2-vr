@@ -153,16 +153,20 @@ code rather than by editing models where possible.
   weapon's own bones under the root. Pieces are generic (arms and gloves
   together), so it's done with bone hooks (node control functions).
 - Hands only (`VRArms 0`, default): once a wrist is placed, its forearm
-  bone is shrunk into the wrist, so only the gloved hand remains and the
-  fingers keep the game's animation. Sleeves on the `cuff` sockets are
-  hidden.
+  bone is shortened along its length to a cuff at the wrist (thickness
+  kept, so no spike), leaving the gloved hand with the game's finger
+  animation. Sleeves on the `cuff` sockets stay hidden.
 - Left hand free: the left wrist follows the left controller.
 - Two-hand grip: left grip with the left hand within 20 cm of where Cate's
   left hand is on the weapon. The hand goes back onto the weapon and the
   gun turns about the right hand so the line between the hands keeps its
-  direction (steadier aim, aim follows). Let go to free it. The first grab
-  also teaches how the hand sits relative to the controller.
-- Next: a relaxed pose for the free hand's fingers, tool animations
+  direction (steadier aim, aim follows). Let go to free it. Each grab also
+  teaches how the hand sits on the controller (saved to
+  `run\vr_hands.txt`). Hand poses are kept as full bone matrices, since the
+  left arm's bones may be mirrored.
+- Note: `LTVector::Cross` returns b x a; VR code writes the cross product
+  out.
+- Next: open/close the free left hand (grip/trigger curl the fingers), tool animations
   (lock pick etc.), what the left hand does with the trigger and grip.
 
 ## Interface in the headset (first pass)

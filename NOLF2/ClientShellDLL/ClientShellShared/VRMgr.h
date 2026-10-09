@@ -30,7 +30,8 @@ inline LTVector VR_Unrotate(const LTRotation& r, const LTVector& v)
 // length).
 inline LTRotation VR_Arc(const LTVector& a, const LTVector& b)
 {
-	LTVector c = a.Cross(b);
+	// (LTVector::Cross returns b x a, so the cross product is written out.)
+	LTVector c(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 	float w = 1.0f + a.Dot(b);
 	if (w < 1e-4f)
 		return LTRotation(0.0f, 0.0f, 0.0f, 1.0f);	// opposite: leave alone
@@ -168,9 +169,12 @@ private:
 	LTMatrix	m_mLeftWristAnim;
 	bool		m_bTwoHand;
 	LTVector	m_vTwoHandDir;			// right hand -> left hand when grabbed, gun axes
-	bool		m_bLeftOffsetValid;		// left controller -> left wrist, learnt at the first grab
-	LTRotation	m_rLeftOffset;
-	LTVector	m_vLeftOffset;
+	bool		m_bLeftOffsetValid;		// left controller -> left wrist, learnt at each grab
+	LTMatrix	m_mLeftOffset;			// (kept as a full matrix: the left arm's bones may be
+										//  mirrored, which a plain rotation can't hold)
+	bool		GetLeftControllerInModel(LTMatrix& mCtrl) const;
+	void		LoadHandFit();
+	void		SaveHandFit();
 
 	// How a gun sits in your hand, on top of the VRGun* settings.
 	struct GunFit

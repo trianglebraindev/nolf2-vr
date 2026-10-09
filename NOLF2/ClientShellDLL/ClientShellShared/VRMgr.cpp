@@ -96,7 +96,8 @@ static VarTrack g_vtVRGunPitch;
 static VarTrack g_vtVRArms;
 
 static const float kGrabDistanceMeters = 0.2f;	// how close the left hand must be to grab the gun
-static const float kArmShrink = 0.03f;			// forearm size left when hiding arms
+static const float kArmLength = 0.12f;			// how much of the forearm's length is left when hiding arms
+static const char* kHandFitFile = "vr_hands.txt";
 
 static const float kStickDeadZone = 0.15f;
 
@@ -155,7 +156,7 @@ CVRMgr::CVRMgr()
 	m_bTwoHand			= false;
 	m_vTwoHandDir.Init(0.0f, 0.0f, 1.0f);
 	m_bLeftOffsetValid	= false;
-	m_vLeftOffset.Init(0.0f, 0.0f, 0.0f);
+	m_mLeftOffset.Identity();
 	memset(&m_State, 0, sizeof(m_State));
 	m_aPrevButtons[0] = m_aPrevButtons[1] = 0;
 	m_bSnapLatched		= false;
@@ -196,6 +197,7 @@ void CVRMgr::Init()
 	g_vtVRArms.Init(g_pLTClient, "VRArms", NULL, 0.0f);
 
 	LoadGunFits();
+	LoadHandFit();
 }
 
 void CVRMgr::SetDefaultBindings()
@@ -397,6 +399,8 @@ void CVRMgr::SetCurrentGun(const char* pszName, HOBJECT hModel)
 		}
 		strncpy(m_szCurrentGun, pszName, sizeof(m_szCurrentGun) - 1);
 		m_szCurrentGun[sizeof(m_szCurrentGun) - 1] = '\0';
+		if (IsActive())
+			Log("Now holding: %s", m_szCurrentGun[0] ? m_szCurrentGun : "(nothing)");
 		m_bTwoHand = false;
 		m_bLeftAnimValid = false;
 		m_nCurrentFit = -1;
@@ -658,47 +662,97 @@ void CVRMgr::SetGunModelTransform(const LTVector& vPos, const LTRotation& rRot)
 	m_bGunPlaced = true;
 }
 
-// Where the left wrist goes when the left hand is free (model space).
+// A controller's pose in the gun model's own space, as a matrix.
+static void VR_PoseInModel(const LTVector& vCam, const LTRotation& rCam, float fScale,
+	const LTVector& vGunPos, const LTRotation& rGunRot, LTMatrix& mOut)
+{
+	LTVector vModel = VR_Unrotate(rGunRot, vCam / fScale - vGunPos);
+	LTRotation rModel = (~rGunRot) * rCam;
+	rModel.ConvertToMatrix(mOut);
+	mOut.SetTranslation(vModel);
+}
+
+bool CVRMgr::GetLeftControllerInModel(LTMatrix& mCtrl) const
+{
+	LTVector vLeft;
+	LTRotation rLeft;
+	if (!m_bGunPlaced || !GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
+		return false;
+	VR_PoseInModel(vLeft, rLeft, GetGunScale(), m_vGunObjPos, m_rGunObjRot, mCtrl);
+	return true;
+}
+
+// Where the left wrist goes when the left hand is free (model space):
+// the controller, times how the hand sits on it.
 bool CVRMgr::GetLeftWristTarget(LTMatrix& mWrist) const
 {
 	if (!m_bGunPlaced || !m_bLeftAnimValid)
 		return false;
-	LTVector vLeft;
-	LTRotation rLeft;
-	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
+	LTMatrix mCtrl;
+	if (!GetLeftControllerInModel(mCtrl))
 		return false;
 
-	// The left controller in the gun model's own space.
-	const float fScale = GetGunScale();
-	LTVector vModel = VR_Unrotate(m_rGunObjRot, vLeft / fScale - m_vGunObjPos);
-	LTRotation rModel = (~m_rGunObjRot) * rLeft;
-
-	LTRotation rOffset;
-	LTVector vOffset(0.0f, 0.0f, 0.0f);
-	if (m_bLeftOffsetValid)
+	LTMatrix mOffset = m_mLeftOffset;
+	if (!m_bLeftOffsetValid)
 	{
-		rOffset = m_rLeftOffset;
-		vOffset = m_vLeftOffset;
-	}
-	else
-	{
-		// Until the first two-hand grab teaches it better: the hand turned
-		// the way Cate's left hand is on the weapon, as if the left
-		// controller pointed the same way as the right one.
+		// Until the first two-hand grab teaches it: the hand turned the way
+		// Cate's left hand is on the weapon, as if the left controller
+		// pointed the same way as the right one.
 		LTVector vRight;
 		LTRotation rRight;
 		if (!GetHandInCamera(LTVR_RIGHT, vRight, rRight, false))
 			return false;
-		LTRotation rAnim;
-		rAnim.ConvertFromMatrix(m_mLeftWristAnim);
-		rOffset = (~((~m_rGunObjRot) * rRight)) * rAnim;
+		LTMatrix mRight;
+		VR_PoseInModel(vRight, rRight, GetGunScale(), m_vGunObjPos, m_rGunObjRot, mRight);
+		mRight.SetTranslation(0.0f, 0.0f, 0.0f);
+		mOffset = mRight.MakeInverse() * m_mLeftWristAnim;
+		mOffset.SetTranslation(0.0f, 0.0f, 0.0f);
 	}
 
-	LTRotation rWrist = rModel * rOffset;
-	LTVector vWrist = vModel + VR_Rotate(rModel, vOffset);
-	rWrist.ConvertToMatrix(mWrist);
-	mWrist.SetTranslation(vWrist);
+	mWrist = mCtrl * mOffset;
 	return true;
+}
+
+// vr_hands.txt: how the left hand sits on the left controller, learnt at
+// each two-hand grab (3 rows of 4 numbers).
+void CVRMgr::LoadHandFit()
+{
+	FILE* pFile = fopen(kHandFitFile, "r");
+	if (!pFile)
+		return;
+	char szLine[512];
+	while (fgets(szLine, sizeof(szLine), pFile))
+	{
+		if (szLine[0] == '#')
+			continue;
+		LTMatrix m;
+		m.Identity();
+		if (sscanf(szLine, "%f %f %f %f %f %f %f %f %f %f %f %f",
+			&m.m[0][0], &m.m[0][1], &m.m[0][2], &m.m[0][3],
+			&m.m[1][0], &m.m[1][1], &m.m[1][2], &m.m[1][3],
+			&m.m[2][0], &m.m[2][1], &m.m[2][2], &m.m[2][3]) == 12)
+		{
+			m_mLeftOffset = m;
+			m_bLeftOffsetValid = true;
+			break;
+		}
+	}
+	fclose(pFile);
+}
+
+void CVRMgr::SaveHandFit()
+{
+	FILE* pFile = fopen(kHandFitFile, "w");
+	if (!pFile)
+		return;
+	fprintf(pFile, "# NOLF2 VR: how the left hand sits on the left controller.\n");
+	fprintf(pFile, "# Learnt from your last two-hand grab (the hand on the weapon).\n");
+	const LTMatrix& m = m_mLeftOffset;
+	fprintf(pFile, "%f %f %f %f  %f %f %f %f  %f %f %f %f\n",
+		m.m[0][0], m.m[0][1], m.m[0][2], m.m[0][3],
+		m.m[1][0], m.m[1][1], m.m[1][2], m.m[1][3],
+		m.m[2][0], m.m[2][1], m.m[2][2], m.m[2][3]);
+	fclose(pFile);
 }
 
 // Left grip near Cate's left hand: hold the gun with both hands.
@@ -724,15 +778,16 @@ void CVRMgr::UpdateTwoHand()
 	if ((vLeft - vAnimCam).Mag() / fUnitsPerMeter > kGrabDistanceMeters)
 		return;
 
-	// Learn how a hand sits relative to its controller from this grab: the
-	// free left hand uses it from now on.
-	LTVector vModel = VR_Unrotate(m_rGunObjRot, vLeft / fScale - m_vGunObjPos);
-	LTRotation rModel = (~m_rGunObjRot) * rLeft;
-	LTRotation rAnim;
-	rAnim.ConvertFromMatrix(m_mLeftWristAnim);
-	m_rLeftOffset = (~rModel) * rAnim;
-	m_vLeftOffset = VR_Unrotate(rModel, vAnim - vModel);
-	m_bLeftOffsetValid = true;
+	// Each grab teaches how the hand sits on its controller (the way you
+	// hold it when gripping the weapon): the free left hand uses it after
+	// you let go, and it's saved for next time.
+	{
+		LTMatrix mCtrl;
+		VR_PoseInModel(vLeft, rLeft, fScale, m_vGunObjPos, m_rGunObjRot, mCtrl);
+		m_mLeftOffset = mCtrl.MakeInverse() * m_mLeftWristAnim;
+		m_bLeftOffsetValid = true;
+		SaveHandFit();
+	}
 
 	LTVector vDir = vLeft - vRight;
 	float fLen = vDir.Mag();
@@ -787,19 +842,24 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 		return;
 	}
 
-	// Hands only: shrink the forearm into the wrist. Its children (the hand)
-	// have been placed already, so only the forearm's own skin is affected.
+	// Hands only: shorten the forearm to a cuff at the wrist. Only its
+	// length is squashed (along the bone, its X axis), not its thickness,
+	// so the skin between forearm and hand blends into a short cuff rather
+	// than a spike. Its children (the hand) have been placed already, so
+	// only the forearm's own skin is affected.
 	if (*ppArm && p->HideArms())
 	{
+		LTMatrix& mArm = **ppArm;
 		LTVector vWrist;
 		data.m_pNodeTransform->GetTranslation(vWrist);
-		LTMatrix mShrink;
-		mShrink.Identity();
-		mShrink.m[0][0] = mShrink.m[1][1] = mShrink.m[2][2] = kArmShrink;
-		mShrink.SetTranslation(vWrist * (1.0f - kArmShrink));
-		LTMatrix mArm;
-		MatMul(&mArm, &mShrink, *ppArm);
-		**ppArm = mArm;
+		LTVector vWristInArm = mArm.MakeInverse() * vWrist;
+
+		// mArm * T(w) * S(k,1,1) * T(-w): about the wrist, along the bone.
+		LTMatrix mSquash;
+		mSquash.Identity();
+		mSquash.m[0][0] = kArmLength;
+		mSquash.m[0][3] = vWristInArm.x * (1.0f - kArmLength);
+		mArm = mArm * mSquash;
 	}
 	*ppArm = NULL;
 }
