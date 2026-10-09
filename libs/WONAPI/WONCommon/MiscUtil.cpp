@@ -14,7 +14,7 @@ namespace WONAPI
 //----------------------------------------------------------------------------
 bool Browse(const std::string& sURL)
 {
-#ifdef __WIN32
+#ifdef _WIN32
 	string              sBrowser;
 	BOOL                bOK;
 	STARTUPINFO         aStartupInfo;
@@ -50,7 +50,7 @@ bool Browse(const std::string& sURL)
 //----------------------------------------------------------------------------
 bool GetBrowserCommandLineFromRegistry(std::string& sBrowser)
 {
-#ifdef __WIN32
+#ifdef _WIN32
 	LONG  nLong;
 	HKEY  hKey;
 	TCHAR sValue[MAX_PATH];

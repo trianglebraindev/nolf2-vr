@@ -40,6 +40,11 @@ if(MSVC)
 	add_link_options(/DEBUG /OPT:REF /OPT:ICF)
 endif(MSVC)
 
+if(WIN32)
+	# DirectMusic headers removed from modern SDKs (see runtime/compat/directmusic/README.txt).
+	include_directories(BEFORE ${CMAKE_SOURCE_DIR}/runtime/compat/directmusic)
+endif(WIN32)
+
 if(DEBUG)
 	add_definitions(-D_DEBUG)
 else(DEBUG)
