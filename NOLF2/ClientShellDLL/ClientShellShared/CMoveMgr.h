@@ -196,6 +196,11 @@ class CMoveMgr
 
     LTVector	m_vWantedDims;
 
+	// VR: this frame's move-stick direction (world space, length 0..1),
+	// used instead of the forward/strafe flags when m_bVRMove is set.
+	LTVector	m_vVRMove;
+	LTBOOL		m_bVRMove;
+
 	// Movement state.
     uint32      m_dwControlFlags;
     uint32      m_dwLastControlFlags;

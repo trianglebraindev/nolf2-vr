@@ -38,6 +38,7 @@
 #include "rendertargetmgr.h"
 #include "rendererconsolevars.h"
 #include "xrbridge.h"
+#include "ltvr.h"
 
 void d3d_FullDrawScene(const ViewParams& Params, SceneDesc *pDesc);	// d3d_draw.cpp
 
@@ -48,6 +49,22 @@ static IDirect3DSurface9*	g_pVREyeDepth		= NULL;	// shared by both eyes, one aft
 static int					g_nVRRequested		= -1;	// -1 = not checked yet
 static bool					g_bVRFrameOpen		= false;	// BeginFrame done, EndFrame not yet
 static bool					g_bVREyesDrawn		= false;	// eyes rendered during the open frame
+
+// Where the game says the player's eyes are this frame, and the body's
+// heading (see LTVR_SetOrigin). Falls back to the camera if not set.
+static bool					g_bVROriginSet		= false;
+static LTVector				g_vVROrigin;
+static float				g_fVROriginYaw		= 0.0f;
+
+// Latest state handed to the game (LTVR_GetState).
+static LTVR_State			g_VRState;
+
+// Controller buttons bound to engine commands (LTVR_SetBinding).
+struct VRBinding { int nHand; unsigned nButton; int nCommand; };
+static VRBinding			g_aVRBindings[64];
+static int					g_nVRBindings		= 0;
+
+static void VR_BuildState();
 
 //------------------------------------------------------------------
 // Set-up and tear-down
@@ -99,6 +116,7 @@ static void VR_Destroy()
 	}
 	g_bVRFrameOpen = false;
 	g_bVREyesDrawn = false;
+	memset(&g_VRState, 0, sizeof(g_VRState));
 	ClipCursor(NULL);
 }
 
@@ -216,6 +234,7 @@ static bool VR_EnsureFrameOpen()
 	{
 		g_bVRFrameOpen = g_pVRBridge->BeginFrame();
 		g_bVREyesDrawn = false;
+		VR_BuildState();
 	}
 	return g_bVRFrameOpen;
 }
@@ -256,6 +275,148 @@ static LTVector RotateVec(const LTRotation& r, const LTVector& v)
 }
 
 //------------------------------------------------------------------
+// State for the game (ltvr.h)
+//------------------------------------------------------------------
+
+static float VR_UnitsPerMeter()
+{
+	return g_CV_VRUnitsPerMeter.m_Val > 1.0f ? g_CV_VRUnitsPerMeter.m_Val : 60.0f;
+}
+
+static void VR_ToLTPose(const xrb::Pose& in, bool bValid, float fUnitsPerMeter, LTVR_Pose& out)
+{
+	LTVector vPos = XRToLTPos(in.position, fUnitsPerMeter);
+	LTRotation rRot = XRToLTRot(in.orientation);
+	out.valid = bValid ? 1 : 0;
+	out.pos[0] = vPos.x; out.pos[1] = vPos.y; out.pos[2] = vPos.z;
+	for (int i = 0; i < 4; ++i)
+		out.rot[i] = rRot.m_Quat[i];
+}
+
+// Thumbstick pushed firmly in a direction counts as a button press.
+// Press at 0.7, release below 0.5, so it doesn't flicker at the edge.
+static unsigned VR_StickBits(float x, float y, unsigned nPrevBits)
+{
+	unsigned nBits = 0;
+	struct { float v; unsigned bit; } aDir[4] = {
+		{  y, LTVR_BTN_STICK_UP }, { -y, LTVR_BTN_STICK_DOWN },
+		{ -x, LTVR_BTN_STICK_LEFT }, { x, LTVR_BTN_STICK_RIGHT } };
+	for (int i = 0; i < 4; ++i)
+	{
+		float fThreshold = (nPrevBits & aDir[i].bit) ? 0.5f : 0.7f;
+		if (aDir[i].v > fThreshold)
+			nBits |= aDir[i].bit;
+	}
+	return nBits;
+}
+
+// Rebuilds g_VRState from the bridge (after each BeginFrame).
+static void VR_BuildState()
+{
+	LTVR_State prev = g_VRState;
+	memset(&g_VRState, 0, sizeof(g_VRState));
+	g_VRState.version = LTVR_VERSION;
+	if (!d3d_VR_IsActive())
+		return;
+
+	const float fUnitsPerMeter = VR_UnitsPerMeter();
+	g_VRState.active = 1;
+	g_VRState.tracking = g_pVRBridge->HasValidViews() ? 1 : 0;
+	g_VRState.unitsPerMeter = fUnitsPerMeter;
+	VR_ToLTPose(g_pVRBridge->GetHeadPose(), g_VRState.tracking != 0, fUnitsPerMeter, g_VRState.head);
+
+	for (int h = 0; h < 2; ++h)
+	{
+		const xrb::HandInput& in = g_pVRBridge->GetHand((xrb::Hand)h);
+		LTVR_HandState& out = g_VRState.hand[h];
+		out.active = in.active ? 1 : 0;
+		VR_ToLTPose(in.grip, in.gripValid, fUnitsPerMeter, out.grip);
+		VR_ToLTPose(in.aim, in.aimValid, fUnitsPerMeter, out.aim);
+		out.trigger = in.trigger;
+		out.squeeze = in.squeeze;
+		out.stick[0] = in.stickX;
+		out.stick[1] = in.stickY;
+		unsigned nBits = 0;
+		if (in.trigger > 0.5f)	nBits |= LTVR_BTN_TRIGGER;
+		if (in.squeeze > 0.5f)	nBits |= LTVR_BTN_GRIP;
+		if (in.stickClick)		nBits |= LTVR_BTN_STICK;
+		if (in.primary)			nBits |= LTVR_BTN_PRIMARY;
+		if (in.secondary)		nBits |= LTVR_BTN_SECONDARY;
+		if (in.menu)			nBits |= LTVR_BTN_MENU;
+		nBits |= VR_StickBits(in.stickX, in.stickY, prev.hand[h].buttons);
+		out.buttons = nBits;
+	}
+}
+
+void d3d_VR_ApplyCommands(uint8* pCommands, uint32 nCommands)
+{
+	if (!g_VRState.active || !pCommands)
+		return;
+	for (int i = 0; i < g_nVRBindings; ++i)
+	{
+		const VRBinding& b = g_aVRBindings[i];
+		if (b.nCommand >= 0 && (uint32)b.nCommand < nCommands && b.nHand >= 0 && b.nHand < 2 &&
+			(g_VRState.hand[b.nHand].buttons & b.nButton))
+		{
+			pCommands[b.nCommand] = 1;
+		}
+	}
+}
+
+// Exported to the game DLL (see ltvr.h).
+extern "C" __declspec(dllexport) int LTVR_GetState(LTVR_State* pState)
+{
+	if (!pState)
+		return 0;
+	*pState = g_VRState;
+	pState->version = LTVR_VERSION;
+	return pState->active;
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetOrigin(const float pos[3], float fYaw)
+{
+	if (!pos)
+		return;
+	g_vVROrigin.Init(pos[0], pos[1], pos[2]);
+	g_fVROriginYaw = fYaw;
+	g_bVROriginSet = true;
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetBinding(int hand, unsigned button, int commandId)
+{
+	// Replace an existing binding of the same button.
+	for (int i = 0; i < g_nVRBindings; ++i)
+	{
+		if (g_aVRBindings[i].nHand == hand && g_aVRBindings[i].nButton == button)
+		{
+			if (commandId < 0)
+				g_aVRBindings[i] = g_aVRBindings[--g_nVRBindings];
+			else
+				g_aVRBindings[i].nCommand = commandId;
+			return;
+		}
+	}
+	if (commandId >= 0 && g_nVRBindings < (int)(sizeof(g_aVRBindings) / sizeof(g_aVRBindings[0])))
+	{
+		g_aVRBindings[g_nVRBindings].nHand = hand;
+		g_aVRBindings[g_nVRBindings].nButton = button;
+		g_aVRBindings[g_nVRBindings].nCommand = commandId;
+		++g_nVRBindings;
+	}
+}
+
+extern "C" __declspec(dllexport) void LTVR_ClearBindings(void)
+{
+	g_nVRBindings = 0;
+}
+
+extern "C" __declspec(dllexport) void LTVR_Recenter(void)
+{
+	if (g_pVRBridge)
+		g_pVRBridge->Recenter();
+}
+
+//------------------------------------------------------------------
 // Stereo rendering
 //------------------------------------------------------------------
 
@@ -289,12 +450,15 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 	pDevice->GetRenderTarget(0, &pOldRT);
 	pDevice->GetDepthStencilSurface(&pOldDepth);
 
-	const float fUnitsPerMeter = g_CV_VRUnitsPerMeter.m_Val > 1.0f ? g_CV_VRUnitsPerMeter.m_Val : 60.0f;
+	const float fUnitsPerMeter = VR_UnitsPerMeter();
 	const uint32 nEyeWidth  = g_pVRBridge->GetEyeWidth();
 	const uint32 nEyeHeight = g_pVRBridge->GetEyeHeight();
 
-	// The game's camera gives the body: position and heading only.
-	const LTRotation rBody = YawOnly(pDesc->m_Rotation);
+	// The body: where the player's eyes are (head untracked) and which way
+	// the body faces. The game provides this (LTVR_SetOrigin); if it
+	// hasn't this frame, fall back to the camera's position and heading.
+	const LTRotation rBody = g_bVROriginSet ? LTRotation(LTVector(0.0f, 1.0f, 0.0f), g_fVROriginYaw) : YawOnly(pDesc->m_Rotation);
+	const LTVector vBodyPos = g_bVROriginSet ? g_vVROrigin : pDesc->m_Pos;
 
 	for (int e = 0; e < 2; ++e)
 	{
@@ -305,7 +469,7 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 		eyeDesc.m_Rect.top		= 0;
 		eyeDesc.m_Rect.right	= (int)nEyeWidth;
 		eyeDesc.m_Rect.bottom	= (int)nEyeHeight;
-		eyeDesc.m_Pos			= pDesc->m_Pos + RotateVec(rBody, XRToLTPos(view.pose.position, fUnitsPerMeter));
+		eyeDesc.m_Pos			= vBodyPos + RotateVec(rBody, XRToLTPos(view.pose.position, fUnitsPerMeter));
 		eyeDesc.m_Rotation		= rBody * XRToLTRot(view.pose.orientation);
 		eyeDesc.m_FrameTime		= 0.0f;	// time moves once per frame, in the monitor pass
 
@@ -412,6 +576,9 @@ void d3d_VR_OnSwapBuffers()
 		g_bVRFrameOpen = false;
 		g_bVREyesDrawn = false;
 	}
+
+	// The game sets the origin again each frame it draws the world.
+	g_bVROriginSet = false;
 
 	VR_UpdateCursorClip();
 

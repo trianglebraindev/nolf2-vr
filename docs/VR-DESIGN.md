@@ -11,9 +11,9 @@ questions stay marked **(open)** until Tre decides them.
 | 1a | Headset plumbing (D3D9Ex -> D3D11 -> OpenXR), stand-alone probe | done |
 | 1b | Game on a floating screen in the headset | done |
 | 2 | Stereo 3D world + head tracking (mouse/keys still drive the body) | done (90 fps held at 3072x3264/eye) |
-| 3 | Game-side camera: head drives look; mouse/stick only turns the body; bob/roll/shake tamed | |
+| 3 | Game-side camera: head drives look; mouse/stick only turns the body; bob/roll/shake tamed | done (in test) |
 | 4 | Motion controllers: weapon in hand, aim from the muzzle, two-hand stabilising | |
-| 5 | Locomotion and turning options (below), controller bindings | |
+| 5 | Locomotion and turning options (below), controller bindings | first pass in test: smooth/snap turn, head/hand-relative analog walk, bindings |
 | 6 | HUD in the world (wrist / weapon), menus with a laser pointer | |
 | 7 | Gadgets and interactions (search, lockpick, pick up), vehicles, cutscenes | |
 | later | Manual reloading (Tre: fine to skip at first) | |
@@ -80,3 +80,31 @@ needs. Not ordered within a group yet.
 - Recentre only once the head is actively tracked and the session is visible
   (an early placeholder pose put the view high above the character). The
   runtime's own recentre is followed. Interim recentre key: Home.
+- Game <-> engine VR interface: `sdk/inc/ltvr.h`. Lithtech.exe exports
+  `LTVR_GetState / SetOrigin / SetBinding / ClearBindings / Recenter`;
+  the game finds them with GetProcAddress, so the game DLLs still load
+  in the flat-screen engine. The game (`VRMgr.cpp`) owns the layout;
+  the engine turns bound controller buttons into game commands during
+  input processing, so they behave exactly like keys.
+- Crash reports: any crash writes `run\crash_<date>_<time>.txt` (readable
+  call stack) and a matching `.dmp` for Visual Studio.
+
+## Controller layout (first pass, for testing)
+
+| Control | In play | In menus |
+|---|---|---|
+| Left stick | walk (push past 80% to run) | navigate |
+| Right stick left/right | smooth turn (snap optional) | navigate |
+| Right stick up / down | jump / crouch toggle | navigate |
+| Right trigger | fire | select |
+| Right grip | next weapon (until the hand ring exists) | |
+| Right A / B | next ammo / holster | select / back |
+| Right stick click | reload | |
+| Left trigger | activate (use, talk, search) | select |
+| Left X | mission objectives | |
+| Left Y or menu button | pause menu | back |
+| Home key (keyboard) | recentre | recentre |
+
+Console settings (type in the console or add `+Name value` to the launch
+line): `VRSnapTurn 0/1`, `VRTurnSpeed 150` (degrees per second),
+`VRSnapAngle 45`, `VRMoveWithHand 0/1`, `VRUnitsPerMeter 60`.

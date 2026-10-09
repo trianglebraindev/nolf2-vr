@@ -975,6 +975,10 @@ LTRESULT CClientMgr::Update()
     return LT_OK;                                   // All done
 }
 
+// VR (render_a/src/sys/d3d/d3d_vr.cpp): controller buttons the game has
+// bound to commands switch those commands on.
+void d3d_VR_ApplyCommands(uint8* pCommands, uint32 nCommands);
+
 void CClientMgr::ProcessAllInput(bool bForceClear) {
 
     int32 changes[MAX_CLIENT_COMMANDS], nChanges = 0;
@@ -990,6 +994,8 @@ void CClientMgr::ProcessAllInput(bool bForceClear) {
     {
         m_InputMgr->ReadInput(m_InputMgr, pCurSlot, m_AxisOffsets);
     }
+
+    d3d_VR_ApplyCommands(pCurSlot, MAX_CLIENT_COMMANDS);
 
     if (!m_bInputState || (bForceClear || dsi_IsConsoleUp()))
     {

@@ -11,6 +11,7 @@
 // ----------------------------------------------------------------------- //
 
 #include "stdafx.h"
+#include "VRMgr.h"
 #include "GameClientShell.h"
 #include "InterfaceMgr.h"
 #include "PlayerMgr.h"
@@ -1539,6 +1540,9 @@ void CGameClientShell::OnExitWorld()
 
 void CGameClientShell::PreUpdate()
 {
+	// VR: read the headset and controllers before anything else updates.
+	g_VRMgr.Update(g_pLTClient->GetFrameTime());
+
 	GetPlayerMgr()->PreUpdate();
 	GetInterfaceMgr( )->PreUpdate();
 }

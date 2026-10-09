@@ -58,6 +58,25 @@ struct EyeView
 
 enum Eye { EYE_LEFT = 0, EYE_RIGHT = 1, EYE_COUNT = 2 };
 
+enum Hand { HAND_LEFT = 0, HAND_RIGHT = 1, HAND_COUNT = 2 };
+
+// One motion controller. Poses are in the same space as the eye views.
+struct HandInput
+{
+	bool	active;			// connected and tracked this frame
+	bool	gripValid;
+	bool	aimValid;
+	Pose	grip;			// where the hand holds the controller
+	Pose	aim;			// pointing ray (forward = -Z, OpenXR convention)
+	float	trigger;		// 0..1
+	float	squeeze;		// 0..1
+	float	stickX, stickY;	// -1..1, right / forward positive
+	bool	stickClick;
+	bool	primary;		// A (right) / X (left)
+	bool	secondary;		// B (right) / Y (left)
+	bool	menu;			// left menu button
+};
+
 struct ScreenDesc
 {
 	unsigned	width, height;		// pixel size of the screen texture
@@ -122,6 +141,14 @@ public:
 
 	// Where the head is, in the same space as the eye views.
 	const Pose&			GetHeadPose() const;
+
+	// Motion controller state, read in BeginFrame. Buttons and sticks
+	// only update while the game has input focus.
+	const HandInput&	GetHand(Hand eHand) const;
+
+	// True while the headset is showing our frames and the app has
+	// input focus.
+	bool				HasFocus() const;
 
 	// Re-centre: the current head position/heading becomes the origin.
 	// Takes effect at the next BeginFrame where the head is tracked.

@@ -4,7 +4,9 @@ REM  Runs the game in VR: the 3D world in stereo with head tracking;
 REM  menus and movies on a large floating screen.
 REM  World scale: add e.g. +VRUnitsPerMeter 55 to the line below.
 REM  Connect the Quest through Virtual Desktop (VDXR) first.
-REM  VR log: run\xrbridge.log
+REM  Controller layout and VR settings: docs\VR-DESIGN.md
+REM  Logs: run\xrbridge.log (headset), run\vr_game.log (game side)
+REM  If it crashes: run\crash_*.txt explains where; send that file.
 REM ============================================================
 REM  +DisableHardwareCursor: the normal mouse pointer is drawn by Windows on
 REM  top of the desktop, so it never reaches the headset. The game's own

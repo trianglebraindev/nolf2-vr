@@ -21,6 +21,7 @@
 #include "ClientWeaponUtils.h"
 #include "MsgIDs.h"
 #include "PlayerShared.h"
+#include "VRMgr.h"
 #include "SurfaceFunctions.h"
 #include "SFXMgr.h"
 #include "CharacterFX.h"
@@ -120,6 +121,8 @@ CMoveMgr::CMoveMgr()
 	g_pMoveMgr = this;
 
 	m_vWantedDims.Init(1, 1, 1);
+	m_vVRMove.Init(0, 0, 0);
+	m_bVRMove = LTFALSE;
 
     m_hObject = LTNULL;
 
@@ -422,6 +425,8 @@ void CMoveMgr::UpdateControlFlags()
 
 void CMoveMgr::UpdateNormalControlFlags()
 {
+	m_bVRMove = LTFALSE;
+
 	if( !g_pInterfaceMgr->AllowCameraMovement() ) 
 	{
 		// Don't clear the duck flag...
@@ -555,6 +560,37 @@ void CMoveMgr::UpdateNormalControlFlags()
 	if ((m_dwControlFlags & BC_CFLG_LEFT) && (m_dwControlFlags & BC_CFLG_STRAFE))
 	{
 		m_dwControlFlags |= BC_CFLG_STRAFE_LEFT;
+	}
+
+	// VR: walking with the move stick. Its exact direction goes to the
+	// motion code (m_vVRMove); the usual forward/strafe flags are set too,
+	// so footstep noise, animations and "is the player moving" all work.
+	if (g_VRMgr.IsActive())
+	{
+		float fBodyYaw = g_pPlayerMgr->GetYaw();
+		LTVector vMove = g_VRMgr.GetMoveVector(fBodyYaw);
+		float fAmount = vMove.Mag();
+		if (fAmount > 0.0f)
+		{
+			m_bVRMove = LTTRUE;
+			m_vVRMove = vMove;
+
+			LTVector vBodyForward((float)sin(fBodyYaw), 0.0f, (float)cos(fBodyYaw));
+			LTVector vBodyRight((float)cos(fBodyYaw), 0.0f, -(float)sin(fBodyYaw));
+			float fForward = vMove.Dot(vBodyForward);
+			float fRight = vMove.Dot(vBodyRight);
+			if (fForward > 0.3f * fAmount)		m_dwControlFlags |= BC_CFLG_FORWARD;
+			else if (fForward < -0.3f * fAmount)	m_dwControlFlags |= BC_CFLG_REVERSE;
+			if (fRight > 0.3f * fAmount)			m_dwControlFlags |= BC_CFLG_STRAFE_RIGHT;
+			else if (fRight < -0.3f * fAmount)	m_dwControlFlags |= BC_CFLG_STRAFE_LEFT;
+
+			// A light push walks (quietly - this matters for stealth), a
+			// full push runs.
+			if (fAmount > 0.8f && !(m_dwControlFlags & BC_CFLG_DUCK) && !g_pPlayerMgr->GetLeanMgr()->IsLeaning())
+				m_dwControlFlags |= BC_CFLG_RUN;
+			else
+				m_dwControlFlags &= ~BC_CFLG_RUN;
+		}
 	}
 
 	if ( (m_dwControlFlags & BC_CFLG_FORWARD) ||
@@ -1380,12 +1416,24 @@ void CMoveMgr::UpdateNormalMotion()
 
 	if (!g_pPlayerMgr->IsPlayerDead())
 	{
-		if (m_dwControlFlags & BC_CFLG_FORWARD)
+		if (m_bVRMove)
+		{
+			// VR: accelerate along the move stick's direction, on the ground.
+			LTVector vDir = m_vVRMove;
+			vDir.y = 0.0f;
+			if (vDir.MagSqr() > 0.0f)
+			{
+				vDir.Normalize();
+				vAccel += (vDir * fMoveAccel);
+			}
+		}
+
+		if (!m_bVRMove && (m_dwControlFlags & BC_CFLG_FORWARD))
 		{
 			vAccel += (vForward * fMoveAccel);
 		}
 
-		if (m_dwControlFlags & BC_CFLG_REVERSE)
+		if (!m_bVRMove && (m_dwControlFlags & BC_CFLG_REVERSE))
 		{
 			vAccel -= (vForward * fMoveAccel);
 		}
@@ -1417,12 +1465,12 @@ void CMoveMgr::UpdateNormalMotion()
 		}
 
 
-		if (m_dwControlFlags & BC_CFLG_STRAFE_LEFT)
+		if (!m_bVRMove && (m_dwControlFlags & BC_CFLG_STRAFE_LEFT))
 		{
 			vAccel -= (vRight * fMoveAccel);
 		}
 
-		if (m_dwControlFlags & BC_CFLG_STRAFE_RIGHT)
+		if (!m_bVRMove && (m_dwControlFlags & BC_CFLG_STRAFE_RIGHT))
 		{
 			vAccel += (vRight * fMoveAccel);
 		}

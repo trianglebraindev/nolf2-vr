@@ -36,6 +36,10 @@ bool d3d_VR_IsActive();
 // into the headset's textures.
 void d3d_VR_RenderEyes(SceneDesc* pDesc);
 
+// Called from the engine's input processing: controller buttons that the
+// game has bound to commands (LTVR_SetBinding) switch those commands on.
+void d3d_VR_ApplyCommands(uint8* pCommands, uint32 nCommands);
+
 // Called once per frame, just before Present: sends the finished frame
 // to the headset (3D eyes if they were drawn this frame, otherwise the
 // flat screen), then waits for the headset's next frame slot. That wait

@@ -46,6 +46,7 @@ add_executable(${PROJECT_NAME} WIN32
 	../shared/src/classbind.cpp
 	../server/src/classmgr.cpp
 	../kernel/src/sys/win/client.cpp
+	../kernel/src/sys/win/crashreport.cpp
 	src/client_formatmgr.cpp
 	src/client_graphmgr.cpp
 	src/client_ticks.cpp

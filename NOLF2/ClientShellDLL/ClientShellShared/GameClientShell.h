@@ -149,6 +149,10 @@ public:
 
 	bool		LauncherServerApp( char const* pszProfileFile );
 
+	// NOLF2 VR: lets the controllers press a key (menu navigation), going
+	// through the same path as a real key press.
+	void		VR_SendKey(int key) { OnKeyDown(key, 0); OnKeyUp(key); }
+
 protected :
     uint32      OnEngineInitialized(RMode *pMode, LTGUID *pAppGuid);
 	void		OnEngineTerm();

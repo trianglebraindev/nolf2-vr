@@ -1006,8 +1006,13 @@ bool SetupArgs(const char* pszCommandLine)
 
 
 
+void CrashReport_Install();	// crashreport.cpp
+
 extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow) 
 {
+	// On a crash, write crash_<time>.txt/.dmp into the working folder.
+	CrashReport_Install();
+
 	LTMemInit();
 
     g_EngineStartMS = timeGetTime();

@@ -212,6 +212,7 @@ add_library(${PROJECT_NAME} SHARED
 	../ClientShellShared/VisionModeMgr.cpp
 	../ClientShellShared/VKDefs.cpp
 	../../Shared/WaveFn.cpp
+	../ClientShellShared/VRMgr.cpp
 	../ClientShellShared/WeaponChooser.cpp
 	../ClientShellShared/WeaponFX.cpp
 	../../Shared/WeaponMgr.cpp

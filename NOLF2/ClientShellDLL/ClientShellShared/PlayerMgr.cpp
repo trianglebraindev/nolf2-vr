@@ -28,6 +28,7 @@
 #include "PlayerShared.h"
 #include "Searcher.h"
 #include "VarTrack.h"
+#include "VRMgr.h"
 #include "VehicleMgr.h"
 #include "VisionModeMgr.h"
 #include "VolumeBrushFX.h"
@@ -3513,6 +3514,20 @@ void CPlayerMgr::UpdateCameraPosition()
 			m_fModelAttachPitch		= EA.y;
 			m_fModelAttachRoll		= EA.z;
 		}
+		else if (g_VRMgr.IsActive())
+		{
+			// VR: no head bob or camera shake (moving the view without the
+			// head moving is what makes people sick). This is where the eyes
+			// are with the head untracked; the engine builds the headset view
+			// on top of it, and the camera itself goes where the head really
+			// is (for aiming, sound, and everything else that uses it).
+			vPos.y	+= m_fCamDuck;
+			g_VRMgr.SetOrigin(vPos, m_fYaw);
+
+			LTRotation rBody(0.0f, m_fYaw, 0.0f);
+			LTVector vHead = g_VRMgr.GetHeadOffset();
+			vPos += rBody.Right() * vHead.x + rBody.Up() * vHead.y + rBody.Forward() * vHead.z;
+		}
 		else
 		{
 			//normal updating of the head position
@@ -3704,6 +3719,12 @@ void CPlayerMgr::CalculateCameraRotation()
 
 	m_fYaw += fYawDelta;
 
+	// VR: the turn stick turns the body.
+	if (g_VRMgr.IsActive() && !bIsVehicle)
+	{
+		m_fYaw += g_VRMgr.GetTurnDelta(g_pGameClientShell->GetFrameTime());
+	}
+
 	// [kml] 12/26/00 Check varying degrees of strafe and look.
 	if(!(m_dwPlayerFlags & BC_CFLG_STRAFE))
 	{
@@ -3763,6 +3784,14 @@ void CPlayerMgr::CalculateCameraRotation()
 	if (m_fPitch < -fMinY) m_fPitch = -fMinY;
 	if (m_fPitch > fMinY)  m_fPitch = fMinY;
 
+	// VR: looking up and down is the head's job. Keep the game's pitch in
+	// step with it (other systems read it), and never roll the view.
+	if (g_VRMgr.IsActive() && !bIsVehicle)
+	{
+		m_fPitch = g_VRMgr.GetHeadPitch();
+		m_fRoll = 0.0f;
+	}
+
 
 	// Set camera and player variables...
 
@@ -3820,11 +3849,21 @@ LTBOOL CPlayerMgr::UpdateCameraRotation()
 	{
 		if (!m_bCameraAttachedToHead)
 		{
-			float fPitch = m_fPitch + vPitchYawRollDelta.x;
-			float fYaw   = m_fYaw	+ vPitchYawRollDelta.y;
-			float fRoll  = m_fRoll  + vPitchYawRollDelta.z;
+			if (g_VRMgr.IsActive())
+			{
+				// VR: the body's heading comes from the game (stick / mouse
+				// turning); everything else comes from the head. No recoil or
+				// shake rotation: the view must only move when the head does.
+				m_rRotation = LTRotation(0.0f, m_fYaw, 0.0f) * g_VRMgr.GetHeadRotation();
+			}
+			else
+			{
+				float fPitch = m_fPitch + vPitchYawRollDelta.x;
+				float fYaw   = m_fYaw	+ vPitchYawRollDelta.y;
+				float fRoll  = m_fRoll  + vPitchYawRollDelta.z;
 
-			m_rRotation = LTRotation(fPitch, fYaw, fRoll);
+				m_rRotation = LTRotation(fPitch, fYaw, fRoll);
+			}
 		}
 
 		g_pLTClient->SetObjectRotation(m_hCamera, &m_rRotation);

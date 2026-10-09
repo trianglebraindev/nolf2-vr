@@ -291,6 +291,16 @@ struct Bridge::Impl
 	Swapchain				m_ScreenChain;
 	ScreenDesc				m_Screen;
 
+	// Controllers
+	XrActionSet				m_hActionSet;
+	XrAction				m_hGripPose, m_hAimPose;
+	XrAction				m_hTrigger, m_hSqueeze, m_hStick;
+	XrAction				m_hStickClick, m_hPrimary, m_hSecondary, m_hMenu;
+	XrPath					m_aHandPath[HAND_COUNT];
+	XrSpace					m_aGripSpace[HAND_COUNT];
+	XrSpace					m_aAimSpace[HAND_COUNT];
+	HandInput				m_aHands[HAND_COUNT];
+
 	Impl()
 	{
 		m_hInstance = XR_NULL_HANDLE;
@@ -313,6 +323,15 @@ struct Bridge::Impl
 		m_pDev11 = NULL; m_pCtx11 = NULL; m_pQuery11 = NULL;
 		m_pVS = NULL; m_pPS = NULL; m_pSampler = NULL; m_pParams = NULL; m_pRaster = NULL;
 		ZeroMemory(&m_Screen, sizeof(m_Screen));
+		m_hActionSet = XR_NULL_HANDLE;
+		m_hGripPose = m_hAimPose = m_hTrigger = m_hSqueeze = m_hStick = XR_NULL_HANDLE;
+		m_hStickClick = m_hPrimary = m_hSecondary = m_hMenu = XR_NULL_HANDLE;
+		for (int h = 0; h < HAND_COUNT; ++h)
+		{
+			m_aHandPath[h] = XR_NULL_PATH;
+			m_aGripSpace[h] = m_aAimSpace[h] = XR_NULL_HANDLE;
+		}
+		ZeroMemory(m_aHands, sizeof(m_aHands));
 	}
 
 	bool Check(XrResult res, const char* pszWhat)
@@ -330,6 +349,11 @@ struct Bridge::Impl
 	bool CreateCopyPipeline();
 	bool CreateSwapchain(Swapchain& chain, unsigned nWidth, unsigned nHeight);
 	bool CreateAppSpace(const XrPosef& offset);
+	XrPath Path(const char* psz);
+	XrAction CreateAction(const char* pszName, const char* pszLocalized, XrActionType eType, bool bBothHands);
+	bool CreateInput();
+	void UpdateInput();
+	void DestroyInput();
 	void PollEvents();
 	void WaitForD3D9();
 	void WaitForD3D11();
@@ -704,6 +728,218 @@ bool Bridge::Impl::CreateAppSpace(const XrPosef& offset)
 	return Check(xrCreateReferenceSpace(m_hSession, &rci, &m_hAppSpace), "xrCreateReferenceSpace(app)");
 }
 
+//------------------------------------------------------------------
+// Controllers (OpenXR actions)
+//------------------------------------------------------------------
+
+XrPath Bridge::Impl::Path(const char* psz)
+{
+	XrPath path = XR_NULL_PATH;
+	xrStringToPath(m_hInstance, psz, &path);
+	return path;
+}
+
+XrAction Bridge::Impl::CreateAction(const char* pszName, const char* pszLocalized, XrActionType eType, bool bBothHands)
+{
+	XrActionCreateInfo ci;
+	ZeroMemory(&ci, sizeof(ci));
+	ci.type = XR_TYPE_ACTION_CREATE_INFO;
+	strncpy(ci.actionName, pszName, XR_MAX_ACTION_NAME_SIZE - 1);
+	strncpy(ci.localizedActionName, pszLocalized, XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+	ci.actionType = eType;
+	ci.countSubactionPaths = bBothHands ? HAND_COUNT : 1;
+	ci.subactionPaths = bBothHands ? m_aHandPath : &m_aHandPath[HAND_LEFT];
+	XrAction hAction = XR_NULL_HANDLE;
+	Check(xrCreateAction(m_hActionSet, &ci, &hAction), pszName);
+	return hAction;
+}
+
+bool Bridge::Impl::CreateInput()
+{
+	m_aHandPath[HAND_LEFT]  = Path("/user/hand/left");
+	m_aHandPath[HAND_RIGHT] = Path("/user/hand/right");
+
+	XrActionSetCreateInfo asci;
+	ZeroMemory(&asci, sizeof(asci));
+	asci.type = XR_TYPE_ACTION_SET_CREATE_INFO;
+	strncpy(asci.actionSetName, "gameplay", XR_MAX_ACTION_SET_NAME_SIZE - 1);
+	strncpy(asci.localizedActionSetName, "Gameplay", XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE - 1);
+	if (!Check(xrCreateActionSet(m_hInstance, &asci, &m_hActionSet), "xrCreateActionSet"))
+		return false;
+
+	m_hGripPose		= CreateAction("grip_pose",		"Hand pose",		XR_ACTION_TYPE_POSE_INPUT,		true);
+	m_hAimPose		= CreateAction("aim_pose",		"Pointer pose",		XR_ACTION_TYPE_POSE_INPUT,		true);
+	m_hTrigger		= CreateAction("trigger",		"Trigger",			XR_ACTION_TYPE_FLOAT_INPUT,		true);
+	m_hSqueeze		= CreateAction("squeeze",		"Grip",				XR_ACTION_TYPE_FLOAT_INPUT,		true);
+	m_hStick		= CreateAction("thumbstick",	"Thumbstick",		XR_ACTION_TYPE_VECTOR2F_INPUT,	true);
+	m_hStickClick	= CreateAction("thumbstick_click", "Thumbstick click", XR_ACTION_TYPE_BOOLEAN_INPUT,	true);
+	m_hPrimary		= CreateAction("primary",		"A / X button",		XR_ACTION_TYPE_BOOLEAN_INPUT,	true);
+	m_hSecondary	= CreateAction("secondary",		"B / Y button",		XR_ACTION_TYPE_BOOLEAN_INPUT,	true);
+	m_hMenu			= CreateAction("menu",			"Menu button",		XR_ACTION_TYPE_BOOLEAN_INPUT,	false);
+
+	// Meta Quest Touch controllers (what Virtual Desktop presents).
+	struct { XrAction a; const char* psz; } aBind[] = {
+		{ m_hGripPose,		"/user/hand/left/input/grip/pose" },
+		{ m_hGripPose,		"/user/hand/right/input/grip/pose" },
+		{ m_hAimPose,		"/user/hand/left/input/aim/pose" },
+		{ m_hAimPose,		"/user/hand/right/input/aim/pose" },
+		{ m_hTrigger,		"/user/hand/left/input/trigger/value" },
+		{ m_hTrigger,		"/user/hand/right/input/trigger/value" },
+		{ m_hSqueeze,		"/user/hand/left/input/squeeze/value" },
+		{ m_hSqueeze,		"/user/hand/right/input/squeeze/value" },
+		{ m_hStick,			"/user/hand/left/input/thumbstick" },
+		{ m_hStick,			"/user/hand/right/input/thumbstick" },
+		{ m_hStickClick,	"/user/hand/left/input/thumbstick/click" },
+		{ m_hStickClick,	"/user/hand/right/input/thumbstick/click" },
+		{ m_hPrimary,		"/user/hand/left/input/x/click" },
+		{ m_hPrimary,		"/user/hand/right/input/a/click" },
+		{ m_hSecondary,		"/user/hand/left/input/y/click" },
+		{ m_hSecondary,		"/user/hand/right/input/b/click" },
+		{ m_hMenu,			"/user/hand/left/input/menu/click" },
+	};
+	const uint32_t nBind = sizeof(aBind) / sizeof(aBind[0]);
+	XrActionSuggestedBinding aSuggested[sizeof(aBind) / sizeof(aBind[0])];
+	for (uint32_t i = 0; i < nBind; ++i)
+	{
+		aSuggested[i].action = aBind[i].a;
+		aSuggested[i].binding = Path(aBind[i].psz);
+	}
+	XrInteractionProfileSuggestedBinding sb;
+	ZeroMemory(&sb, sizeof(sb));
+	sb.type = XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING;
+	sb.interactionProfile = Path("/interaction_profiles/oculus/touch_controller");
+	sb.countSuggestedBindings = nBind;
+	sb.suggestedBindings = aSuggested;
+	if (!Check(xrSuggestInteractionProfileBindings(m_hInstance, &sb), "xrSuggestInteractionProfileBindings(touch)"))
+		return false;
+
+	XrSessionActionSetsAttachInfo ai;
+	ZeroMemory(&ai, sizeof(ai));
+	ai.type = XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO;
+	ai.countActionSets = 1;
+	ai.actionSets = &m_hActionSet;
+	if (!Check(xrAttachSessionActionSets(m_hSession, &ai), "xrAttachSessionActionSets"))
+		return false;
+
+	for (int h = 0; h < HAND_COUNT; ++h)
+	{
+		XrActionSpaceCreateInfo sci;
+		ZeroMemory(&sci, sizeof(sci));
+		sci.type = XR_TYPE_ACTION_SPACE_CREATE_INFO;
+		sci.subactionPath = m_aHandPath[h];
+		sci.poseInActionSpace = IdentityPose();
+		sci.action = m_hGripPose;
+		Check(xrCreateActionSpace(m_hSession, &sci, &m_aGripSpace[h]), "xrCreateActionSpace(grip)");
+		sci.action = m_hAimPose;
+		Check(xrCreateActionSpace(m_hSession, &sci, &m_aAimSpace[h]), "xrCreateActionSpace(aim)");
+	}
+
+	Log("Controllers set up (Touch controller bindings)");
+	return true;
+}
+
+void Bridge::Impl::DestroyInput()
+{
+	for (int h = 0; h < HAND_COUNT; ++h)
+	{
+		if (m_aGripSpace[h] != XR_NULL_HANDLE) { xrDestroySpace(m_aGripSpace[h]); m_aGripSpace[h] = XR_NULL_HANDLE; }
+		if (m_aAimSpace[h] != XR_NULL_HANDLE)  { xrDestroySpace(m_aAimSpace[h]);  m_aAimSpace[h] = XR_NULL_HANDLE; }
+	}
+	if (m_hActionSet != XR_NULL_HANDLE)
+	{
+		xrDestroyActionSet(m_hActionSet);	// also destroys its actions
+		m_hActionSet = XR_NULL_HANDLE;
+	}
+}
+
+static bool LocatePose(XrSpace hSpace, XrSpace hBase, XrTime time, Pose& out)
+{
+	if (hSpace == XR_NULL_HANDLE)
+		return false;
+	XrSpaceLocation loc;
+	ZeroMemory(&loc, sizeof(loc));
+	loc.type = XR_TYPE_SPACE_LOCATION;
+	const XrSpaceLocationFlags kValid = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT;
+	if (XR_FAILED(xrLocateSpace(hSpace, hBase, time, &loc)) || (loc.locationFlags & kValid) != kValid)
+		return false;
+	out = ToPose(loc.pose);
+	return true;
+}
+
+void Bridge::Impl::UpdateInput()
+{
+	if (m_hActionSet == XR_NULL_HANDLE)
+		return;
+
+	bool bFocused = (m_eSessionState == XR_SESSION_STATE_FOCUSED);
+	if (bFocused)
+	{
+		XrActiveActionSet active;
+		active.actionSet = m_hActionSet;
+		active.subactionPath = XR_NULL_PATH;
+		XrActionsSyncInfo si;
+		ZeroMemory(&si, sizeof(si));
+		si.type = XR_TYPE_ACTIONS_SYNC_INFO;
+		si.countActiveActionSets = 1;
+		si.activeActionSets = &active;
+		xrSyncActions(m_hSession, &si);
+	}
+
+	for (int h = 0; h < HAND_COUNT; ++h)
+	{
+		HandInput& hand = m_aHands[h];
+		HandInput prev = hand;
+		ZeroMemory(&hand, sizeof(hand));
+		hand.grip = prev.grip;	// keep the last known poses if tracking drops
+		hand.aim = prev.aim;
+
+		hand.gripValid = LocatePose(m_aGripSpace[h], m_hAppSpace, m_FrameState.predictedDisplayTime, hand.grip);
+		hand.aimValid  = LocatePose(m_aAimSpace[h],  m_hAppSpace, m_FrameState.predictedDisplayTime, hand.aim);
+		hand.active = hand.gripValid || hand.aimValid;
+
+		if (!bFocused)
+			continue;	// no buttons without input focus
+
+		XrActionStateGetInfo gi;
+		ZeroMemory(&gi, sizeof(gi));
+		gi.type = XR_TYPE_ACTION_STATE_GET_INFO;
+		gi.subactionPath = m_aHandPath[h];
+
+		XrActionStateFloat fs;
+		ZeroMemory(&fs, sizeof(fs));
+		fs.type = XR_TYPE_ACTION_STATE_FLOAT;
+		gi.action = m_hTrigger;
+		if (XR_SUCCEEDED(xrGetActionStateFloat(m_hSession, &gi, &fs)) && fs.isActive) hand.trigger = fs.currentState;
+		gi.action = m_hSqueeze;
+		if (XR_SUCCEEDED(xrGetActionStateFloat(m_hSession, &gi, &fs)) && fs.isActive) hand.squeeze = fs.currentState;
+
+		XrActionStateVector2f vs;
+		ZeroMemory(&vs, sizeof(vs));
+		vs.type = XR_TYPE_ACTION_STATE_VECTOR2F;
+		gi.action = m_hStick;
+		if (XR_SUCCEEDED(xrGetActionStateVector2f(m_hSession, &gi, &vs)) && vs.isActive)
+		{
+			hand.stickX = vs.currentState.x;
+			hand.stickY = vs.currentState.y;
+		}
+
+		XrActionStateBoolean bs;
+		ZeroMemory(&bs, sizeof(bs));
+		bs.type = XR_TYPE_ACTION_STATE_BOOLEAN;
+		gi.action = m_hStickClick;
+		if (XR_SUCCEEDED(xrGetActionStateBoolean(m_hSession, &gi, &bs)) && bs.isActive) hand.stickClick = bs.currentState != 0;
+		gi.action = m_hPrimary;
+		if (XR_SUCCEEDED(xrGetActionStateBoolean(m_hSession, &gi, &bs)) && bs.isActive) hand.primary = bs.currentState != 0;
+		gi.action = m_hSecondary;
+		if (XR_SUCCEEDED(xrGetActionStateBoolean(m_hSession, &gi, &bs)) && bs.isActive) hand.secondary = bs.currentState != 0;
+		if (h == HAND_LEFT)
+		{
+			gi.action = m_hMenu;
+			if (XR_SUCCEEDED(xrGetActionStateBoolean(m_hSession, &gi, &bs)) && bs.isActive) hand.menu = bs.currentState != 0;
+		}
+	}
+}
+
 bool Bridge::InitSession(IDirect3DDevice9Ex* pDevice, const ScreenDesc& screen)
 {
 	FPUGuard fpu;
@@ -744,6 +980,10 @@ bool Bridge::InitSession(IDirect3DDevice9Ex* pDevice, const ScreenDesc& screen)
 		return false;
 	if (!im.CreateAppSpace(IdentityPose()))
 		return false;
+
+	// Controllers. Not fatal: the game still works with mouse and keyboard.
+	if (!im.CreateInput())
+		Log("WARNING: controller setup failed; continuing without controllers");
 
 	// Swapchain format.
 	uint32_t nFormats = 0;
@@ -798,6 +1038,7 @@ void Bridge::Shutdown()
 	im.m_ScreenChain.Release();
 	im.m_ScreenTex.Release();
 
+	im.DestroyInput();
 	if (im.m_hAppSpace != XR_NULL_HANDLE)   { xrDestroySpace(im.m_hAppSpace);   im.m_hAppSpace = XR_NULL_HANDLE; }
 	if (im.m_hViewSpace != XR_NULL_HANDLE)  { xrDestroySpace(im.m_hViewSpace);  im.m_hViewSpace = XR_NULL_HANDLE; }
 	if (im.m_hLocalSpace != XR_NULL_HANDLE) { xrDestroySpace(im.m_hLocalSpace); im.m_hLocalSpace = XR_NULL_HANDLE; }
@@ -956,6 +1197,8 @@ bool Bridge::BeginFrame()
 	{
 		im.m_HeadPose = ToPose(loc.pose);
 	}
+
+	im.UpdateInput();
 
 	return true;
 }
@@ -1163,5 +1406,7 @@ const EyeView& Bridge::GetEyeView(Eye eEye) const			{ return m_pImpl->m_aEyeView
 bool Bridge::HasValidViews() const							{ return m_pImpl->m_bViewsValid && m_pImpl->m_FrameState.shouldRender; }
 const Pose& Bridge::GetHeadPose() const						{ return m_pImpl->m_HeadPose; }
 void Bridge::Recenter()										{ if (m_pImpl) m_pImpl->m_bRecenterPending = true; }
+const HandInput& Bridge::GetHand(Hand eHand) const			{ return m_pImpl->m_aHands[eHand]; }
+bool Bridge::HasFocus() const								{ return m_pImpl && m_pImpl->m_bSessionRunning && m_pImpl->m_eSessionState == XR_SESSION_STATE_FOCUSED; }
 
 } // namespace xrb
