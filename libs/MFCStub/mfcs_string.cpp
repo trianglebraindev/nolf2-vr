@@ -520,23 +520,26 @@ int CString::Compare(LPCTSTR lpsz) const
 	return strcmp(GetBuffer(), lpsz); 
 }
 
-//int CString::CompareNoCase(LPCTSTR lpsz) const
-//{
-//	return stricmp(GetBuffer(), lpsz);
-//}
-//
-//void CString::MakeUpper()
-//{
-//	_strupr( GetBuffer( ));
-//}
-//
-//void CString::MakeLower()
-//{
-//	_strlwr( GetBuffer( ));
-//}
-//
-//void CString::MakeReverse()
-//{
-//	_strrev( GetBuffer( ));
-//}
+// Restored: the game code calls CompareNoCase (mission/game-type lookups),
+// so leaving these commented out caused unresolved-symbol link errors.
+// An empty CString has a NULL buffer, so each one guards against that.
+int CString::CompareNoCase(LPCTSTR lpsz) const
+{
+	return _stricmp(GetBuffer() ? GetBuffer() : "", lpsz ? lpsz : "");
+}
+
+void CString::MakeUpper()
+{
+	if (GetBuffer()) _strupr(GetBuffer());
+}
+
+void CString::MakeLower()
+{
+	if (GetBuffer()) _strlwr(GetBuffer());
+}
+
+void CString::MakeReverse()
+{
+	if (GetBuffer()) _strrev(GetBuffer());
+}
 

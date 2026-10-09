@@ -109,6 +109,7 @@ add_executable(${PROJECT_NAME} WIN32
 	../kernel/net/src/localdriver.cpp
 	src/ltbenchmark_impl.cpp
 	../kernel/src/sys/win/ltdirectmusic_impl.cpp
+	../kernel/src/sys/win/dmusic_guids.cpp
 	../kernel/src/sys/win/ltdirectmusiccontrolfile.cpp
 	../kernel/src/sys/win/ltdirectmusicloader.cpp
 	../../sdk/inc/lterror.cpp
