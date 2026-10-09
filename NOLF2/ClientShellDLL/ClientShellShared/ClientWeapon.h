@@ -453,6 +453,8 @@ protected:
 	// VR: where the gun model was put in your hand this frame (really-close
 	// space). Only valid while m_bVRPlaced.
 	bool          m_bVRPlaced;
+	bool          m_bVRHideModel;		// the engine's stand-in model (the real one didn't load)
+	void          VR_CheckModel();
 	LTVector      m_vVRObjPos;
 	LTRotation    m_rVRObjRot;
 	LTVector      m_vCamPos;

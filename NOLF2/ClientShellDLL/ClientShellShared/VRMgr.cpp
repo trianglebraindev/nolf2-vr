@@ -99,7 +99,7 @@ static VarTrack g_vtVRWristBack;
 
 static const float kGrabDistanceMeters = 0.2f;	// how close the left hand must be to grab the gun
 static const float kArmLength = 0.12f;			// how much of the forearm's length is left when hiding arms
-static const char* kHandFitFile = "vr_hands.txt";
+static const char* kHandFitFile = "vr_lefthand.txt";	// (vr_hands.txt was from a version that worked it out wrongly)
 
 static const float kStickDeadZone = 0.15f;
 
@@ -677,28 +677,28 @@ static bool VR_IsCollapsed(const LTMatrix& m)
 	return fabs(fDet) < 1e-4f;
 }
 
-// A controller's pose in the gun model's own space, as a matrix.
-static void VR_PoseInModel(const LTVector& vCam, const LTRotation& rCam, float fScale,
-	const LTVector& vGunPos, const LTRotation& rGunRot, LTMatrix& mOut)
+// A controller's pose in really-close space (the space the gun model's
+// bones are worked out in: the engine starts the skeleton from the
+// object's own position and rotation, so bone matrices are in the same
+// space as the object, not relative to it), as a matrix.
+static void VR_PoseInCloseSpace(const LTVector& vCam, const LTRotation& rCam, float fScale, LTMatrix& mOut)
 {
-	LTVector vModel = VR_Unrotate(rGunRot, vCam / fScale - vGunPos);
-	LTRotation rModel = (~rGunRot) * rCam;
-	rModel.ConvertToMatrix(mOut);
-	mOut.SetTranslation(vModel);
+	rCam.ConvertToMatrix(mOut);
+	mOut.SetTranslation(vCam / fScale);
 }
 
 bool CVRMgr::GetLeftControllerInModel(LTMatrix& mCtrl) const
 {
 	LTVector vLeft;
 	LTRotation rLeft;
-	if (!m_bGunPlaced || !GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
+	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
 		return false;
-	VR_PoseInModel(vLeft, rLeft, GetGunScale(), m_vGunObjPos, m_rGunObjRot, mCtrl);
+	VR_PoseInCloseSpace(vLeft, rLeft, GetGunScale(), mCtrl);
 	return true;
 }
 
-// Where the left wrist goes when the left hand is free (model space):
-// the controller, times how the hand sits on it.
+// Where the left wrist goes when the left hand is free (really-close
+// space, like the bones): the controller, times how the hand sits on it.
 bool CVRMgr::GetLeftWristTarget(LTMatrix& mWrist) const
 {
 	if (!m_bGunPlaced || !m_bLeftAnimValid)
@@ -718,7 +718,7 @@ bool CVRMgr::GetLeftWristTarget(LTMatrix& mWrist) const
 		if (!GetHandInCamera(LTVR_RIGHT, vRight, rRight, false))
 			return false;
 		LTMatrix mRight;
-		VR_PoseInModel(vRight, rRight, GetGunScale(), m_vGunObjPos, m_rGunObjRot, mRight);
+		VR_PoseInCloseSpace(vRight, rRight, GetGunScale(), mRight);
 		mRight.SetTranslation(0.0f, 0.0f, 0.0f);
 		mOffset = mRight.MakeInverse() * m_mLeftWristAnim;
 		mOffset.SetTranslation(0.0f, 0.0f, 0.0f);
@@ -735,7 +735,7 @@ bool CVRMgr::GetLeftWristTarget(LTMatrix& mWrist) const
 	return true;
 }
 
-// vr_hands.txt: how the left hand sits on the left controller, learnt at
+// vr_lefthand.txt: how the left hand sits on the left controller, learnt at
 // each two-hand grab (3 rows of 4 numbers).
 void CVRMgr::LoadHandFit()
 {
@@ -791,11 +791,12 @@ void CVRMgr::UpdateTwoHand()
 	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false) || !ComputeGun(vRight, rAim, rGun))
 		return;
 
-	// Where Cate's left hand is on the weapon, in camera space.
+	// Where Cate's left hand is on the weapon, in camera space (the bones
+	// are in really-close space: camera space shrunk by the gun scale).
 	const float fScale = GetGunScale();
 	LTVector vAnim;
 	m_mLeftWristAnim.GetTranslation(vAnim);
-	LTVector vAnimCam = (m_vGunObjPos + VR_Rotate(m_rGunObjRot, vAnim)) * fScale;
+	LTVector vAnimCam = vAnim * fScale;
 	float fUnitsPerMeter = m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 60.0f;
 	if ((vLeft - vAnimCam).Mag() / fUnitsPerMeter > kGrabDistanceMeters)
 		return;
@@ -805,7 +806,7 @@ void CVRMgr::UpdateTwoHand()
 	// you let go, and it's saved for next time.
 	{
 		LTMatrix mCtrl;
-		VR_PoseInModel(vLeft, rLeft, fScale, m_vGunObjPos, m_rGunObjRot, mCtrl);
+		VR_PoseInCloseSpace(vLeft, rLeft, fScale, mCtrl);
 		m_mLeftOffset = mCtrl.MakeInverse() * m_mLeftWristAnim;
 		m_bLeftOffsetValid = true;
 		SaveHandFit();

@@ -184,6 +184,7 @@ CClientWeapon::CClientWeapon() :
 	, m_rCamRot( 0.0f, 0.0f, 0.0f )
 	, m_vCamPos( 0.0f, 0.0f, 0.0f )
 	, m_bVRPlaced( false )
+	, m_bVRHideModel( false )
 	, m_vVRObjPos( 0.0f, 0.0f, 0.0f )
 	, m_rVRObjRot( 0.0f, 0.0f, 0.0f, 1.0f )
 	, m_hLoopSound( LTNULL )
@@ -1470,6 +1471,7 @@ void CClientWeapon::ResetWeaponFilenames()
 	{
 		g_VRMgr.AttachHands( m_hObject );
 	}
+	VR_CheckModel();
 
 	// Always put the weapon in the correct position after we reset the model...
 
@@ -2347,6 +2349,7 @@ bool CClientWeapon::Activate()
 	// and its hands.
 	g_VRMgr.SetCurrentGun( m_pWeapon->szName, m_hObject );
 	g_VRMgr.AttachHands( m_hObject );
+	VR_CheckModel();
 
     return true;
 }
@@ -2948,6 +2951,28 @@ WeaponState CClientWeapon::UpdateModelState( bool bFire )
 //
 // ----------------------------------------------------------------------- //
 
+// VR: did the gun model the weapon asks for actually load? If not, the
+// engine put its stand-in (models\default.ltb) there instead.
+void CClientWeapon::VR_CheckModel()
+{
+	m_bVRHideModel = false;
+	if ( !m_hObject || !m_pWeapon )
+		return;
+
+	char szLoaded[256] = "";
+	g_pModelLT->GetModelDBFilename( m_hObject, szLoaded, sizeof( szLoaded ) );
+	const char* pszName = strrchr( szLoaded, '\\' );
+	pszName = pszName ? pszName + 1 : szLoaded;
+	m_bVRHideModel = ( 0 == stricmp( pszName, "default.ltb" ) );
+
+	if ( g_VRMgr.IsActive() )
+	{
+		CVRMgr::Log( "Weapon %s: wants model '%s', loaded '%s'%s", m_pWeapon->szName ? m_pWeapon->szName : "?",
+			m_pWeapon->szPVModel ? m_pWeapon->szPVModel : "", szLoaded,
+			m_bVRHideModel ? "  (stand-in: hidden in VR)" : "" );
+	}
+}
+
 void CClientWeapon::UpdateWeaponPosition( LTVector const &vOffset )
 {
 	// VR: the gun goes in your right hand (see CVRMgr::GetGunPlacement).
@@ -2959,6 +2984,14 @@ void CClientWeapon::UpdateWeaponPosition( LTVector const &vOffset )
 		g_pLTClient->SetObjectRotation( m_hObject, &m_rVRObjRot );
 		g_VRMgr.SetGunModelTransform( m_vVRObjPos, m_rVRObjRot );
 		m_bVRPlaced = true;
+
+		// The engine's stand-in for a model that didn't load. On a monitor it
+		// sits unseen right at the camera; in your hand it's a giant grey
+		// arrow, so it stays hidden.
+		if ( m_bVRHideModel )
+		{
+			g_pCommonLT->SetObjectFlags( m_hObject, OFT_Flags, 0, FLAG_VISIBLE );
+		}
 		return;
 	}
 	if ( m_bVRPlaced )

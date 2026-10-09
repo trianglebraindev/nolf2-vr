@@ -163,10 +163,18 @@ code rather than by editing models where possible.
   gun turns about the right hand so the line between the hands keeps its
   direction (steadier aim, aim follows). Let go to free it. Each grab also
   teaches how the hand sits on the controller (saved to
-  `run\vr_hands.txt`). Only the hand's turn is learnt; the wrist always
+  `run\vr_lefthand.txt`). Only the hand's turn is learnt; the wrist always
   sits `VRWristBack` cm (7) behind the controller, so the hand turns about
   your hand. Hand poses are kept as full bone matrices, since the left
   arm's bones may be mirrored.
+- Bone matrices handed to node controls are in the object's own space
+  (the engine starts the skeleton from the object's position and
+  rotation), i.e. really-close space for the gun: not relative to the gun.
+  Getting that wrong made the free left hand orbit the right one.
+- A weapon whose model doesn't load gets the engine's stand-in
+  (`models\default.ltb`); on a monitor it sits unseen at the camera, in VR
+  it was a giant grey arrow when holstered. Hidden in VR; logged in
+  `vr_game.log` ("wants model ..., loaded ...").
 - Bones the game has shrunk to nothing (e.g. arms while holstered) are left
   alone: undoing a collapsed matrix blew the arms up into huge flat shapes.
 - Note: `LTVector::Cross` returns b x a; VR code writes the cross product
