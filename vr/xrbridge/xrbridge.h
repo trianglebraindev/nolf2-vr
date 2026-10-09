@@ -20,7 +20,8 @@
 //    - per-eye textures to render into, plus each eye's pose and
 //      field of view (for proper stereo), and
 //    - a "screen" texture shown as a flat floating screen (for menus,
-//      cutscenes, and for testing the plumbing).
+//      cutscenes, and for testing the plumbing), or with transparency
+//      laid over the 3D world (the game's HUD).
 //
 //  Coordinates are OpenXR's: metres, right-handed, +Y up, -Z forward.
 //
@@ -84,6 +85,18 @@ struct ScreenDesc
 	float		distanceMeters;		// how far in front of the start position
 };
 
+// Where and how to show the screen texture this frame.
+struct ScreenPlacement
+{
+	bool		headLocked;		// true: pose is relative to the head and the
+								// screen moves with it. false: pose is in the
+								// same space as the eye views (stays put).
+	Pose		pose;			// centre of the screen; it faces +Z of this pose
+	float		widthMeters;	// height follows the texture's shape
+	bool		alpha;			// the texture has transparency (premultiplied
+								// alpha) and is laid over the 3D world
+};
+
 class Bridge
 {
 public:
@@ -117,8 +130,12 @@ public:
 	bool		BeginFrame();
 
 	// bSubmitEyes:   show the per-eye textures as the 3D world.
-	// bSubmitScreen: show the screen texture as a flat floating screen.
+	// bSubmitScreen: show the screen texture as a flat floating screen,
+	//                where the ScreenDesc given to InitSession says.
 	void		EndFrame(bool bSubmitEyes, bool bSubmitScreen);
+
+	// As above, with the screen placed as pScreen says (NULL: no screen).
+	void		EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen);
 
 	bool		IsInitialized() const		{ return m_pImpl != 0 && m_bSessionCreated; }
 	bool		IsSessionRunning() const;

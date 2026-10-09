@@ -39,6 +39,13 @@ RCONVAR(g_CV_CacheTextures, "CacheTextures", int, 0);
 // values make the world look like a doll's house (too high) or a giant's
 // (too low), and make the distance between your eyes feel wrong.
 RCONVAR(g_CV_VRUnitsPerMeter, "VRUnitsPerMeter", float, 60.0f);
+// The HUD, fixed in front of your eyes: how far away it seems (metres)
+// and how wide it looks (degrees).
+RCONVAR(g_CV_VRHudDistance, "VRHudDistance", float, 2.0f);
+RCONVAR(g_CV_VRHudAngle, "VRHudAngle", float, 60.0f);
+// Menus and the floating screen: distance (metres) and width (degrees).
+RCONVAR(g_CV_VRScreenDistance, "VRScreenDistance", float, 2.0f);
+RCONVAR(g_CV_VRScreenAngle, "VRScreenAngle", float, 62.0f);
 
 //------------------------------
 // Really Close settings

@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	1
+#define LTVR_VERSION	2
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -92,5 +92,26 @@ typedef void (*LTVR_ClearBindingsFn)(void);
 
 // Re-centres: the head's current position and heading become the origin.
 typedef void (*LTVR_RecenterFn)(void);
+
+// --- Interface (version 2) ---
+//
+// While the 3D world is in the headset, everything the game draws after
+// the world (HUD, subtitles, menus, cursor, console) is caught in a
+// transparent layer and shown over the world, in one of two ways:
+
+#define LTVR_HUD_HEAD	0	// fixed in front of the eyes, moves with the head
+#define LTVR_HUD_PANEL	1	// a panel that stays where it appeared (menus)
+
+typedef void (*LTVR_SetHudModeFn)(int mode);
+
+// Fades the headset view to black: 0 = clear, 1 = black. Call during the
+// frame (before the flip) every frame a fade is wanted; it resets to 0
+// after each frame. Also darkens whatever interface has been drawn so far
+// this frame, like the game's own fade does on a monitor.
+typedef void (*LTVR_SetFadeFn)(float alpha);
+
+// Non-zero while this frame's interface drawing goes to the headset's
+// interface layer (the 3D world was drawn in the headset this frame).
+typedef int  (*LTVR_IsHudFrameFn)(void);
 
 #endif // __LTVR_H__

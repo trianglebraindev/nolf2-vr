@@ -15,8 +15,24 @@
 //  head does that now.
 //
 //  Screens with no 3D world (menus, loading, movies) still go to the
-//  floating flat screen. The HUD and the gun are not in the 3D view
-//  yet; they come in later stages.
+//  floating flat screen.
+//
+//  INTERFACE LAYER
+//  On frames where the world goes to the headset, everything the game
+//  draws after the world (HUD, subtitles, dialogue choices, in-game
+//  menus, mouse cursor, console) is drawn into the screen texture
+//  instead of the monitor picture, on a transparent background. That
+//  layer is shown over the 3D world: fixed in front of the eyes while
+//  playing, or as a panel that stays put for menus (LTVR_SetHudMode).
+//  The monitor still gets the world with the interface laid on top.
+//
+//  Transparency: the texture is cleared to fully transparent, and alpha
+//  blending is told to build up coverage in the alpha channel
+//  (D3DRS_SEPARATEALPHABLENDENABLE). The colour that results is
+//  "premultiplied" (already multiplied by its coverage), which is what
+//  the headset's layer blending expects.
+//
+//  The gun is not in the 3D view yet; it comes with the hands.
 //
 //  COORDINATES
 //  OpenXR:   metres, right-handed, +X right, +Y up, -Z forward.
@@ -50,6 +66,17 @@ static int					g_nVRRequested		= -1;	// -1 = not checked yet
 static bool					g_bVRFrameOpen		= false;	// BeginFrame done, EndFrame not yet
 static bool					g_bVREyesDrawn		= false;	// eyes rendered during the open frame
 
+// Interface layer (see the top of this file).
+static uint32				g_nVRScreenWidth	= 0;		// size of the screen texture (= monitor picture)
+static uint32				g_nVRScreenHeight	= 0;
+static bool					g_bVREyesJustDrawn	= false;	// eyes drawn for the scene being rendered
+static bool					g_bVRHudActive		= false;	// interface drawing goes to the screen texture
+static IDirect3DSurface9*	g_pVRHudSavedRT		= NULL;		// the monitor's back buffer meanwhile
+static int					g_nVRHudMode		= LTVR_HUD_HEAD;
+static bool					g_bVRPanelPlaced	= false;
+static xrb::Pose			g_VRPanelPose;
+static float				g_fVRFade			= 0.0f;		// 0 clear .. 1 black, this frame
+
 // Where the game says the player's eyes are this frame, and the body's
 // heading (see LTVR_SetOrigin). Falls back to the camera if not set.
 static bool					g_bVROriginSet		= false;
@@ -65,6 +92,7 @@ static VRBinding			g_aVRBindings[64];
 static int					g_nVRBindings		= 0;
 
 static void VR_BuildState();
+static void VR_EndHud();
 
 //------------------------------------------------------------------
 // Set-up and tear-down
@@ -102,6 +130,7 @@ bool d3d_VR_Requested()
 
 static void VR_Destroy()
 {
+	VR_EndHud();
 	for (int e = 0; e < 2; ++e)
 	{
 		if (g_pVREyeSurf[e]) { g_pVREyeSurf[e]->Release(); g_pVREyeSurf[e] = NULL; }
@@ -116,6 +145,8 @@ static void VR_Destroy()
 	}
 	g_bVRFrameOpen = false;
 	g_bVREyesDrawn = false;
+	g_bVREyesJustDrawn = false;
+	g_nVRScreenWidth = g_nVRScreenHeight = 0;
 	memset(&g_VRState, 0, sizeof(g_VRState));
 	ClipCursor(NULL);
 }
@@ -201,6 +232,13 @@ void d3d_VR_PostDeviceCreate(IDirect3DDevice9Ex* pDevice, uint32 nScreenWidth, u
 		xrb::Log("VR disabled: could not create the eye render targets (hr=0x%08X)", (unsigned)hr);
 		VR_Destroy();
 		return;
+	}
+
+	D3DSURFACE_DESC screenDesc;
+	if (SUCCEEDED(g_pVRScreenSurf->GetDesc(&screenDesc)))
+	{
+		g_nVRScreenWidth = screenDesc.Width;
+		g_nVRScreenHeight = screenDesc.Height;
 	}
 
 	// Put the world origin wherever the head is when tracking starts.
@@ -435,9 +473,21 @@ static bool IsMainWorldView(const SceneDesc* pDesc)
 
 void d3d_VR_RenderEyes(SceneDesc* pDesc)
 {
-	if (!pDesc || !d3d_VR_IsActive() || g_bVREyesDrawn)
+	if (!pDesc || !d3d_VR_IsActive())
 		return;
 	if (!IsMainWorldView(pDesc))
+		return;
+
+	// The interface layer is still installed: the last frame never reached
+	// the flip (it can happen as a level starts loading). Put the monitor
+	// back and draw this frame's eyes afresh.
+	if (g_bVRHudActive)
+	{
+		VR_EndHud();
+		g_bVREyesDrawn = false;
+	}
+
+	if (g_bVREyesDrawn)
 		return;
 	if (!VR_EnsureFrameOpen() || !g_pVRBridge->HasValidViews())
 		return;
@@ -513,6 +563,274 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 	if (pOldDepth)	pOldDepth->Release();
 
 	g_bVREyesDrawn = true;
+	g_bVREyesJustDrawn = true;
+}
+
+//------------------------------------------------------------------
+// Interface layer
+//------------------------------------------------------------------
+
+enum VRQuadBlend
+{
+	VRBLEND_ALPHA,			// ordinary see-through colour
+	VRBLEND_PREMULTIPLIED,	// a premultiplied picture (the interface layer)
+	VRBLEND_DARKEN,			// scales what's there by (1 - alpha), colour and alpha alike
+};
+
+struct VRQuadVert
+{
+	float		x, y, z, rhw;
+	D3DCOLOR	color;
+	float		u, v;
+};
+
+// Draws one rectangle over the whole of the current render target
+// (nWidth x nHeight): pTex, or the flat colour if pTex is NULL. Every
+// device setting is put back afterwards, so this can be called in the
+// middle of the game's own drawing.
+static void VR_DrawFullQuad(IDirect3DTexture9* pTex, D3DCOLOR color, uint32 nWidth, uint32 nHeight, VRQuadBlend eBlend)
+{
+	if (!PD3DDEVICE || !nWidth || !nHeight)
+		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+
+	IDirect3DStateBlock9* pSaved = NULL;
+	if (FAILED(pDevice->CreateStateBlock(D3DSBT_ALL, &pSaved)) || !pSaved)
+		return;
+
+	bool bOwnScene = !g_Device.IsIn3D();
+	if (bOwnScene)
+		pDevice->BeginScene();
+
+	D3DVIEWPORT9 vp = { 0, 0, nWidth, nHeight, 0.0f, 1.0f };
+	pDevice->SetViewport(&vp);
+	pDevice->SetVertexShader(NULL);
+	pDevice->SetPixelShader(NULL);
+	pDevice->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1);
+
+	pDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_FOGENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_LIGHTING, FALSE);
+	pDevice->SetRenderState(D3DRS_SPECULARENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	pDevice->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+	pDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0F);
+	pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+	pDevice->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+	pDevice->SetRenderState(D3DRS_SRCBLEND,
+		eBlend == VRBLEND_ALPHA ? D3DBLEND_SRCALPHA : eBlend == VRBLEND_PREMULTIPLIED ? D3DBLEND_ONE : D3DBLEND_ZERO);
+	pDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+
+	const DWORD dwArg = pTex ? D3DTA_TEXTURE : D3DTA_DIFFUSE;
+	pDevice->SetTexture(0, pTex);
+	pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+	pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, dwArg);
+	pDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+	pDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, dwArg);
+	pDevice->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX, 0);
+	pDevice->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+	pDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+	pDevice->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+	pDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+	pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+	pDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+	pDevice->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+	pDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+	pDevice->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, FALSE);
+
+	// Pixel centres sit half a pixel in.
+	const float fRight = (float)nWidth - 0.5f;
+	const float fBottom = (float)nHeight - 0.5f;
+	VRQuadVert aVerts[4] =
+	{
+		{ -0.5f,  -0.5f,   0.0f, 1.0f, color, 0.0f, 0.0f },
+		{ fRight, -0.5f,   0.0f, 1.0f, color, 1.0f, 0.0f },
+		{ -0.5f,  fBottom, 0.0f, 1.0f, color, 0.0f, 1.0f },
+		{ fRight, fBottom, 0.0f, 1.0f, color, 1.0f, 1.0f },
+	};
+	pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, aVerts, sizeof(VRQuadVert));
+
+	if (bOwnScene)
+		pDevice->EndScene();
+
+	pSaved->Apply();
+	pSaved->Release();
+	g_Device.InvalidateViewport();
+}
+
+// Switches the game's drawing over to the interface layer (right after
+// the world has been drawn for the monitor).
+static void VR_BeginHud()
+{
+	if (g_bVRHudActive || !g_pVRScreenSurf || !PD3DDEVICE)
+		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+
+	if (FAILED(pDevice->GetRenderTarget(0, &g_pVRHudSavedRT)) || !g_pVRHudSavedRT)
+	{
+		g_pVRHudSavedRT = NULL;
+		return;
+	}
+	if (FAILED(pDevice->SetRenderTarget(0, g_pVRScreenSurf)))
+	{
+		g_pVRHudSavedRT->Release();
+		g_pVRHudSavedRT = NULL;
+		return;
+	}
+	g_Device.InvalidateViewport();
+	pDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_ARGB(0, 0, 0, 0), 1.0f, 0);
+
+	// Build up coverage in alpha: new = src + old * (1 - src).
+	pDevice->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, TRUE);
+	pDevice->SetRenderState(D3DRS_SRCBLENDALPHA, D3DBLEND_ONE);
+	pDevice->SetRenderState(D3DRS_DESTBLENDALPHA, D3DBLEND_INVSRCALPHA);
+	pDevice->SetRenderState(D3DRS_BLENDOPALPHA, D3DBLENDOP_ADD);
+
+	g_bVRHudActive = true;
+}
+
+// Back to drawing on the monitor's back buffer.
+static void VR_EndHud()
+{
+	if (!g_bVRHudActive)
+		return;
+	g_bVRHudActive = false;
+	if (!PD3DDEVICE)
+		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	pDevice->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+	if (g_pVRHudSavedRT)
+	{
+		pDevice->SetRenderTarget(0, g_pVRHudSavedRT);
+		g_pVRHudSavedRT->Release();
+		g_pVRHudSavedRT = NULL;
+	}
+	g_Device.InvalidateViewport();
+}
+
+void d3d_VR_AfterRenderScene()
+{
+	if (!g_bVREyesJustDrawn)
+		return;
+	g_bVREyesJustDrawn = false;
+	VR_BeginHud();
+}
+
+// Darkens both eye pictures by the frame's fade.
+static void VR_FadeEyes()
+{
+	if (g_fVRFade <= 0.0f || !PD3DDEVICE)
+		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+
+	IDirect3DSurface9* pOldRT = NULL;
+	IDirect3DSurface9* pOldDepth = NULL;
+	pDevice->GetRenderTarget(0, &pOldRT);
+	pDevice->GetDepthStencilSurface(&pOldDepth);
+	pDevice->SetDepthStencilSurface(NULL);	// the game's is smaller than an eye
+
+	const D3DCOLOR black = D3DCOLOR_ARGB((int)(g_fVRFade * 255.0f + 0.5f), 0, 0, 0);
+	for (int e = 0; e < 2; ++e)
+	{
+		if (!g_pVREyeSurf[e])
+			continue;
+		pDevice->SetRenderTarget(0, g_pVREyeSurf[e]);
+		VR_DrawFullQuad(NULL, black, g_pVRBridge->GetEyeWidth(), g_pVRBridge->GetEyeHeight(), VRBLEND_ALPHA);
+	}
+
+	pDevice->SetRenderTarget(0, pOldRT);
+	pDevice->SetDepthStencilSurface(pOldDepth);
+	g_Device.InvalidateViewport();
+	if (pOldRT)		pOldRT->Release();
+	if (pOldDepth)	pOldDepth->Release();
+}
+
+static float VR_WidthForAngle(float fDistance, float fAngleDegrees)
+{
+	if (fAngleDegrees < 10.0f)	fAngleDegrees = 10.0f;
+	if (fAngleDegrees > 150.0f)	fAngleDegrees = 150.0f;
+	return 2.0f * fDistance * (float)tan(fAngleDegrees * 0.5f * 3.14159265f / 180.0f);
+}
+
+static float VR_ClampDistance(float fDistance)
+{
+	return fDistance < 0.3f ? 0.3f : (fDistance > 20.0f ? 20.0f : fDistance);
+}
+
+// A spot fDistance metres in front of the head, at eye height, facing the
+// head (heading only, so it stands upright).
+static xrb::Pose VR_PoseInFrontOfHead(float fDistance)
+{
+	const xrb::Pose& head = g_pVRBridge->GetHeadPose();
+	const xrb::Quat& q = head.orientation;
+	float fx = -(2.0f * (q.x * q.z + q.w * q.y));
+	float fz = -(1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+	float fLen = (float)sqrt(fx * fx + fz * fz);
+	if (fLen < 0.001f)
+	{
+		fx = 0.0f;
+		fz = -1.0f;
+	}
+	else
+	{
+		fx /= fLen;
+		fz /= fLen;
+	}
+	float fYaw = (float)atan2(-fx, -fz);
+
+	xrb::Pose p;
+	p.orientation.x = 0.0f;
+	p.orientation.y = (float)sin(fYaw * 0.5f);
+	p.orientation.z = 0.0f;
+	p.orientation.w = (float)cos(fYaw * 0.5f);
+	p.position.x = head.position.x + fx * fDistance;
+	p.position.y = head.position.y;
+	p.position.z = head.position.z + fz * fDistance;
+	return p;
+}
+
+static xrb::Pose VR_IdentityPose()
+{
+	xrb::Pose p;
+	p.orientation.x = p.orientation.y = p.orientation.z = 0.0f;
+	p.orientation.w = 1.0f;
+	p.position.x = p.position.y = p.position.z = 0.0f;
+	return p;
+}
+
+// Exported to the game DLL (see ltvr.h).
+extern "C" __declspec(dllexport) void LTVR_SetHudMode(int mode)
+{
+	if (mode != g_nVRHudMode)
+	{
+		g_nVRHudMode = mode;
+		g_bVRPanelPlaced = false;	// a new panel appears where you're looking
+	}
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetFade(float fAlpha)
+{
+	if (!(fAlpha > 0.0f))	fAlpha = 0.0f;	// also catches NaN
+	if (fAlpha > 1.0f)		fAlpha = 1.0f;
+	g_fVRFade = fAlpha;
+
+	// Like the game's own fade: darken what's been drawn so far.
+	if (g_bVRHudActive && fAlpha > 0.0f)
+	{
+		VR_DrawFullQuad(NULL, D3DCOLOR_ARGB((int)(fAlpha * 255.0f + 0.5f), 0, 0, 0),
+			g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_DARKEN);
+	}
+}
+
+extern "C" __declspec(dllexport) int LTVR_IsHudFrame(void)
+{
+	return g_bVRHudActive ? 1 : 0;
 }
 
 //------------------------------------------------------------------
@@ -554,12 +872,60 @@ void d3d_VR_OnSwapBuffers()
 	if (!d3d_VR_IsActive() || !PD3DDEVICE)
 		return;
 
+	const float fScreenDistance = VR_ClampDistance(g_CV_VRScreenDistance.m_Val);
+	const float fScreenWidth = VR_WidthForAngle(fScreenDistance, g_CV_VRScreenAngle.m_Val);
+
 	// Screens without a 3D world (menus etc.) never opened the frame.
 	if (VR_EnsureFrameOpen())
 	{
 		if (g_bVREyesDrawn)
 		{
-			g_pVRBridge->EndFrame(true, false);
+			bool bHud = g_bVRHudActive;
+			VR_EndHud();	// back on the monitor's back buffer
+			VR_FadeEyes();
+
+			// The monitor: the world, faded like the headset, with the
+			// interface on top.
+			if (g_fVRFade > 0.0f)
+			{
+				VR_DrawFullQuad(NULL, D3DCOLOR_ARGB((int)(g_fVRFade * 255.0f + 0.5f), 0, 0, 0),
+					g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_ALPHA);
+			}
+			if (bHud)
+			{
+				VR_DrawFullQuad(g_pVRBridge->GetScreenTexture(), D3DCOLOR_ARGB(255, 255, 255, 255),
+					g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_PREMULTIPLIED);
+			}
+
+			if (bHud)
+			{
+				xrb::ScreenPlacement place;
+				place.alpha = true;
+				if (g_nVRHudMode == LTVR_HUD_PANEL)
+				{
+					if (!g_bVRPanelPlaced)
+					{
+						g_VRPanelPose = VR_PoseInFrontOfHead(fScreenDistance);
+						g_bVRPanelPlaced = true;
+					}
+					place.headLocked = false;
+					place.pose = g_VRPanelPose;
+					place.widthMeters = fScreenWidth;
+				}
+				else
+				{
+					const float fHudDistance = VR_ClampDistance(g_CV_VRHudDistance.m_Val);
+					place.headLocked = true;
+					place.pose = VR_IdentityPose();
+					place.pose.position.z = -fHudDistance;
+					place.widthMeters = VR_WidthForAngle(fHudDistance, g_CV_VRHudAngle.m_Val);
+				}
+				g_pVRBridge->EndFrame(true, &place);
+			}
+			else
+			{
+				g_pVRBridge->EndFrame(true, (const xrb::ScreenPlacement*)NULL);
+			}
 		}
 		else
 		{
@@ -571,11 +937,23 @@ void d3d_VR_OnSwapBuffers()
 				pDevice->StretchRect(pBackBuffer, NULL, g_pVRScreenSurf, NULL, D3DTEXF_LINEAR);
 				pBackBuffer->Release();
 			}
-			g_pVRBridge->EndFrame(false, true);
+			xrb::ScreenPlacement place;
+			place.alpha = false;
+			place.headLocked = false;
+			place.pose = VR_IdentityPose();
+			place.pose.position.z = -fScreenDistance;
+			place.widthMeters = fScreenWidth;
+			g_pVRBridge->EndFrame(false, &place);
 		}
 		g_bVRFrameOpen = false;
 		g_bVREyesDrawn = false;
 	}
+	else
+	{
+		VR_EndHud();
+	}
+	g_bVREyesJustDrawn = false;
+	g_fVRFade = 0.0f;
 
 	// The game sets the origin again each frame it draws the world.
 	g_bVROriginSet = false;

@@ -138,7 +138,7 @@ struct SlowCallLog
 static const char g_szCopyShader[] =
 	"Texture2D    g_Tex     : register(t0);\n"
 	"SamplerState g_Sampler : register(s0);\n"
-	"cbuffer Params : register(b0) { float4 g_vParams; };\n"	// x = linearize (0/1)
+	"cbuffer Params : register(b0) { float4 g_vParams; };\n"	// x = linearize (0/1), y = keep alpha (0/1)
 	"struct VSOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };\n"
 	"VSOut VSMain(uint id : SV_VertexID)\n"
 	"{\n"
@@ -153,9 +153,17 @@ static const char g_szCopyShader[] =
 	"}\n"
 	"float4 PSMain(VSOut i) : SV_Target\n"
 	"{\n"
-	"    float3 c = g_Tex.Sample(g_Sampler, i.uv).rgb;\n"
-	"    if (g_vParams.x > 0.5) c = SRGBToLinear(c);\n"
-	"    return float4(c, 1);\n"
+	"    float4 t = g_Tex.Sample(g_Sampler, i.uv);\n"
+	"    float3 c = t.rgb;\n"
+	"    float  a = (g_vParams.y > 0.5) ? t.a : 1.0;\n"
+	"    if (g_vParams.x > 0.5)\n"
+	"    {\n"
+	// Premultiplied colour has to be un-multiplied before the sRGB curve
+	// and multiplied again after, or edges of the HUD go dark.
+	"        if (g_vParams.y > 0.5) c = (a > 0.0001) ? SRGBToLinear(saturate(c / a)) * a : float3(0, 0, 0);\n"
+	"        else c = SRGBToLinear(c);\n"
+	"    }\n"
+	"    return float4(c, a);\n"
 	"}\n";
 
 typedef HRESULT (WINAPI *PFN_D3DCompile)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*,
@@ -357,7 +365,7 @@ struct Bridge::Impl
 	void PollEvents();
 	void WaitForD3D9();
 	void WaitForD3D11();
-	void Blit(SharedTexture& src, Swapchain& dst);
+	void Blit(SharedTexture& src, Swapchain& dst, bool bAlpha);
 	bool DoRecenter();
 };
 
@@ -1225,7 +1233,7 @@ void Bridge::Impl::WaitForD3D11()
 		SwitchToThread();
 }
 
-void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst)
+void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst, bool bAlpha)
 {
 	XrSwapchainImageAcquireInfo ai;
 	ZeroMemory(&ai, sizeof(ai));
@@ -1243,7 +1251,7 @@ void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst)
 		Log("xrWaitSwapchainImage timed out; skipping this image");
 	if (resWait == XR_SUCCESS)
 	{
-		float aParams[4] = { dst.m_bLinearize ? 1.0f : 0.0f, 0, 0, 0 };
+		float aParams[4] = { dst.m_bLinearize ? 1.0f : 0.0f, bAlpha ? 1.0f : 0.0f, 0, 0 };
 		m_pCtx11->UpdateSubresource(m_pParams, 0, NULL, aParams, 0, 0);
 
 		D3D11_VIEWPORT vp = { 0, 0, (float)dst.m_nWidth, (float)dst.m_nHeight, 0.0f, 1.0f };
@@ -1276,6 +1284,19 @@ void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst)
 
 void Bridge::EndFrame(bool bSubmitEyes, bool bSubmitScreen)
 {
+	if (!m_pImpl)
+		return;
+	ScreenPlacement place;
+	place.headLocked = false;
+	place.pose = ToPose(IdentityPose());
+	place.pose.position.z = -m_pImpl->m_Screen.distanceMeters;
+	place.widthMeters = m_pImpl->m_Screen.widthMeters;
+	place.alpha = false;
+	EndFrame(bSubmitEyes, bSubmitScreen ? &place : NULL);
+}
+
+void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen)
+{
 	if (!m_bSessionCreated || !m_pImpl->m_bSessionRunning)
 		return;
 	FPUGuard fpu;
@@ -1283,7 +1304,7 @@ void Bridge::EndFrame(bool bSubmitEyes, bool bSubmitScreen)
 	Impl& im = *m_pImpl;
 
 	bool bEyes = bSubmitEyes && im.m_bViewsValid && im.m_FrameState.shouldRender;
-	bool bScreen = bSubmitScreen && im.m_ScreenChain.m_hSwapchain != XR_NULL_HANDLE && im.m_FrameState.shouldRender;
+	bool bScreen = pScreen && im.m_ScreenChain.m_hSwapchain != XR_NULL_HANDLE && im.m_FrameState.shouldRender;
 
 	if (bEyes || bScreen)
 	{
@@ -1291,10 +1312,10 @@ void Bridge::EndFrame(bool bSubmitEyes, bool bSubmitScreen)
 		if (bEyes)
 		{
 			for (int e = 0; e < EYE_COUNT; ++e)
-				im.Blit(im.m_aEyeTex[e], im.m_aEyeChain[e]);
+				im.Blit(im.m_aEyeTex[e], im.m_aEyeChain[e], false);
 		}
 		if (bScreen)
-			im.Blit(im.m_ScreenTex, im.m_ScreenChain);
+			im.Blit(im.m_ScreenTex, im.m_ScreenChain, pScreen->alpha);
 		im.WaitForD3D11();
 	}
 
@@ -1330,15 +1351,23 @@ void Bridge::EndFrame(bool bSubmitEyes, bool bSubmitScreen)
 	{
 		ZeroMemory(&layerQuad, sizeof(layerQuad));
 		layerQuad.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
-		layerQuad.space = im.m_hAppSpace;
+		layerQuad.space = pScreen->headLocked ? im.m_hViewSpace : im.m_hAppSpace;
 		layerQuad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+		if (pScreen->alpha)
+			layerQuad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;	// premultiplied
 		layerQuad.subImage.swapchain = im.m_ScreenChain.m_hSwapchain;
 		layerQuad.subImage.imageRect.extent.width = (int32_t)im.m_ScreenChain.m_nWidth;
 		layerQuad.subImage.imageRect.extent.height = (int32_t)im.m_ScreenChain.m_nHeight;
-		layerQuad.pose = IdentityPose();
-		layerQuad.pose.position.z = -im.m_Screen.distanceMeters;
-		layerQuad.size.width = im.m_Screen.widthMeters;
-		layerQuad.size.height = im.m_Screen.widthMeters * (float)im.m_ScreenChain.m_nHeight / (float)im.m_ScreenChain.m_nWidth;
+		const Pose& p = pScreen->pose;
+		layerQuad.pose.orientation.x = p.orientation.x;
+		layerQuad.pose.orientation.y = p.orientation.y;
+		layerQuad.pose.orientation.z = p.orientation.z;
+		layerQuad.pose.orientation.w = p.orientation.w;
+		layerQuad.pose.position.x = p.position.x;
+		layerQuad.pose.position.y = p.position.y;
+		layerQuad.pose.position.z = p.position.z;
+		layerQuad.size.width = pScreen->widthMeters;
+		layerQuad.size.height = pScreen->widthMeters * (float)im.m_ScreenChain.m_nHeight / (float)im.m_ScreenChain.m_nWidth;
 		apLayers[nLayers++] = (const XrCompositionLayerBaseHeader*)&layerQuad;
 	}
 

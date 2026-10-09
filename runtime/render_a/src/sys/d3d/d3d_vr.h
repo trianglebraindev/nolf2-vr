@@ -36,6 +36,11 @@ bool d3d_VR_IsActive();
 // into the headset's textures.
 void d3d_VR_RenderEyes(SceneDesc* pDesc);
 
+// Called from d3d_RenderScene after the normal pass. If the eyes were
+// drawn for that scene, the rest of the frame's drawing (the interface)
+// goes to the headset's interface layer.
+void d3d_VR_AfterRenderScene();
+
 // Called from the engine's input processing: controller buttons that the
 // game has bound to commands (LTVR_SetBinding) switch those commands on.
 void d3d_VR_ApplyCommands(uint8* pCommands, uint32 nCommands);

@@ -12,6 +12,7 @@
 
 #include "stdafx.h"
 #include "InterfaceMgr.h"
+#include "VRMgr.h"
 #include "GameClientShell.h"
 #include "MsgIDs.h"
 #include "WeaponStringDefs.h"
@@ -4798,6 +4799,11 @@ void CInterfaceMgr::UpdateScreenFade(bool bUpdateAlpha /*=true*/)
 {
 	if (!m_bScreenFade || m_fTotalFadeTime < 0.1f) return;
 
+	// VR: while the world is in the headset, the fade darkens the whole
+	// headset view. Drawn here it would only be a dark rectangle on the
+	// interface layer, which covers just part of your view.
+	bool bVRFade = g_VRMgr.IsHudFrame();
+
     LTRect rcSrc;
 	rcSrc.Init(0, 0, 2, 2);
 
@@ -4840,12 +4846,19 @@ void CInterfaceMgr::UpdateScreenFade(bool bUpdateAlpha /*=true*/)
 		LTFLOAT fAlpha = 1.0f - WaveFn_SlowOn(1.0f - fLinearAlpha);
 		fAlpha = fAlpha < 0.0f ? 0.0f : (fAlpha > 1.0f ? 1.0f : fAlpha);
 
-		g_pLTClient->SetSurfaceAlpha(m_hFadeSurface, fAlpha);
+		if (bVRFade)
+		{
+			g_VRMgr.SetFade(fAlpha);
+		}
+		else
+		{
+			g_pLTClient->SetSurfaceAlpha(m_hFadeSurface, fAlpha);
 
-		LTRect rcDest;
-		rcDest.Init(0, 0, dwWidth, dwHeight);
+			LTRect rcDest;
+			rcDest.Init(0, 0, dwWidth, dwHeight);
 
-		g_pLTClient->ScaleSurfaceToSurfaceTransparent(hScreen, m_hFadeSurface, &rcDest, &rcSrc, hTransColor);
+			g_pLTClient->ScaleSurfaceToSurfaceTransparent(hScreen, m_hFadeSurface, &rcDest, &rcSrc, hTransColor);
+		}
 
 		// The alpha value is based on the fade time, only update it if
 		// we want the alpha value to change...
@@ -4881,6 +4894,8 @@ void CInterfaceMgr::UpdateScreenFade(bool bUpdateAlpha /*=true*/)
 			// clear the screen every frame until we fade back in)...
 
 	        g_pLTClient->ClearScreen(LTNULL, CLEARSCREEN_SCREEN, 0);
+			if (bVRFade)
+				g_VRMgr.SetFade(1.0f);
 		}
 	}
 }
@@ -4915,6 +4930,15 @@ void CInterfaceMgr::AbortScreenFade()
 
 void CInterfaceMgr::UpdateLetterBox()
 {
+	// VR: no letterbox bars. In the headset they'd be two black strips
+	// floating in front of the scene rather than a frame around it.
+	if (g_VRMgr.IsActive())
+	{
+		m_bWasLetterBox = LTFALSE;
+		m_fLetterBoxAlpha = 0.0f;
+		return;
+	}
+
 	LTBOOL bOn = (g_vtLetterBoxDisabled.GetFloat() ? LTFALSE : (m_bLetterBox || g_vtLetterBox.GetFloat()));
 
 	LTFLOAT fTime = g_pLTClient->GetTime();

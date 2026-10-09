@@ -281,6 +281,7 @@ class CInterfaceMgr
 
         LTBOOL      IsChoosingWeapon()				{ return m_WeaponChooser.IsOpen();}
         LTBOOL      IsChoosingAmmo()                { return m_AmmoChooser.IsOpen();}
+		bool		IsMessageBoxVisible()			{ return m_MessageBox.IsVisible() ? true : false; }
 		void		CloseChoosers()					{ m_WeaponChooser.Close();m_AmmoChooser.Close();}
 
 		virtual CWeaponChooser*	GetWeaponChooser()	{ return &m_WeaponChooser;}

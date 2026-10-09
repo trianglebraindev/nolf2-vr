@@ -55,11 +55,19 @@ public:
 
 	void		Recenter();
 
+	// True while this frame's interface drawing goes to the headset's
+	// interface layer (the 3D world is in the headset this frame).
+	bool		IsHudFrame() const;
+
+	// Fade the headset view to black this frame (0 = clear, 1 = black).
+	void		SetFade(float fAlpha);
+
 private:
 
 	void		Init();
 	void		SetDefaultBindings();
 	void		UpdateMenuControls(float fFrameTime);
+	void		UpdateHudMode();
 	bool		Pressed(int nHand, unsigned nButton) const;		// went down this frame
 	void		SendKey(int nKey);
 
@@ -69,6 +77,9 @@ private:
 	LTVR_SetBindingFn		m_pfnSetBinding;
 	LTVR_ClearBindingsFn	m_pfnClearBindings;
 	LTVR_RecenterFn			m_pfnRecenter;
+	LTVR_SetHudModeFn		m_pfnSetHudMode;
+	LTVR_SetFadeFn			m_pfnSetFade;
+	LTVR_IsHudFrameFn		m_pfnIsHudFrame;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

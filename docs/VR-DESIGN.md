@@ -14,7 +14,7 @@ questions stay marked **(open)** until Tre decides them.
 | 3 | Game-side camera: head drives look; mouse/stick only turns the body; bob/roll/shake tamed | done (in test) |
 | 4 | Motion controllers: weapon in hand, aim from the muzzle, two-hand stabilising | |
 | 5 | Locomotion and turning options (below), controller bindings | first pass in test: smooth/snap turn, head/hand-relative analog walk, bindings |
-| 6 | HUD in the world (wrist / weapon), menus with a laser pointer | |
+| 6 | HUD in the world (wrist / weapon), menus with a laser pointer | first pass in test: HUD fixed in front of the eyes, in-game menus on a panel, fades darken the view; laser pointer next |
 | 7 | Gadgets and interactions (search, lockpick, pick up), vehicles, cutscenes | |
 | later | Manual reloading (Tre: fine to skip at first) | |
 
@@ -107,4 +107,17 @@ needs. Not ordered within a group yet.
 
 Console settings (type in the console or add `+Name value` to the launch
 line): `VRSnapTurn 0/1`, `VRTurnSpeed 150` (degrees per second),
-`VRSnapAngle 45`, `VRMoveWithHand 0/1`, `VRUnitsPerMeter 60`.
+`VRSnapAngle 45`, `VRMoveWithHand 0/1`, `VRUnitsPerMeter 60`,
+`VRHudDistance 2` (metres), `VRHudAngle 60` (how wide the HUD looks, degrees),
+`VRScreenDistance 2`, `VRScreenAngle 62` (menus and the floating screen).
+
+## Interface in the headset (first pass)
+
+- Everything the game draws after the 3D world (HUD, subtitles, dialogue
+  choices, in-game menus, cursor, console) is drawn into a transparent
+  layer instead of the monitor picture, and shown over the world.
+- While playing it sits fixed in front of the eyes. In-game menus, popups
+  and message boxes appear on a panel where you're looking and stay put.
+- Screen fades darken the whole headset view; the letterbox bars are off.
+- Later: health/ammo move to the wrist or the gun, and the crosshair goes
+  away once aiming comes from the gun (stage 4).

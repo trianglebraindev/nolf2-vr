@@ -20,6 +20,14 @@
 //   In menus: either stick moves the selection, trigger or A selects,
 //   B goes back.
 //
+// INTERFACE
+//
+//   While the world is in the headset, the game's interface is shown
+//   over it: the HUD fixed in front of your eyes while playing, and
+//   in-game menus, popups and message boxes on a panel that appears
+//   where you're looking and stays put. Screen fades darken the whole
+//   view. The cutscene letterbox bars are left out in VR.
+//
 // SETTINGS (console variables; add to run_nolf2_vr.bat as +Name value)
 //
 //   VRSnapTurn      0 = smooth turning (default), 1 = snap turning
@@ -79,6 +87,9 @@ CVRMgr::CVRMgr()
 	m_pfnSetBinding		= NULL;
 	m_pfnClearBindings	= NULL;
 	m_pfnRecenter		= NULL;
+	m_pfnSetHudMode		= NULL;
+	m_pfnSetFade		= NULL;
+	m_pfnIsHudFrame		= NULL;
 	memset(&m_State, 0, sizeof(m_State));
 	m_aPrevButtons[0] = m_aPrevButtons[1] = 0;
 	m_bSnapLatched		= false;
@@ -98,6 +109,9 @@ void CVRMgr::Init()
 	m_pfnSetBinding		= (LTVR_SetBindingFn)GetProcAddress(hEngine, "LTVR_SetBinding");
 	m_pfnClearBindings	= (LTVR_ClearBindingsFn)GetProcAddress(hEngine, "LTVR_ClearBindings");
 	m_pfnRecenter		= (LTVR_RecenterFn)GetProcAddress(hEngine, "LTVR_Recenter");
+	m_pfnSetHudMode		= (LTVR_SetHudModeFn)GetProcAddress(hEngine, "LTVR_SetHudMode");
+	m_pfnSetFade		= (LTVR_SetFadeFn)GetProcAddress(hEngine, "LTVR_SetFade");
+	m_pfnIsHudFrame		= (LTVR_IsHudFrameFn)GetProcAddress(hEngine, "LTVR_IsHudFrame");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
 	g_vtVRTurnSpeed.Init(g_pLTClient, "VRTurnSpeed", NULL, 150.0f);
@@ -152,6 +166,30 @@ void CVRMgr::Update(float fFrameTime)
 	}
 
 	UpdateMenuControls(fFrameTime);
+	UpdateHudMode();
+}
+
+void CVRMgr::UpdateHudMode()
+{
+	if (!m_pfnSetHudMode || !g_pInterfaceMgr)
+		return;
+
+	// Menus and messages you read and click go on a panel that stays put;
+	// everything else (the HUD) stays in front of your eyes.
+	GameState eState = g_pInterfaceMgr->GetGameState();
+	bool bPanel = (eState == GS_MENU || eState == GS_POPUP || g_pInterfaceMgr->IsMessageBoxVisible());
+	m_pfnSetHudMode(bPanel ? LTVR_HUD_PANEL : LTVR_HUD_HEAD);
+}
+
+bool CVRMgr::IsHudFrame() const
+{
+	return m_pfnIsHudFrame && m_pfnIsHudFrame() != 0;
+}
+
+void CVRMgr::SetFade(float fAlpha)
+{
+	if (m_pfnSetFade)
+		m_pfnSetFade(fAlpha);
 }
 
 bool CVRMgr::Pressed(int nHand, unsigned nButton) const

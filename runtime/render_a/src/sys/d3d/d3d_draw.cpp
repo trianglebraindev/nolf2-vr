@@ -813,6 +813,9 @@ int d3d_RenderScene(SceneDesc *pDesc)
 	//the frame
 	SetFrameStat(eFS_DrawPrimTexMemory, 0);
 
+	// VR: the interface drawn after the world goes to the headset's layer.
+	d3d_VR_AfterRenderScene();
+
 	return 0;
 }
 
