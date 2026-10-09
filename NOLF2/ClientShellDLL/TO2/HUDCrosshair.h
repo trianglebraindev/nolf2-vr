@@ -40,6 +40,7 @@ public:
 protected:
 
 	void	ScalePolies();
+	void	RenderVR();		// VR: the crosshair where the gun points
 
 
 	LTPoly_GT4		m_Poly[3];

@@ -45,10 +45,38 @@ void d3d_CalcLightAdd(LTObject *pObject, LTVector *pLightAdd)
 	}
 }
 
+// a * b for D3D's row-vector matrices (apply a first, then b).
+static void d3d_MulMatrix(D3DMATRIX& out, const D3DMATRIX& a, const D3DMATRIX& b)
+{
+	for (int i = 0; i < 4; ++i)
+	{
+		for (int j = 0; j < 4; ++j)
+		{
+			out.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] +
+						  a.m[i][2] * b.m[2][j] + a.m[i][3] * b.m[3][j];
+		}
+	}
+}
+
 // Setup the renderer for really close drawing
 void d3d_SetReallyClose(CReallyCloseData* pData)
 {
 	assert(pData);
+
+	// VR eye pass: really-close space is placed in the world (see
+	// g_pVRReallyCloseToWorld) and seen through this eye's own view and
+	// projection, depth-tested with the world like anything else.
+	if (g_pVRReallyCloseToWorld)
+	{
+		PD3DDEVICE->GetViewport(&pData->m_OldViewport);
+		PD3DDEVICE->GetTransform(D3DTS_PROJECTION, &pData->m_OldProj);
+		PD3DDEVICE->GetTransform(D3DTS_VIEW, &pData->m_OldView);
+
+		D3DMATRIX mView;
+		d3d_MulMatrix(mView, *g_pVRReallyCloseToWorld, pData->m_OldView);
+		PD3DDEVICE->SetTransform(D3DTS_VIEW, &mView);
+		return;
+	}
 
 	D3DMATRIX mIdentity = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 

@@ -449,6 +449,12 @@ protected:
 	bool		  m_bControllingFlashLight; // Does this weapon control the pv flash light?
 
 	LTRotation    m_rCamRot;
+
+	// VR: where the gun model was put in your hand this frame (really-close
+	// space). Only valid while m_bVRPlaced.
+	bool          m_bVRPlaced;
+	LTVector      m_vVRObjPos;
+	LTRotation    m_rVRObjRot;
 	LTVector      m_vCamPos;
 
 	HLTSOUND      m_hLoopSound;

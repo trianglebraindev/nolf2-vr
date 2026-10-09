@@ -43,6 +43,7 @@ uint32 g_nNumObjectDynamicLights;
 
 ViewParams g_ViewParams;
 const ViewBoxDef* g_pVRViewBoxOverride = NULL;
+const D3DMATRIX* g_pVRReallyCloseToWorld = NULL;
 
 // Increments the frame code and resets all the world structures' frame
 // codes if it wraps around.

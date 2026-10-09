@@ -21,6 +21,7 @@
 #include "TargetMgr.h"
 #include "CMoveMgr.h"
 #include "VehicleMgr.h"
+#include "VRMgr.h"
 
 namespace
 {
@@ -136,7 +137,13 @@ void CHUDCrosshair::Render()
 
 
 
-	if (g_pPlayerMgr->IsPlayerDead())
+	if (g_VRMgr.IsActive())
+	{
+		// VR: not in the middle of your view but where the gun points.
+		if (!g_pPlayerMgr->IsPlayerDead())
+			RenderVR();
+	}
+	else if (g_pPlayerMgr->IsPlayerDead())
 	{
 		g_pDrawPrim->SetTexture(LTNULL);
 		g_pDrawPrim->SetRGBA(&m_Poly[2],argbWhite);
@@ -551,6 +558,61 @@ void CHUDCrosshair::SetStyle(uint8 style)
 	ScalePolies();
 
 	m_style = style;
+}
+
+// VR: finds what the gun in your hand is aimed at and draws the crosshair
+// (the same one, with the same accuracy spread) into its own layer, which
+// the engine shows at that spot.
+void CHUDCrosshair::RenderVR()
+{
+	LTVector vFrom;
+	LTRotation rAim;
+	if (!g_VRMgr.GetAimRay(vFrom, rAim))
+		return;
+
+	// The first solid thing along the gun's line, out to the weapon's range.
+	float fRange = 10000.0f;
+	IClientWeaponBase* pClientWeapon = g_pPlayerMgr->GetCurrentClientWeapon();
+	if (pClientWeapon && pClientWeapon->GetWeapon() && pClientWeapon->GetWeapon()->nRange > 0)
+		fRange = (float)pClientWeapon->GetWeapon()->nRange;
+
+	HOBJECT hFilterList[] = { g_pLTClient->GetClientObject(), g_pPlayerMgr->GetMoveMgr()->GetObject(), LTNULL };
+	ClientIntersectQuery query;
+	ClientIntersectInfo info;
+	query.m_From = vFrom;
+	query.m_To = vFrom + rAim.Forward() * fRange;
+	query.m_Flags = INTERSECT_OBJECTS | IGNORE_NONSOLID;
+	query.m_FilterFn = ObjListFilterFn;
+	query.m_pUserData = hFilterList;
+
+	LTVector vTarget = query.m_To;
+	if (g_pLTClient->IntersectSegment(&query, &info))
+		vTarget = info.m_Point;
+	g_VRMgr.SetCrosshair(true, vTarget);
+
+	int nSize = g_VRMgr.BeginCrosshair();
+	if (!nSize)
+		return;
+
+	// The same polygons, centred in the crosshair's layer.
+	float fCentre = (float)nSize * 0.5f;
+	g_pDrawPrim->SetXYWH(&m_Poly[0], fCentre - m_fAccurateSz * 0.5f, fCentre - m_fAccurateSz * 0.5f,
+		m_fAccurateSz, m_fAccurateSz);
+	g_pDrawPrim->SetXYWH(&m_Poly[1], fCentre - m_fInaccurateSz * 0.5f, fCentre - m_fInaccurateSz * 0.5f,
+		m_fInaccurateSz, m_fInaccurateSz);
+
+	g_pDrawPrim->SetTexture(m_hAccurate);
+	g_pDrawPrim->DrawPrim(&m_Poly[0],1);
+	if (GetConsoleInt("CrosshairDynamic",1))
+	{
+		g_pDrawPrim->SetTexture(m_hInaccurate);
+		g_pDrawPrim->DrawPrim(&m_Poly[1],1);
+	}
+
+	g_VRMgr.EndCrosshair();
+
+	// Back to the middle of the screen for the monitor view.
+	ScalePolies();
 }
 
 void CHUDCrosshair::ScalePolies()

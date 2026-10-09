@@ -16,6 +16,16 @@
 
 #include "ltvr.h"
 
+// Rotates a vector by a rotation, and back.
+inline LTVector VR_Rotate(const LTRotation& r, const LTVector& v)
+{
+	return r.Right() * v.x + r.Up() * v.y + r.Forward() * v.z;
+}
+inline LTVector VR_Unrotate(const LTRotation& r, const LTVector& v)
+{
+	return LTVector(v.Dot(r.Right()), v.Dot(r.Up()), v.Dot(r.Forward()));
+}
+
 class CVRMgr
 {
 public:
@@ -62,6 +72,37 @@ public:
 	// Fade the headset view to black this frame (0 = clear, 1 = black).
 	void		SetFade(float fAlpha);
 
+	// --- The gun (right hand) ---
+	//
+	// The game's gun model lives in "really close" space: a miniature copy
+	// of the space around the camera, which the engine scales up by
+	// GetGunScale() in the headset. The game's normal view shows the gun
+	// held at a natural spot in front of you; in VR that whole picture is
+	// moved from the natural spot to where the controller is.
+
+	// A controller relative to the game's camera (your head), in game units
+	// and the camera's axes: the hand's position (grip) and pointing
+	// direction (aim, plus VRGunPitch). False if it isn't tracked.
+	bool		GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot) const;
+
+	float		GetGunScale() const;
+
+	// Where to put a gun model that the normal view puts at vModelPos (in
+	// really-close space, no rotation): position and rotation in
+	// really-close space. False when the gun isn't held in VR.
+	bool		GetGunPlacement(const LTVector& vModelPos, LTVector& vObjPos, LTRotation& rObjRot) const;
+
+	// The aim, in the world: from the hand, pointing where the gun points.
+	bool		GetAimRay(LTVector& vFrom, LTRotation& rRot) const;
+
+	// The crosshair layer (see ltvr.h).
+	int			BeginCrosshair();
+	void		EndCrosshair();
+	void		SetCrosshair(bool bVisible, const LTVector& vPos);
+
+	// Appends a line to vr_game.log (run folder). printf-style.
+	static void	Log(const char* pszFormat, ...);
+
 private:
 
 	void		Init();
@@ -83,6 +124,10 @@ private:
 	LTVR_SetHudModeFn		m_pfnSetHudMode;
 	LTVR_SetFadeFn			m_pfnSetFade;
 	LTVR_IsHudFrameFn		m_pfnIsHudFrame;
+	LTVR_SetCloseScaleFn	m_pfnSetCloseScale;
+	LTVR_BeginCrosshairFn	m_pfnBeginCrosshair;
+	LTVR_EndCrosshairFn		m_pfnEndCrosshair;
+	LTVR_SetCrosshairFn		m_pfnSetCrosshair;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

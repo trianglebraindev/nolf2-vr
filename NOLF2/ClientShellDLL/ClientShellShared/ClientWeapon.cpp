@@ -32,6 +32,7 @@
 #include "ClientResShared.h"
 #include "PlayerViewAttachmentMgr.h"
 #include "GadgetTargetFX.h"
+#include "VRMgr.h"
 
 //
 // Externs
@@ -182,6 +183,9 @@ CClientWeapon::CClientWeapon() :
 	, m_bVisible( false )
 	, m_rCamRot( 0.0f, 0.0f, 0.0f )
 	, m_vCamPos( 0.0f, 0.0f, 0.0f )
+	, m_bVRPlaced( false )
+	, m_vVRObjPos( 0.0f, 0.0f, 0.0f )
+	, m_rVRObjRot( 0.0f, 0.0f, 0.0f, 1.0f )
 	, m_hLoopSound( LTNULL )
 	, m_nLoopSoundId( PSI_INVALID )
 	, m_bFirstSelection( true )
@@ -779,6 +783,14 @@ bool CClientWeapon::OnModelKey( HLOCALOBJ hObj, ArgList* pArgList )
 void CClientWeapon::GetShellEjectPos( LTVector *vOriginalPos )
 {
 	LTVector vBreachOffset = GetBreachOffset();
+
+	// VR: relative to the gun in your hand, at its true size.
+	if ( m_bVRPlaced )
+	{
+		LTRotation rGun = m_rCamRot * m_rVRObjRot;
+		*vOriginalPos = m_vFlashPos + VR_Rotate( rGun, vBreachOffset * g_VRMgr.GetGunScale() );
+		return;
+	}
 
 	// Adjust the breach offset relative to the orientation of the weapon
 	// model...
@@ -1475,6 +1487,11 @@ void CClientWeapon::ResetWeaponFilenames()
 
 void CClientWeapon::UpdateBob(LTFLOAT fWidth, LTFLOAT fHeight)
 {
+	// VR: the gun is in your hand; it moves when your hand does.
+	if ( g_VRMgr.IsActive() )
+	{
+		fWidth = fHeight = 0.0f;
+	}
 	m_fBobWidth  = fWidth;
 	m_fBobHeight = fHeight;
 }
@@ -2263,6 +2280,18 @@ bool CClientWeapon::Activate()
 	// it in the right place
 	UpdateWeaponPosition( LTVector() );
 
+	// VR calibration: the numbers that decide where this gun sits in the
+	// hand and how big it is.
+	if ( g_VRMgr.IsActive() )
+	{
+		LTVector vPos = GetWeaponOffset();
+		LTVector vMuz = GetMuzzleOffset();
+		LTVector vBreach = GetBreachOffset();
+		CVRMgr::Log( "Weapon %s: PVPos %.3f %.3f %.3f  MuzzlePos %.3f %.3f %.3f  Breach %.3f %.3f %.3f  model %s",
+			m_pWeapon->szName ? m_pWeapon->szName : "?", vPos.x, vPos.y, vPos.z, vMuz.x, vMuz.y, vMuz.z,
+			vBreach.x, vBreach.y, vBreach.z, m_pWeapon->szPVModel ? m_pWeapon->szPVModel : "?" );
+	}
+
 	// initialize the animations for this model
 	InitAnimations();
 
@@ -2904,6 +2933,24 @@ WeaponState CClientWeapon::UpdateModelState( bool bFire )
 
 void CClientWeapon::UpdateWeaponPosition( LTVector const &vOffset )
 {
+	// VR: the gun goes in your right hand (see CVRMgr::GetGunPlacement).
+	if ( g_VRMgr.IsActive() && g_VRMgr.GetGunPlacement( GetWeaponOffset(), m_vVRObjPos, m_rVRObjRot ) )
+	{
+		// Firing kick, along the gun's own axes.
+		m_vVRObjPos += VR_Rotate( m_rVRObjRot, vOffset );
+		g_pLTClient->SetObjectPos( m_hObject, &m_vVRObjPos );
+		g_pLTClient->SetObjectRotation( m_hObject, &m_rVRObjRot );
+		m_bVRPlaced = true;
+		return;
+	}
+	if ( m_bVRPlaced )
+	{
+		// Back to the normal view's orientation.
+		LTRotation rIdentity( 0.0f, 0.0f, 0.0f, 1.0f );
+		g_pLTClient->SetObjectRotation( m_hObject, &rIdentity );
+		m_bVRPlaced = false;
+	}
+
 	LTVector vNewPos;
 	LTVector vWeaponOffset = GetWeaponOffset();
 
@@ -4375,6 +4422,13 @@ void CClientWeapon::UpdateMuzzleFlash( WeaponState eState, LTVector const &vOffs
 	vFlashCameraRelativeOffestInWorldSpace += vCamF * m_vFlashOffset.z;
 
 	m_vFlashPos = m_vCamPos + vFlashCameraRelativeOffestInWorldSpace;
+
+	// VR: the muzzle of the gun in your hand.
+	if ( m_bVRPlaced )
+	{
+		m_vFlashOffset = m_vVRObjPos + VR_Rotate( m_rVRObjRot, vMuzzleOffset );
+		m_vFlashPos = m_vCamPos + VR_Rotate( m_rCamRot, m_vFlashOffset * g_VRMgr.GetGunScale() );
+	}
 	
 	
 	if( !m_MuzzleFlashFX.IsValid() )
@@ -4819,9 +4873,21 @@ uint8 CClientWeapon::GetLastSndFireType() const
 bool CClientWeapon::GetFireVectors( LTVector *vU, LTVector *vR, LTVector *vF,
                                  LTVector *vFirePos ) const
 {
+	// VR: shots leave from your hand, along where the gun points.
+	LTRotation rRot;
+	if ( m_bVRPlaced && g_pPlayerMgr->IsFirstPerson() && !g_pPlayerMgr->IsUsingExternalCamera() )
+	{
+		if ( g_VRMgr.GetAimRay( *vFirePos, rRot ) )
+		{
+			*vU = rRot.Up();
+			*vR = rRot.Right();
+			*vF = rRot.Forward();
+			return true;
+		}
+	}
+
 	// Get the fire position / direction from the camera (so it lines
 	// up correctly with the crosshairs)...
-	LTRotation rRot;
 	if ( g_pPlayerMgr->IsFirstPerson() &&
 		( !g_pPlayerMgr->IsUsingExternalCamera() ) )
 	{

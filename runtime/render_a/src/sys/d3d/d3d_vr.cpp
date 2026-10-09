@@ -32,7 +32,20 @@
 //  "premultiplied" (already multiplied by its coverage), which is what
 //  the headset's layer blending expects.
 //
-//  The gun is not in the 3D view yet; it comes with the hands.
+//  THE GUN
+//  The game draws its gun (and the gun's muzzle flash and attachments)
+//  in "really close" space: a miniature space around the camera, drawn
+//  with its own projection. In the headset that space is placed in the
+//  world around the game's camera, scaled up to true size (the game
+//  says how much, LTVR_SetCloseScale), and drawn with each eye's own
+//  view, so it has real depth. The game moves the gun within that space
+//  to where the controller is.
+//
+//  THE CROSSHAIR
+//  The game draws its crosshair into a small layer of its own
+//  (LTVR_BeginCrosshair / LTVR_EndCrosshair) and says where in the world
+//  the gun is pointing (LTVR_SetCrosshair). The layer is shown there,
+//  facing you, at a constant apparent size.
 //
 //  COORDINATES
 //  OpenXR:   metres, right-handed, +X right, +Y up, -Z forward.
@@ -76,6 +89,32 @@ static int					g_nVRHudMode		= LTVR_HUD_HEAD;
 static bool					g_bVRPanelPlaced	= false;
 static xrb::Pose			g_VRPanelPose;
 static float				g_fVRFade			= 0.0f;		// 0 clear .. 1 black, this frame
+
+// The HUD when it follows lazily (VRHudFollow 1): its heading, in tracking
+// space, and whether it is gliding back in front of you.
+static bool					g_bVRHudYawValid	= false;
+static float				g_fVRHudYaw			= 0.0f;		// radians, OpenXR: 0 = -Z, positive turns left
+static bool					g_bVRHudGliding		= false;
+static LARGE_INTEGER		g_VRLastSwapTime;
+
+// Really close space (the gun).
+static float				g_fVRCloseScale		= 1.0f;		// really-close units -> world units
+static D3DMATRIX			g_mVRCloseToWorld;
+
+// The body transform the eyes were drawn with this frame (for placing
+// things given in world coordinates, like the crosshair).
+static LTVector				g_vVRBodyPosUsed;
+static LTRotation			g_rVRBodyUsed;
+static bool					g_bVRBodyUsedValid	= false;
+
+// Crosshair layer.
+static const uint32			kVRCrosshairSize	= 512;
+static int					g_nVRCrosshairLayer	= -1;
+static IDirect3DSurface9*	g_pVRCrosshairSurf	= NULL;
+static bool					g_bVRCrosshairDrawn	= false;	// drawn into this frame
+static bool					g_bVRCrosshairDrawing = false;
+static bool					g_bVRCrosshairSet	= false;	// a target point was given this frame
+static LTVector				g_vVRCrosshairPos;
 
 // Where the game says the player's eyes are this frame, and the body's
 // heading (see LTVR_SetOrigin). Falls back to the camera if not set.
@@ -137,6 +176,10 @@ static void VR_Destroy()
 	}
 	if (g_pVREyeDepth)		{ g_pVREyeDepth->Release();		g_pVREyeDepth = NULL; }
 	if (g_pVRScreenSurf)	{ g_pVRScreenSurf->Release();	g_pVRScreenSurf = NULL; }
+	if (g_pVRCrosshairSurf)	{ g_pVRCrosshairSurf->Release();	g_pVRCrosshairSurf = NULL; }
+	g_nVRCrosshairLayer = -1;
+	g_bVRCrosshairDrawn = g_bVRCrosshairDrawing = g_bVRCrosshairSet = false;
+	g_bVRBodyUsedValid = false;
 	if (g_pVRBridge)
 	{
 		g_pVRBridge->Shutdown();
@@ -240,6 +283,11 @@ void d3d_VR_PostDeviceCreate(IDirect3DDevice9Ex* pDevice, uint32 nScreenWidth, u
 		g_nVRScreenWidth = screenDesc.Width;
 		g_nVRScreenHeight = screenDesc.Height;
 	}
+
+	// The crosshair's own layer (not fatal if it fails).
+	g_nVRCrosshairLayer = g_pVRBridge->CreateLayer(kVRCrosshairSize, kVRCrosshairSize);
+	if (g_nVRCrosshairLayer >= 0 && g_pVRBridge->GetLayerTexture(g_nVRCrosshairLayer))
+		g_pVRBridge->GetLayerTexture(g_nVRCrosshairLayer)->GetSurfaceLevel(0, &g_pVRCrosshairSurf);
 
 	// Put the world origin wherever the head is when tracking starts.
 	g_pVRBridge->Recenter();
@@ -476,6 +524,7 @@ extern "C" __declspec(dllexport) void LTVR_Recenter(void)
 {
 	if (g_pVRBridge)
 		g_pVRBridge->Recenter();
+	g_bVRHudYawValid = false;
 }
 
 //------------------------------------------------------------------
@@ -533,6 +582,23 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 	// hasn't this frame, fall back to the camera's position and heading.
 	const LTRotation rBody = g_bVROriginSet ? LTRotation(LTVector(0.0f, 1.0f, 0.0f), g_fVROriginYaw) : YawOnly(pDesc->m_Rotation);
 	const LTVector vBodyPos = g_bVROriginSet ? g_vVROrigin : pDesc->m_Pos;
+	g_vVRBodyPosUsed = vBodyPos;
+	g_rVRBodyUsed = rBody;
+	g_bVRBodyUsedValid = true;
+
+	// Really close space sits around the game's camera, scaled to world
+	// size (D3D row-vector form: rows are the scaled axes, then position).
+	{
+		const float s = g_fVRCloseScale;
+		const LTVector vR = pDesc->m_Rotation.Right() * s;
+		const LTVector vU = pDesc->m_Rotation.Up() * s;
+		const LTVector vF = pDesc->m_Rotation.Forward() * s;
+		D3DMATRIX& m = g_mVRCloseToWorld;
+		m._11 = vR.x; m._12 = vR.y; m._13 = vR.z; m._14 = 0.0f;
+		m._21 = vU.x; m._22 = vU.y; m._23 = vU.z; m._24 = 0.0f;
+		m._31 = vF.x; m._32 = vF.y; m._33 = vF.z; m._34 = 0.0f;
+		m._41 = pDesc->m_Pos.x; m._42 = pDesc->m_Pos.y; m._43 = pDesc->m_Pos.z; m._44 = 1.0f;
+	}
 
 	for (int e = 0; e < 2; ++e)
 	{
@@ -567,14 +633,9 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 		g_pVRViewBoxOverride = &viewBox;
 		if (d3d_InitFrame(&g_ViewParams, &eyeDesc))
 		{
-			// The gun is drawn with its own fixed projection, which can't
-			// be right in stereo, so it's hidden in the headset until it is
-			// held in your hand. (Set after d3d_InitFrame, which re-reads
-			// the console variables; the monitor pass re-reads it again.)
-			int nOldDrawGuns = g_CV_DrawGuns.m_Val;
-			g_CV_DrawGuns.m_Val = 0;
+			g_pVRReallyCloseToWorld = &g_mVRCloseToWorld;
 			d3d_FullDrawScene(g_ViewParams, &eyeDesc);
-			g_CV_DrawGuns.m_Val = nOldDrawGuns;
+			g_pVRReallyCloseToWorld = NULL;
 		}
 		g_pVRViewBoxOverride = NULL;
 	}
@@ -787,6 +848,74 @@ static float VR_ClampDistance(float fDistance)
 	return fDistance < 0.3f ? 0.3f : (fDistance > 20.0f ? 20.0f : fDistance);
 }
 
+// The head's heading in tracking space (OpenXR: 0 = facing -Z).
+static float VR_HeadYaw()
+{
+	const xrb::Quat& q = g_pVRBridge->GetHeadPose().orientation;
+	float fx = -(2.0f * (q.x * q.z + q.w * q.y));
+	float fz = -(1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+	if (fx * fx + fz * fz < 1e-6f)
+		return 0.0f;
+	return (float)atan2(-fx, -fz);
+}
+
+// A spot fDistance metres from the head along heading fYaw, at eye
+// height, standing upright and facing the head.
+static xrb::Pose VR_PoseAtYaw(float fYaw, float fDistance)
+{
+	const xrb::Pose& head = g_pVRBridge->GetHeadPose();
+	xrb::Pose p;
+	p.orientation.x = 0.0f;
+	p.orientation.y = (float)sin(fYaw * 0.5f);
+	p.orientation.z = 0.0f;
+	p.orientation.w = (float)cos(fYaw * 0.5f);
+	p.position.x = head.position.x - (float)sin(fYaw) * fDistance;
+	p.position.y = head.position.y;
+	p.position.z = head.position.z - (float)cos(fYaw) * fDistance;
+	return p;
+}
+
+// Lazy-follow HUD: stays at its heading while you look around, glides
+// back in front once you've turned more than VRHudFollowAngle away.
+static xrb::Pose VR_FollowHudPose(float fDistance)
+{
+	LARGE_INTEGER now, freq;
+	QueryPerformanceCounter(&now);
+	QueryPerformanceFrequency(&freq);
+	float fDt = g_bVRHudYawValid ? (float)(now.QuadPart - g_VRLastSwapTime.QuadPart) / (float)freq.QuadPart : 0.0f;
+	if (fDt < 0.0f || fDt > 0.25f)
+		fDt = 0.0f;
+	g_VRLastSwapTime = now;
+
+	const float kPi = 3.14159265f;
+	float fHeadYaw = VR_HeadYaw();
+	if (!g_bVRHudYawValid)
+	{
+		g_fVRHudYaw = fHeadYaw;
+		g_bVRHudYawValid = true;
+	}
+
+	float fDiff = fHeadYaw - g_fVRHudYaw;
+	while (fDiff > kPi)		fDiff -= 2.0f * kPi;
+	while (fDiff < -kPi)	fDiff += 2.0f * kPi;
+
+	float fThreshold = g_CV_VRHudFollowAngle.m_Val * kPi / 180.0f;
+	if (fThreshold < 0.0f)
+		fThreshold = 0.0f;
+	if (fabs(fDiff) > fThreshold)
+		g_bVRHudGliding = true;
+
+	if (g_bVRHudGliding)
+	{
+		// Ease toward straight ahead; stop once nearly there.
+		float fStep = fDiff * (1.0f - (float)exp(-6.0f * fDt));
+		g_fVRHudYaw += fStep;
+		if (fabs(fDiff - fStep) < 2.0f * kPi / 180.0f)
+			g_bVRHudGliding = false;
+	}
+	return VR_PoseAtYaw(g_fVRHudYaw, fDistance);
+}
+
 // A spot fDistance metres in front of the head, at eye height, facing the
 // head (heading only, so it stands upright).
 static xrb::Pose VR_PoseInFrontOfHead(float fDistance)
@@ -835,6 +964,7 @@ extern "C" __declspec(dllexport) void LTVR_SetHudMode(int mode)
 	{
 		g_nVRHudMode = mode;
 		g_bVRPanelPlaced = false;	// a new panel appears where you're looking
+		g_bVRHudYawValid = false;	// and so does the HUD when it comes back
 	}
 }
 
@@ -855,6 +985,95 @@ extern "C" __declspec(dllexport) void LTVR_SetFade(float fAlpha)
 extern "C" __declspec(dllexport) int LTVR_IsHudFrame(void)
 {
 	return g_bVRHudActive ? 1 : 0;
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetCloseScale(float fScale)
+{
+	g_fVRCloseScale = (fScale > 0.01f && fScale < 1000.0f) ? fScale : 1.0f;
+}
+
+extern "C" __declspec(dllexport) int LTVR_BeginCrosshair(void)
+{
+	if (!g_bVRHudActive || !g_pVRCrosshairSurf || g_bVRCrosshairDrawing || !PD3DDEVICE)
+		return 0;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	if (FAILED(pDevice->SetRenderTarget(0, g_pVRCrosshairSurf)))
+		return 0;
+	g_Device.InvalidateViewport();
+	if (!g_bVRCrosshairDrawn)
+		pDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_ARGB(0, 0, 0, 0), 1.0f, 0);
+	g_bVRCrosshairDrawing = true;
+	g_bVRCrosshairDrawn = true;
+	return (int)kVRCrosshairSize;
+}
+
+extern "C" __declspec(dllexport) void LTVR_EndCrosshair(void)
+{
+	if (!g_bVRCrosshairDrawing || !PD3DDEVICE)
+		return;
+	g_bVRCrosshairDrawing = false;
+	PD3DDEVICE->GetDevice()->SetRenderTarget(0, g_pVRScreenSurf);
+	g_Device.InvalidateViewport();
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetCrosshair(int bVisible, const float pos[3])
+{
+	g_bVRCrosshairSet = bVisible && pos;
+	if (g_bVRCrosshairSet)
+		g_vVRCrosshairPos.Init(pos[0], pos[1], pos[2]);
+}
+
+// Where the crosshair layer goes: at the target point, facing the head,
+// keeping the size it had on the HUD (same pixels per degree).
+static bool VR_GetCrosshairPlacement(xrb::ScreenPlacement& place)
+{
+	if (!g_bVRCrosshairDrawn || !g_bVRCrosshairSet || !g_bVRBodyUsedValid || !g_nVRScreenWidth)
+		return false;
+
+	// World -> tracking space (undo the body transform), then to OpenXR.
+	const float fUnitsPerMeter = VR_UnitsPerMeter();
+	LTVector vRel = g_vVRCrosshairPos - g_vVRBodyPosUsed;
+	xrb::Vec3 p;
+	p.x =  vRel.Dot(g_rVRBodyUsed.Right()) / fUnitsPerMeter;
+	p.y =  vRel.Dot(g_rVRBodyUsed.Up()) / fUnitsPerMeter;
+	p.z = -vRel.Dot(g_rVRBodyUsed.Forward()) / fUnitsPerMeter;
+
+	const xrb::Vec3& h = g_pVRBridge->GetHeadPose().position;
+	float dx = h.x - p.x, dy = h.y - p.y, dz = h.z - p.z;
+	float fDist = (float)sqrt(dx * dx + dy * dy + dz * dz);
+	if (fDist < 0.05f)
+		return false;
+	dx /= fDist; dy /= fDist; dz /= fDist;
+
+	// Too close to focus on comfortably: slide it out along the line of sight.
+	const float kMinDist = 0.5f;
+	if (fDist < kMinDist)
+	{
+		p.x = h.x - dx * kMinDist;
+		p.y = h.y - dy * kMinDist;
+		p.z = h.z - dz * kMinDist;
+		fDist = kMinDist;
+	}
+
+	// Face the head: the quad's +Z points at it (yaw, then pitch).
+	float fYaw = (float)atan2(dx, dz);
+	float fPitch = -(float)asin(dy < -1.0f ? -1.0f : (dy > 1.0f ? 1.0f : dy));
+	float cy = (float)cos(fYaw * 0.5f), sy = (float)sin(fYaw * 0.5f);
+	float cp = (float)cos(fPitch * 0.5f), sp = (float)sin(fPitch * 0.5f);
+	place.pose.orientation.x = cy * sp;
+	place.pose.orientation.y = sy * cp;
+	place.pose.orientation.z = -sy * sp;
+	place.pose.orientation.w = cy * cp;
+	place.pose.position = p;
+
+	float fHudAngle = g_CV_VRHudAngle.m_Val;
+	if (fHudAngle < 10.0f) fHudAngle = 10.0f;
+	if (fHudAngle > 150.0f) fHudAngle = 150.0f;
+	float fAngle = (float)kVRCrosshairSize * fHudAngle / (float)g_nVRScreenWidth;
+	place.widthMeters = VR_WidthForAngle(fDist, fAngle);
+	place.headLocked = false;
+	place.alpha = true;
+	return true;
 }
 
 //------------------------------------------------------------------
@@ -939,12 +1158,24 @@ void d3d_VR_OnSwapBuffers()
 				else
 				{
 					const float fHudDistance = VR_ClampDistance(g_CV_VRHudDistance.m_Val);
-					place.headLocked = true;
-					place.pose = VR_IdentityPose();
-					place.pose.position.z = -fHudDistance;
+					if (g_CV_VRHudFollow.m_Val)
+					{
+						place.headLocked = false;
+						place.pose = VR_FollowHudPose(fHudDistance);
+					}
+					else
+					{
+						place.headLocked = true;
+						place.pose = VR_IdentityPose();
+						place.pose.position.z = -fHudDistance;
+						g_bVRHudYawValid = false;
+					}
 					place.widthMeters = VR_WidthForAngle(fHudDistance, g_CV_VRHudAngle.m_Val);
 				}
-				g_pVRBridge->EndFrame(true, &place);
+				xrb::LayerSubmit crosshair;
+				crosshair.layer = g_nVRCrosshairLayer;
+				bool bCrosshair = VR_GetCrosshairPlacement(crosshair.place);
+				g_pVRBridge->EndFrame(true, &place, bCrosshair ? &crosshair : NULL, bCrosshair ? 1 : 0);
 			}
 			else
 			{
@@ -978,6 +1209,10 @@ void d3d_VR_OnSwapBuffers()
 	}
 	g_bVREyesJustDrawn = false;
 	g_fVRFade = 0.0f;
+	g_bVRCrosshairDrawn = false;
+	g_bVRCrosshairDrawing = false;
+	g_bVRCrosshairSet = false;
+	g_bVRBodyUsedValid = false;
 
 	// The game sets the origin again each frame it draws the world.
 	g_bVROriginSet = false;
@@ -989,7 +1224,10 @@ void d3d_VR_OnSwapBuffers()
 	static bool s_bRecenterKeyWasDown = false;
 	bool bRecenterKeyDown = g_hWnd && GetForegroundWindow() == g_hWnd && (GetAsyncKeyState(VK_HOME) & 0x8000) != 0;
 	if (bRecenterKeyDown && !s_bRecenterKeyWasDown)
+	{
 		g_pVRBridge->Recenter();
+		g_bVRHudYawValid = false;
+	}
 	s_bRecenterKeyWasDown = bRecenterKeyDown;
 
 	// Wait for the next frame slot now, so the next frame is simulated

@@ -299,6 +299,13 @@ struct Bridge::Impl
 	Swapchain				m_ScreenChain;
 	ScreenDesc				m_Screen;
 
+	struct Layer
+	{
+		SharedTexture		m_Tex;
+		Swapchain			m_Chain;
+	};
+	std::vector<Layer*>		m_apLayers;
+
 	// Controllers
 	XrActionSet				m_hActionSet;
 	XrAction				m_hGripPose, m_hAimPose;
@@ -1045,6 +1052,13 @@ void Bridge::Shutdown()
 	}
 	im.m_ScreenChain.Release();
 	im.m_ScreenTex.Release();
+	for (size_t i = 0; i < im.m_apLayers.size(); ++i)
+	{
+		im.m_apLayers[i]->m_Chain.Release();
+		im.m_apLayers[i]->m_Tex.Release();
+		delete im.m_apLayers[i];
+	}
+	im.m_apLayers.clear();
 
 	im.DestroyInput();
 	if (im.m_hAppSpace != XR_NULL_HANDLE)   { xrDestroySpace(im.m_hAppSpace);   im.m_hAppSpace = XR_NULL_HANDLE; }
@@ -1297,22 +1311,95 @@ void Bridge::EndFrame(bool bSubmitEyes, bool bSubmitScreen)
 
 void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen)
 {
+	EndFrame(bSubmitEyes, pScreen, NULL, 0);
+}
+
+int Bridge::CreateLayer(unsigned nWidth, unsigned nHeight)
+{
+	if (!m_bSessionCreated || !nWidth || !nHeight)
+		return -1;
+	FPUGuard fpu;
+	Impl& im = *m_pImpl;
+	Impl::Layer* pLayer = new Impl::Layer;
+	if (!pLayer->m_Tex.Create(im.m_pDev9, im.m_pDev11, nWidth, nHeight) ||
+		!im.CreateSwapchain(pLayer->m_Chain, nWidth, nHeight))
+	{
+		Log("ERROR: could not create a %ux%u layer", nWidth, nHeight);
+		pLayer->m_Chain.Release();
+		pLayer->m_Tex.Release();
+		delete pLayer;
+		return -1;
+	}
+	im.m_apLayers.push_back(pLayer);
+	return (int)im.m_apLayers.size() - 1;
+}
+
+IDirect3DTexture9* Bridge::GetLayerTexture(int nLayer) const
+{
+	if (nLayer < 0 || nLayer >= (int)m_pImpl->m_apLayers.size())
+		return NULL;
+	return m_pImpl->m_apLayers[nLayer]->m_Tex.m_p9;
+}
+
+// Fills an OpenXR quad layer from a placement.
+static void FillQuad(XrCompositionLayerQuad& quad, const ScreenPlacement& place, XrSpace hHeadSpace,
+	XrSpace hAppSpace, XrSwapchain hSwapchain, unsigned nWidth, unsigned nHeight)
+{
+	ZeroMemory(&quad, sizeof(quad));
+	quad.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
+	quad.space = place.headLocked ? hHeadSpace : hAppSpace;
+	quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+	if (place.alpha)
+		quad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;	// premultiplied
+	quad.subImage.swapchain = hSwapchain;
+	quad.subImage.imageRect.extent.width = (int32_t)nWidth;
+	quad.subImage.imageRect.extent.height = (int32_t)nHeight;
+	const Pose& p = place.pose;
+	quad.pose.orientation.x = p.orientation.x;
+	quad.pose.orientation.y = p.orientation.y;
+	quad.pose.orientation.z = p.orientation.z;
+	quad.pose.orientation.w = p.orientation.w;
+	quad.pose.position.x = p.position.x;
+	quad.pose.position.y = p.position.y;
+	quad.pose.position.z = p.position.z;
+	quad.size.width = place.widthMeters;
+	quad.size.height = place.widthMeters * (float)nHeight / (float)nWidth;
+}
+
+void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen, const LayerSubmit* pLayers, unsigned nLayersIn)
+{
 	if (!m_bSessionCreated || !m_pImpl->m_bSessionRunning)
 		return;
 	FPUGuard fpu;
 	SlowCallLog slow("EndFrame", false);
 	Impl& im = *m_pImpl;
 
+	const unsigned kMaxExtra = 4;
 	bool bEyes = bSubmitEyes && im.m_bViewsValid && im.m_FrameState.shouldRender;
 	bool bScreen = pScreen && im.m_ScreenChain.m_hSwapchain != XR_NULL_HANDLE && im.m_FrameState.shouldRender;
 
-	if (bEyes || bScreen)
+	// Extra layers that exist and can be shown.
+	const LayerSubmit* apExtra[kMaxExtra];
+	unsigned nExtra = 0;
+	for (unsigned i = 0; pLayers && i < nLayersIn && nExtra < kMaxExtra && im.m_FrameState.shouldRender; ++i)
+	{
+		int n = pLayers[i].layer;
+		if (n >= 0 && n < (int)im.m_apLayers.size() && im.m_apLayers[n]->m_Chain.m_hSwapchain != XR_NULL_HANDLE)
+			apExtra[nExtra++] = &pLayers[i];
+	}
+
+	if (bEyes || bScreen || nExtra)
 	{
 		im.WaitForD3D9();
 		if (bEyes)
 		{
 			for (int e = 0; e < EYE_COUNT; ++e)
 				im.Blit(im.m_aEyeTex[e], im.m_aEyeChain[e], false);
+		}
+		for (unsigned i = 0; i < nExtra; ++i)
+		{
+			Impl::Layer& layer = *im.m_apLayers[apExtra[i]->layer];
+			im.Blit(layer.m_Tex, layer.m_Chain, apExtra[i]->place.alpha);
 		}
 		if (bScreen)
 			im.Blit(im.m_ScreenTex, im.m_ScreenChain, pScreen->alpha);
@@ -1321,8 +1408,9 @@ void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen)
 
 	XrCompositionLayerProjectionView aProjViews[EYE_COUNT];
 	XrCompositionLayerProjection layerProj;
+	XrCompositionLayerQuad aExtraQuads[kMaxExtra];
 	XrCompositionLayerQuad layerQuad;
-	const XrCompositionLayerBaseHeader* apLayers[2];
+	const XrCompositionLayerBaseHeader* apLayers[2 + kMaxExtra];
 	uint32_t nLayers = 0;
 
 	if (bEyes)
@@ -1347,27 +1435,18 @@ void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen)
 		apLayers[nLayers++] = (const XrCompositionLayerBaseHeader*)&layerProj;
 	}
 
+	for (unsigned i = 0; i < nExtra; ++i)
+	{
+		Impl::Layer& layer = *im.m_apLayers[apExtra[i]->layer];
+		FillQuad(aExtraQuads[i], apExtra[i]->place, im.m_hViewSpace, im.m_hAppSpace,
+			layer.m_Chain.m_hSwapchain, layer.m_Chain.m_nWidth, layer.m_Chain.m_nHeight);
+		apLayers[nLayers++] = (const XrCompositionLayerBaseHeader*)&aExtraQuads[i];
+	}
+
 	if (bScreen)
 	{
-		ZeroMemory(&layerQuad, sizeof(layerQuad));
-		layerQuad.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
-		layerQuad.space = pScreen->headLocked ? im.m_hViewSpace : im.m_hAppSpace;
-		layerQuad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-		if (pScreen->alpha)
-			layerQuad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;	// premultiplied
-		layerQuad.subImage.swapchain = im.m_ScreenChain.m_hSwapchain;
-		layerQuad.subImage.imageRect.extent.width = (int32_t)im.m_ScreenChain.m_nWidth;
-		layerQuad.subImage.imageRect.extent.height = (int32_t)im.m_ScreenChain.m_nHeight;
-		const Pose& p = pScreen->pose;
-		layerQuad.pose.orientation.x = p.orientation.x;
-		layerQuad.pose.orientation.y = p.orientation.y;
-		layerQuad.pose.orientation.z = p.orientation.z;
-		layerQuad.pose.orientation.w = p.orientation.w;
-		layerQuad.pose.position.x = p.position.x;
-		layerQuad.pose.position.y = p.position.y;
-		layerQuad.pose.position.z = p.position.z;
-		layerQuad.size.width = pScreen->widthMeters;
-		layerQuad.size.height = pScreen->widthMeters * (float)im.m_ScreenChain.m_nHeight / (float)im.m_ScreenChain.m_nWidth;
+		FillQuad(layerQuad, *pScreen, im.m_hViewSpace, im.m_hAppSpace,
+			im.m_ScreenChain.m_hSwapchain, im.m_ScreenChain.m_nWidth, im.m_ScreenChain.m_nHeight);
 		apLayers[nLayers++] = (const XrCompositionLayerBaseHeader*)&layerQuad;
 	}
 

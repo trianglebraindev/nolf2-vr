@@ -51,6 +51,12 @@ bool d3d_InitFrame(ViewParams* pParams, SceneDesc *pDesc);
 // Only m_COP and m_WindowSize are used; near/far come from the engine.
 extern const ViewBoxDef* g_pVRViewBoxOverride;
 
+// VR eye pass: where "really close" space (the gun, its muzzle flash, and
+// other camera-attached things) sits in the world. d3d_SetReallyClose
+// then draws it with the eye's own view and projection, so it appears at
+// true size and depth. NULL outside the eye passes.
+extern const D3DMATRIX* g_pVRReallyCloseToWorld;
+
 // Init the view box.
 void d3d_InitViewBox(ViewBoxDef *pDef,
 	float nearZ, float  farZ, float xFov, float yFov);

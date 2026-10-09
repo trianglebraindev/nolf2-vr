@@ -41,6 +41,16 @@
 //   VRMoveWithHand  0 = walk where you look (default),
 //                   1 = walk where the left controller points
 //
+//   The gun in your hand (see GetGunPlacement):
+//   VRGunScale      how much bigger than the game's miniature gun model
+//                   (bigger number = bigger gun)
+//   VRGunHandX/Y/Z  where the game's normal view holds the gun, in cm
+//                   from your eye (right, up, forward). Changing these
+//                   slides the gun in your hand: e.g. if the grip sits
+//                   too far forward of your hand, raise VRGunHandZ.
+//   VRGunPitch      tilts the gun relative to the controller, degrees
+//                   (positive = barrel down)
+//
 // ----------------------------------------------------------------------- //
 
 #include "stdafx.h"
@@ -51,6 +61,8 @@
 #include "VarTrack.h"
 #include "HUDMgr.h"
 #include "HUDDecision.h"
+#include "PlayerMgr.h"
+#include <stdarg.h>
 
 CVRMgr g_VRMgr;
 
@@ -58,6 +70,11 @@ static VarTrack g_vtVRSnapTurn;
 static VarTrack g_vtVRTurnSpeed;
 static VarTrack g_vtVRSnapAngle;
 static VarTrack g_vtVRMoveWithHand;
+static VarTrack g_vtVRGunScale;
+static VarTrack g_vtVRGunHandX;
+static VarTrack g_vtVRGunHandY;
+static VarTrack g_vtVRGunHandZ;
+static VarTrack g_vtVRGunPitch;
 
 static const float kStickDeadZone = 0.15f;
 
@@ -97,6 +114,10 @@ CVRMgr::CVRMgr()
 	m_pfnSetHudMode		= NULL;
 	m_pfnSetFade		= NULL;
 	m_pfnIsHudFrame		= NULL;
+	m_pfnSetCloseScale	= NULL;
+	m_pfnBeginCrosshair	= NULL;
+	m_pfnEndCrosshair	= NULL;
+	m_pfnSetCrosshair	= NULL;
 	memset(&m_State, 0, sizeof(m_State));
 	m_aPrevButtons[0] = m_aPrevButtons[1] = 0;
 	m_bSnapLatched		= false;
@@ -119,11 +140,20 @@ void CVRMgr::Init()
 	m_pfnSetHudMode		= (LTVR_SetHudModeFn)GetProcAddress(hEngine, "LTVR_SetHudMode");
 	m_pfnSetFade		= (LTVR_SetFadeFn)GetProcAddress(hEngine, "LTVR_SetFade");
 	m_pfnIsHudFrame		= (LTVR_IsHudFrameFn)GetProcAddress(hEngine, "LTVR_IsHudFrame");
+	m_pfnSetCloseScale	= (LTVR_SetCloseScaleFn)GetProcAddress(hEngine, "LTVR_SetCloseScale");
+	m_pfnBeginCrosshair	= (LTVR_BeginCrosshairFn)GetProcAddress(hEngine, "LTVR_BeginCrosshair");
+	m_pfnEndCrosshair	= (LTVR_EndCrosshairFn)GetProcAddress(hEngine, "LTVR_EndCrosshair");
+	m_pfnSetCrosshair	= (LTVR_SetCrosshairFn)GetProcAddress(hEngine, "LTVR_SetCrosshair");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
 	g_vtVRTurnSpeed.Init(g_pLTClient, "VRTurnSpeed", NULL, 150.0f);
 	g_vtVRSnapAngle.Init(g_pLTClient, "VRSnapAngle", NULL, 45.0f);
 	g_vtVRMoveWithHand.Init(g_pLTClient, "VRMoveWithHand", NULL, 0.0f);
+	g_vtVRGunScale.Init(g_pLTClient, "VRGunScale", NULL, 6.0f);
+	g_vtVRGunHandX.Init(g_pLTClient, "VRGunHandX", NULL, 12.0f);
+	g_vtVRGunHandY.Init(g_pLTClient, "VRGunHandY", NULL, -18.0f);
+	g_vtVRGunHandZ.Init(g_pLTClient, "VRGunHandZ", NULL, 30.0f);
+	g_vtVRGunPitch.Init(g_pLTClient, "VRGunPitch", NULL, 0.0f);
 }
 
 void CVRMgr::SetDefaultBindings()
@@ -187,6 +217,108 @@ void CVRMgr::Update(float fFrameTime)
 
 	UpdateMenuControls(fFrameTime);
 	UpdateHudMode();
+
+	if (m_pfnSetCloseScale)
+		m_pfnSetCloseScale(GetGunScale());
+}
+
+void CVRMgr::Log(const char* pszFormat, ...)
+{
+	FILE* pFile = fopen("vr_game.log", "a");
+	if (!pFile)
+		return;
+	va_list args;
+	va_start(args, pszFormat);
+	vfprintf(pFile, pszFormat, args);
+	va_end(args);
+	fputc('\n', pFile);
+	fclose(pFile);
+}
+
+bool CVRMgr::GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot) const
+{
+	if (!IsActive() || nHand < 0 || nHand > 1)
+		return false;
+	const LTVR_HandState& hand = m_State.hand[nHand];
+	if (!hand.active || !hand.grip.valid || !hand.aim.valid)
+		return false;
+
+	// Everything is relative to the head, so the body's position and
+	// heading drop out: the camera is the head.
+	LTRotation rHead = GetHeadRotation();
+	LTVector vGrip(hand.grip.pos[0], hand.grip.pos[1], hand.grip.pos[2]);
+	vPos = VR_Unrotate(rHead, vGrip - GetHeadOffset());
+
+	LTRotation rAim(hand.aim.rot[0], hand.aim.rot[1], hand.aim.rot[2], hand.aim.rot[3]);
+	rRot = (~rHead) * rAim;
+
+	float fPitch = g_vtVRGunPitch.GetFloat();
+	if (fPitch != 0.0f)
+		rRot = rRot * LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(fPitch));
+	return true;
+}
+
+float CVRMgr::GetGunScale() const
+{
+	float fScale = g_vtVRGunScale.GetFloat(6.0f);
+	return (fScale > 0.05f) ? fScale : 6.0f;
+}
+
+bool CVRMgr::GetGunPlacement(const LTVector& vModelPos, LTVector& vObjPos, LTRotation& rObjRot) const
+{
+	LTVector vHand;
+	LTRotation rHand;
+	if (!GetHandInCamera(LTVR_RIGHT, vHand, rHand))
+		return false;
+
+	// Positions here are in really-close units: game units / scale.
+	const float fScale = GetGunScale();
+	const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
+	LTVector vNatural(g_vtVRGunHandX.GetFloat() * fUnitsPerCm, g_vtVRGunHandY.GetFloat() * fUnitsPerCm,
+		g_vtVRGunHandZ.GetFloat() * fUnitsPerCm);
+
+	// A point X of the normal view moves to: hand + handRot * (X - natural).
+	vObjPos = vHand / fScale + VR_Rotate(rHand, vModelPos - vNatural / fScale);
+	rObjRot = rHand;
+	return true;
+}
+
+bool CVRMgr::GetAimRay(LTVector& vFrom, LTRotation& rRot) const
+{
+	LTVector vHand;
+	LTRotation rHand;
+	if (!g_pPlayerMgr || !GetHandInCamera(LTVR_RIGHT, vHand, rHand))
+		return false;
+	HOBJECT hCamera = g_pPlayerMgr->GetCamera();
+	if (!hCamera)
+		return false;
+
+	LTVector vCamPos;
+	LTRotation rCamRot;
+	g_pLTClient->GetObjectPos(hCamera, &vCamPos);
+	g_pLTClient->GetObjectRotation(hCamera, &rCamRot);
+	vFrom = vCamPos + VR_Rotate(rCamRot, vHand);
+	rRot = rCamRot * rHand;
+	return true;
+}
+
+int CVRMgr::BeginCrosshair()
+{
+	return m_pfnBeginCrosshair ? m_pfnBeginCrosshair() : 0;
+}
+
+void CVRMgr::EndCrosshair()
+{
+	if (m_pfnEndCrosshair)
+		m_pfnEndCrosshair();
+}
+
+void CVRMgr::SetCrosshair(bool bVisible, const LTVector& vPos)
+{
+	if (!m_pfnSetCrosshair)
+		return;
+	float aPos[3] = { vPos.x, vPos.y, vPos.z };
+	m_pfnSetCrosshair(bVisible ? 1 : 0, aPos);
 }
 
 void CVRMgr::UpdateHudMode()

@@ -97,6 +97,13 @@ struct ScreenPlacement
 								// alpha) and is laid over the 3D world
 };
 
+// An extra flat layer (see CreateLayer) to show this frame.
+struct LayerSubmit
+{
+	int				layer;		// from CreateLayer
+	ScreenPlacement	place;
+};
+
 class Bridge
 {
 public:
@@ -136,6 +143,17 @@ public:
 
 	// As above, with the screen placed as pScreen says (NULL: no screen).
 	void		EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen);
+
+	// As above, plus extra layers. They are drawn over the 3D world and
+	// under the screen, in the order given.
+	void		EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen,
+						 const LayerSubmit* pLayers, unsigned nLayers);
+
+	// Extra flat layers, e.g. the crosshair. Call after InitSession.
+	// Returns the layer's number, or -1 on failure. The texture is a
+	// D3DFMT_A8R8G8B8 render target, used with premultiplied alpha.
+	int					CreateLayer(unsigned nWidth, unsigned nHeight);
+	IDirect3DTexture9*	GetLayerTexture(int nLayer) const;
 
 	bool		IsInitialized() const		{ return m_pImpl != 0 && m_bSessionCreated; }
 	bool		IsSessionRunning() const;

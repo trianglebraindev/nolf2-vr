@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	2
+#define LTVR_VERSION	3
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -113,5 +113,23 @@ typedef void (*LTVR_SetFadeFn)(float alpha);
 // Non-zero while this frame's interface drawing goes to the headset's
 // interface layer (the 3D world was drawn in the headset this frame).
 typedef int  (*LTVR_IsHudFrameFn)(void);
+
+// --- The gun and the crosshair (version 3) ---
+
+// The game draws its gun in "really close" space, a miniature space around
+// the camera with its own projection. In the headset that space is drawn
+// in the world around the camera, scaled up by fScale (really-close units
+// -> game units) so the gun has true size and depth.
+typedef void (*LTVR_SetCloseScaleFn)(float fScale);
+
+// Draw the crosshair into its own small layer: call Begin, draw centred
+// in a square of the returned size (pixels; 0 = not now, draw nothing),
+// then End. Only during interface drawing on a HUD frame.
+typedef int  (*LTVR_BeginCrosshairFn)(void);
+typedef void (*LTVR_EndCrosshairFn)(void);
+
+// Where in the world the crosshair goes this frame (the point the gun is
+// aimed at). Not called / bVisible 0 = no crosshair this frame.
+typedef void (*LTVR_SetCrosshairFn)(int bVisible, const float pos[3]);
 
 #endif // __LTVR_H__

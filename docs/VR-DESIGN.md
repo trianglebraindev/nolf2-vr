@@ -12,7 +12,7 @@ questions stay marked **(open)** until Tre decides them.
 | 1b | Game on a floating screen in the headset | done |
 | 2 | Stereo 3D world + head tracking (mouse/keys still drive the body) | done (90 fps held at 3072x3264/eye) |
 | 3 | Game-side camera: head drives look; mouse/stick only turns the body; bob/roll/shake tamed | done (in test) |
-| 4 | Motion controllers: weapon in hand, aim from the muzzle, two-hand stabilising | |
+| 4 | Motion controllers: weapon in hand, aim from the muzzle, two-hand stabilising | first pass in test: gun in the right hand, shots from the hand along the gun, crosshair on the target |
 | 5 | Locomotion and turning options (below), controller bindings | first pass in test: smooth/snap turn, head/hand-relative analog walk, bindings |
 | 6 | HUD in the world (wrist / weapon), menus with a laser pointer | first pass in test: HUD fixed in front of the eyes, in-game menus on a panel, fades darken the view; laser pointer next |
 | 7 | Gadgets and interactions (search, lockpick, pick up), vehicles, cutscenes | |
@@ -110,14 +110,37 @@ Console settings (type in the console or add `+Name value` to the launch
 line): `VRSnapTurn 0/1`, `VRTurnSpeed 150` (degrees per second),
 `VRSnapAngle 45`, `VRMoveWithHand 0/1`, `VRUnitsPerMeter 60`,
 `VRHudDistance 2` (metres), `VRHudAngle 60` (how wide the HUD looks, degrees),
-`VRScreenDistance 2`, `VRScreenAngle 62` (menus and the floating screen).
+`VRScreenDistance 2`, `VRScreenAngle 62` (menus and the floating screen),
+`VRHudFollow 1` (0 = HUD locked to your view), `VRHudFollowAngle 35`.
+
+Gun in the hand (tune while testing; the log `run\vr_game.log` lists each
+weapon's numbers): `VRGunScale 6` (size), `VRGunHandX 12`, `VRGunHandY -18`,
+`VRGunHandZ 30` (cm from the eye where the normal view holds the gun;
+changing them slides the gun in your hand), `VRGunPitch 0` (degrees,
+positive = barrel down).
+
+## The gun (first pass)
+
+- The game draws its gun, muzzle flash and attachments in "really close"
+  space: a miniature space around the camera with its own projection.
+  In the headset the engine places that space in the world around the
+  camera, scaled up by `VRGunScale`, and draws it with each eye's view.
+- The game treats its normal view as "the gun held at a natural spot"
+  (`VRGunHand*`) and moves that picture from the natural spot to the right
+  controller (grip position, aim direction).
+- Shots leave from the hand along the gun. The crosshair (with the game's
+  accuracy spread) is drawn into its own layer, placed on whatever the gun
+  is aimed at, at a constant apparent size.
+- Activation (search, doors, pick lock) still uses where you look.
 
 ## Interface in the headset (first pass)
 
 - Everything the game draws after the 3D world (HUD, subtitles, dialogue
   choices, in-game menus, cursor, console) is drawn into a transparent
   layer instead of the monitor picture, and shown over the world.
-- While playing it sits fixed in front of the eyes. In-game menus, popups
+- While playing it stays put in front of you at eye height and glides back
+  around when you turn your head well away (stand-in until the wrist / gun
+  HUD). In-game menus, popups
   and message boxes appear on a panel where you're looking and stay put.
 - Screen fades darken the whole headset view; the letterbox bars are off.
 - Later: health/ammo move to the wrist or the gun, and the crosshair goes
