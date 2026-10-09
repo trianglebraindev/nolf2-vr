@@ -194,8 +194,10 @@ code rather than by editing models where possible.
 
 ## Wrist and gun HUD (first pass)
 
-- Health and armour float by the back of your left wrist, ammo by the
-  left side of the gun; each faces you. The rest of the HUD (subtitles,
+- Health and armour sit on the back of your left wrist like a watch: the
+  panel lies along the wrist (turned with the controller) and fades in as
+  you turn it toward you (fully shown within about 35 degrees, gone past
+  about 60). Ammo floats by the left side of the gun, always facing you. The rest of the HUD (subtitles,
   choices, objectives, pickups...) stays on the lazy panel.
 - They are the game's own HUD pieces (CHUDHealth, CHUDAmmo), unchanged:
   each works out the part of the screen it draws in (CHUDVRRect, built in
@@ -206,12 +208,19 @@ code rather than by editing models where possible.
   (LTVR_LAYER_WRIST / LTVR_LAYER_GUN, 512 x 256), as large as fits.
 - If the hand isn't tracked (or the setting is 0) the piece goes back on
   the panel.
-- Settings: `VRWristHud` 1, `VRWristHudX/Y/Z` -5 / 3 / -10 cm from the left
-  grip (right, up, forward along the controller), `VRWristHudSize` 12 cm;
+- Engine side: LTVR_SetLayerPose places a spot layer turned as the game
+  says (instead of facing you) and partly see-through; the fade is done by
+  scaling the layer's colour and coverage just before it's handed over.
+- Settings: `VRWristHud` 1, `VRWristHudWatch` 1 (0 = always shown, facing
+  you), `VRWristHudX/Y/Z` -3 / 0 / -9 cm from the left grip (right, up,
+  forward along the controller; -X is the back of the hand),
+  `VRWristHudSize` 9 cm;
   `VRGunHud` 1, `VRGunHudX/Y/Z` -6 / -2 / 6 cm from the right hand along
   the gun, `VRGunHudSize` 10 cm.
-- Later: only show the wrist when you turn it toward you (like a watch),
-  if Tre wants that.
+- The crosshair's layer is 1024 px square so the action text ("Talk",
+  "Pick up"...) fits; the text sits where the game's 640 x 480 layout puts
+  it relative to the crosshair (the game's own maths, scaled by the width
+  ratio, pushed it off the layer on widescreen).
 
 ## Roadmap (after the first full play session, 20 min)
 

@@ -142,7 +142,7 @@ typedef void (*LTVR_SetCrosshairFn)(int bVisible, const float pos[3]);
 // HUD's size per degree (the crosshair). The crosshair calls above are
 // layer LTVR_LAYER_CROSSHAIR.
 
-#define LTVR_LAYER_CROSSHAIR	0	// 512 x 512
+#define LTVR_LAYER_CROSSHAIR	0	// 1024 x 1024 (room for the action text)
 #define LTVR_LAYER_HAND			1	// 512 x 512, the weapon ring
 #define LTVR_LAYER_WRIST		2	// 512 x 256, health and armour (version 5)
 #define LTVR_LAYER_GUN			3	// 512 x 256, ammo (version 5)
@@ -160,6 +160,13 @@ typedef void (*LTVR_SetLayerFn)(int layer, int bVisible, const float pos[3], flo
 // bottom, in pixels) into the layer, as large as fits without stretching.
 // Returns 0 = not now, draw nothing (End is then not needed).
 typedef int  (*LTVR_BeginLayerFromScreenFn)(int layer, const float rect[4]);
+
+// Like SetLayer, but turned as given instead of facing the player, and
+// partly see-through. rot: world rotation (x, y, z, w; NULL = face the
+// player); you look at the picture's front along its Forward, its Up is
+// the picture's up. fOpacity 0..1 (0 = not shown).
+typedef void (*LTVR_SetLayerPoseFn)(int layer, int bVisible, const float pos[3], const float rot[4],
+									float fWidthMeters, float fOpacity);
 
 // Writes a model's pieces, skeleton and sockets to vr_models.log (for
 // working out how the first-person gun models are built).

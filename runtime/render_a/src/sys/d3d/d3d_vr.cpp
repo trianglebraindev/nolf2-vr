@@ -112,8 +112,8 @@ static LTRotation			g_rVRBodyUsed;
 static bool					g_bVRBodyUsedValid	= false;
 
 // Spot layers (see the top of this file). Index = LTVR_LAYER_*.
-static const uint32			kVRSpotWidth[LTVR_NUM_LAYERS]	= { 512, 512, 512, 512 };
-static const uint32			kVRSpotHeight[LTVR_NUM_LAYERS]	= { 512, 512, 256, 256 };
+static const uint32			kVRSpotWidth[LTVR_NUM_LAYERS]	= { 1024, 512, 512, 512 };
+static const uint32			kVRSpotHeight[LTVR_NUM_LAYERS]	= { 1024, 512, 256, 256 };
 struct VRSpot
 {
 	int					nLayer;			// bridge layer, -1 = none
@@ -122,6 +122,9 @@ struct VRSpot
 	bool				bSet;			// placed this frame
 	LTVector			vPos;			// world position of its centre
 	float				fWidth;			// metres; 0 = keep the HUD's size per degree
+	bool				bOriented;		// turned as the game says (else it faces the head)
+	LTRotation			rRot;			// world rotation when bOriented
+	float				fOpacity;		// 0..1
 };
 static VRSpot				g_aVRSpots[LTVR_NUM_LAYERS];
 static int					g_nVRSpotDrawing	= -1;		// layer being drawn into, -1 = none
@@ -1153,6 +1156,61 @@ extern "C" __declspec(dllexport) void LTVR_SetLayer(int nLayer, int bVisible, co
 	if (spot.bSet)
 		spot.vPos.Init(pos[0], pos[1], pos[2]);
 	spot.fWidth = fWidthMeters > 0.0f ? fWidthMeters : 0.0f;
+	spot.bOriented = false;
+	spot.fOpacity = 1.0f;
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetLayerPose(int nLayer, int bVisible, const float pos[3], const float rot[4],
+	float fWidthMeters, float fOpacity)
+{
+	if (nLayer < 0 || nLayer >= LTVR_NUM_LAYERS)
+		return;
+	LTVR_SetLayer(nLayer, bVisible, pos, fWidthMeters);
+	VRSpot& spot = g_aVRSpots[nLayer];
+	if (rot)
+	{
+		float fLen = (float)sqrt(rot[0] * rot[0] + rot[1] * rot[1] + rot[2] * rot[2] + rot[3] * rot[3]);
+		if (fLen > 0.5f && fLen < 2.0f)		// also catches NaN
+		{
+			spot.rRot = LTRotation(rot[0] / fLen, rot[1] / fLen, rot[2] / fLen, rot[3] / fLen);
+			spot.bOriented = true;
+		}
+	}
+	if (!(fOpacity > 0.0f))	fOpacity = 0.0f;	// also catches NaN
+	if (fOpacity > 1.0f)	fOpacity = 1.0f;
+	spot.fOpacity = fOpacity;
+}
+
+// Fades spot layers the game asked to be partly see-through (scales colour
+// and coverage alike, which is what fading a premultiplied picture means).
+static void VR_ApplySpotOpacity()
+{
+	if (!PD3DDEVICE)
+		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	IDirect3DSurface9* pOldRT = NULL;
+	bool bChanged = false;
+	for (int i = 0; i < LTVR_NUM_LAYERS; ++i)
+	{
+		const VRSpot& spot = g_aVRSpots[i];
+		if (!spot.pSurf || !spot.bDrawn || !spot.bSet || spot.fOpacity >= 0.995f || spot.fOpacity < 0.01f)
+			continue;
+		if (!bChanged)
+		{
+			pDevice->GetRenderTarget(0, &pOldRT);
+			bChanged = true;
+		}
+		pDevice->SetRenderTarget(0, spot.pSurf);
+		VR_DrawFullQuad(NULL, D3DCOLOR_ARGB((int)((1.0f - spot.fOpacity) * 255.0f + 0.5f), 0, 0, 0),
+			kVRSpotWidth[i], kVRSpotHeight[i], VRBLEND_DARKEN);
+	}
+	if (bChanged)
+	{
+		pDevice->SetRenderTarget(0, pOldRT);
+		g_Device.InvalidateViewport();
+		if (pOldRT)
+			pOldRT->Release();
+	}
 }
 
 // The crosshair calls of version 3: layer 0.
@@ -1176,7 +1234,8 @@ extern "C" __declspec(dllexport) void LTVR_SetCrosshair(int bVisible, const floa
 static bool VR_GetSpotPlacement(int nSpot, xrb::ScreenPlacement& place)
 {
 	const VRSpot& spot = g_aVRSpots[nSpot];
-	if (spot.nLayer < 0 || !spot.bDrawn || !spot.bSet || !g_bVRBodyUsedValid || !g_nVRScreenWidth)
+	if (spot.nLayer < 0 || !spot.bDrawn || !spot.bSet || !g_bVRBodyUsedValid || !g_nVRScreenWidth ||
+		spot.fOpacity < 0.01f)
 		return false;
 
 	// World -> tracking space (undo the body transform), then to OpenXR.
@@ -1205,16 +1264,30 @@ static bool VR_GetSpotPlacement(int nSpot, xrb::ScreenPlacement& place)
 		fDist = kMinDist;
 	}
 
-	// Face the head: the quad's +Z points at it (yaw, then pitch; no roll,
-	// so its X axis stays level).
-	float fYaw = (float)atan2(dx, dz);
-	float fPitch = -(float)asin(dy < -1.0f ? -1.0f : (dy > 1.0f ? 1.0f : dy));
-	float cy = (float)cos(fYaw * 0.5f), sy = (float)sin(fYaw * 0.5f);
-	float cp = (float)cos(fPitch * 0.5f), sp = (float)sin(fPitch * 0.5f);
-	place.pose.orientation.x = cy * sp;
-	place.pose.orientation.y = sy * cp;
-	place.pose.orientation.z = -sy * sp;
-	place.pose.orientation.w = cy * cp;
+	if (spot.bOriented)
+	{
+		// Turned as the game says: world -> tracking space (undo the body's
+		// turn), then mirrored into OpenXR. The game's Forward is the way
+		// you look at its front, which is the quad's -Z.
+		LTRotation r = g_rVRBodyUsed.Conjugate() * spot.rRot;
+		place.pose.orientation.x = -r.m_Quat[0];
+		place.pose.orientation.y = -r.m_Quat[1];
+		place.pose.orientation.z =  r.m_Quat[2];
+		place.pose.orientation.w =  r.m_Quat[3];
+	}
+	else
+	{
+		// Face the head: the quad's +Z points at it (yaw, then pitch; no
+		// roll, so its X axis stays level).
+		float fYaw = (float)atan2(dx, dz);
+		float fPitch = -(float)asin(dy < -1.0f ? -1.0f : (dy > 1.0f ? 1.0f : dy));
+		float cy = (float)cos(fYaw * 0.5f), sy = (float)sin(fYaw * 0.5f);
+		float cp = (float)cos(fPitch * 0.5f), sp = (float)sin(fPitch * 0.5f);
+		place.pose.orientation.x = cy * sp;
+		place.pose.orientation.y = sy * cp;
+		place.pose.orientation.z = -sy * sp;
+		place.pose.orientation.w = cy * cp;
+	}
 	place.pose.position = p;
 
 	if (spot.fWidth > 0.0f)
@@ -1284,6 +1357,7 @@ void d3d_VR_OnSwapBuffers()
 			bool bHud = g_bVRHudActive;
 			VR_EndHud();	// back on the monitor's back buffer
 			VR_FadeEyes();
+			VR_ApplySpotOpacity();
 
 			// The monitor: the world, faded like the headset, with the
 			// interface on top.

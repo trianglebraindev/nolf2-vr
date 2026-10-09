@@ -160,9 +160,11 @@ public:
 
 	// --- Wrist and gun HUD ---
 	//
-	// Health and armour sit on your left wrist, ammo on the gun, each the
-	// game's own HUD piece in its own small layer (LTVR_LAYER_WRIST / _GUN)
-	// facing you. The rest of the HUD stays on the panel in front of you.
+	// Health and armour sit on your left wrist like a watch (turn the back
+	// of your wrist toward you to read it), ammo on the gun (always facing
+	// you), each the game's own HUD piece in its own small layer
+	// (LTVR_LAYER_WRIST / _GUN). The rest of the HUD stays on the panel in
+	// front of you.
 
 	// From the HUD drawing, for every item: draws it on the wrist or the
 	// gun if that's where it goes. false = not handled, draw it as usual
@@ -171,9 +173,9 @@ public:
 
 private:
 
-	bool		GetWristHudPos(LTVector& vPos) const;
+	bool		GetWristHudPose(LTVector& vPos, LTRotation& rRot, float& fOpacity) const;
 	bool		GetGunHudPos(LTVector& vPos) const;
-	bool		CameraToWorld(const LTVector& vCam, LTVector& vWorld) const;
+	bool		GetCamera(LTVector& vPos, LTRotation& rRot) const;
 
 	void		Init();
 	void		SetDefaultBindings();
@@ -267,6 +269,7 @@ private:
 	LTVR_EndLayerFn			m_pfnEndLayer;
 	LTVR_SetLayerFn			m_pfnSetLayer;
 	LTVR_BeginLayerFromScreenFn	m_pfnBeginLayerFromScreen;
+	LTVR_SetLayerPoseFn		m_pfnSetLayerPose;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

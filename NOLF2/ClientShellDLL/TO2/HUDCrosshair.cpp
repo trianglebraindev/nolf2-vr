@@ -611,11 +611,20 @@ void CHUDCrosshair::RenderVR()
 		g_pDrawPrim->DrawPrim(&m_Poly[1],1);
 	}
 
-	// The action text, where it sits relative to the crosshair on a monitor.
+	// The action text, where it sits relative to the crosshair in the
+	// game's 640 x 480 layout (just below and starting at the middle).
+	// (Not m_y - half the screen height: m_y is scaled by the width ratio,
+	// which on a widescreen puts it far lower, off the bottom of the layer.)
 	if (m_pStr)
 	{
-		float x = m_x - (float)g_pInterfaceResMgr->GetScreenWidth() * 0.5f + fCentre;
-		float y = m_y - (float)g_pInterfaceResMgr->GetScreenHeight() * 0.5f + fCentre;
+		float x = fCentre + ((float)m_StrPos.x - 320.0f) * m_fScale;
+		float y = fCentre + ((float)m_StrPos.y - 240.0f) * m_fScale;
+
+		// Keep it inside the layer.
+		float fTextH = (float)m_nStrSz * m_fScale;
+		float fMaxY = (float)nSize - fTextH - 4.0f;
+		if (y > fMaxY)	y = fMaxY;
+		if (x < 0.0f)	x = 0.0f;
 
 		m_pStr->SetPosition(x + 2.0f, y + 2.0f);
 		m_pStr->SetColor(argbBlack);

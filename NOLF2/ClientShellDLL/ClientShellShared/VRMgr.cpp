@@ -70,8 +70,12 @@
 //   Wrist and gun HUD (health and armour on the left wrist, ammo on the
 //   gun; see RenderHudItem):
 //   VRWristHud      1 = health on the wrist (default), 0 = on the HUD panel
-//   VRWristHudX/Y/Z where it floats, cm from the left controller's grip
-//                   (right, up, forward along the controller)
+//   VRWristHudWatch 1 = like a watch: lies on the back of the wrist and
+//                   shows as you turn it toward you (default);
+//                   0 = always shown, facing you
+//   VRWristHudX/Y/Z where it sits, cm from the left controller's grip
+//                   (right, up, forward along the controller; -X is the
+//                   back of the hand)
 //   VRWristHudSize  its width, cm
 //   VRGunHud        1 = ammo on the gun (default), 0 = on the HUD panel
 //   VRGunHudX/Y/Z   where it floats, cm from the right hand (right, up,
@@ -118,6 +122,7 @@ static VarTrack g_vtVRGunPitch;
 static VarTrack g_vtVRArms;
 static VarTrack g_vtVRWristBack;
 static VarTrack g_vtVRWristHud;
+static VarTrack g_vtVRWristHudWatch;
 static VarTrack g_vtVRWristHudX;
 static VarTrack g_vtVRWristHudY;
 static VarTrack g_vtVRWristHudZ;
@@ -181,6 +186,7 @@ CVRMgr::CVRMgr()
 	m_pfnEndLayer		= NULL;
 	m_pfnSetLayer		= NULL;
 	m_pfnBeginLayerFromScreen = NULL;
+	m_pfnSetLayerPose	= NULL;
 	m_bRingOpen			= false;
 	m_bMoveBodyBound	= false;
 	m_vRingOffset.Init(0.0f, 0.0f, 0.0f);
@@ -236,6 +242,7 @@ void CVRMgr::Init()
 	m_pfnEndLayer		= (LTVR_EndLayerFn)GetProcAddress(hEngine, "LTVR_EndLayer");
 	m_pfnSetLayer		= (LTVR_SetLayerFn)GetProcAddress(hEngine, "LTVR_SetLayer");
 	m_pfnBeginLayerFromScreen = (LTVR_BeginLayerFromScreenFn)GetProcAddress(hEngine, "LTVR_BeginLayerFromScreen");
+	m_pfnSetLayerPose	= (LTVR_SetLayerPoseFn)GetProcAddress(hEngine, "LTVR_SetLayerPose");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
 	g_vtVRTurnSpeed.Init(g_pLTClient, "VRTurnSpeed", NULL, 150.0f);
@@ -249,10 +256,11 @@ void CVRMgr::Init()
 	g_vtVRArms.Init(g_pLTClient, "VRArms", NULL, 0.0f);
 	g_vtVRWristBack.Init(g_pLTClient, "VRWristBack", NULL, 7.0f);
 	g_vtVRWristHud.Init(g_pLTClient, "VRWristHud", NULL, 1.0f);
-	g_vtVRWristHudX.Init(g_pLTClient, "VRWristHudX", NULL, -5.0f);
-	g_vtVRWristHudY.Init(g_pLTClient, "VRWristHudY", NULL, 3.0f);
-	g_vtVRWristHudZ.Init(g_pLTClient, "VRWristHudZ", NULL, -10.0f);
-	g_vtVRWristHudSize.Init(g_pLTClient, "VRWristHudSize", NULL, 12.0f);
+	g_vtVRWristHudWatch.Init(g_pLTClient, "VRWristHudWatch", NULL, 1.0f);
+	g_vtVRWristHudX.Init(g_pLTClient, "VRWristHudX", NULL, -3.0f);
+	g_vtVRWristHudY.Init(g_pLTClient, "VRWristHudY", NULL, 0.0f);
+	g_vtVRWristHudZ.Init(g_pLTClient, "VRWristHudZ", NULL, -9.0f);
+	g_vtVRWristHudSize.Init(g_pLTClient, "VRWristHudSize", NULL, 9.0f);
 	g_vtVRGunHud.Init(g_pLTClient, "VRGunHud", NULL, 1.0f);
 	g_vtVRGunHudX.Init(g_pLTClient, "VRGunHudX", NULL, -6.0f);
 	g_vtVRGunHudY.Init(g_pLTClient, "VRGunHudY", NULL, -2.0f);
@@ -1530,39 +1538,65 @@ void CVRMgr::RenderWeaponRing()
 //
 // ----------------------------------------------------------------------- //
 
-bool CVRMgr::CameraToWorld(const LTVector& vCam, LTVector& vWorld) const
+bool CVRMgr::GetCamera(LTVector& vPos, LTRotation& rRot) const
 {
 	HOBJECT hCamera = g_pPlayerMgr ? g_pPlayerMgr->GetCamera() : LTNULL;
 	if (!hCamera)
 		return false;
-	LTVector vCamPos;
-	LTRotation rCamRot;
-	g_pLTClient->GetObjectPos(hCamera, &vCamPos);
-	g_pLTClient->GetObjectRotation(hCamera, &rCamRot);
-	vWorld = vCamPos + VR_Rotate(rCamRot, vCam);
+	g_pLTClient->GetObjectPos(hCamera, &vPos);
+	g_pLTClient->GetObjectRotation(hCamera, &rRot);
 	return true;
 }
 
-bool CVRMgr::GetWristHudPos(LTVector& vPos) const
+bool CVRMgr::GetWristHudPose(LTVector& vPos, LTRotation& rRot, float& fOpacity) const
 {
-	LTVector vLeft;
-	LTRotation rLeft;
-	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
+	LTVector vLeft, vCamPos;
+	LTRotation rLeft, rCamRot;
+	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false) || !GetCamera(vCamPos, rCamRot))
 		return false;
 	const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
-	LTVector vOffset(g_vtVRWristHudX.GetFloat(-5.0f), g_vtVRWristHudY.GetFloat(3.0f), g_vtVRWristHudZ.GetFloat(-10.0f));
-	return CameraToWorld(vLeft + VR_Rotate(rLeft, vOffset * fUnitsPerCm), vPos);
+	LTVector vOffset(g_vtVRWristHudX.GetFloat(-3.0f), g_vtVRWristHudY.GetFloat(0.0f), g_vtVRWristHudZ.GetFloat(-9.0f));
+	vPos = vCamPos + VR_Rotate(rCamRot, vLeft + VR_Rotate(rLeft, vOffset * fUnitsPerCm));
+
+	if (g_vtVRWristHudWatch.GetFloat(1.0f) == 0.0f)
+	{
+		// Always shown, facing you.
+		rRot = rCamRot;
+		fOpacity = 1.0f;
+		return true;
+	}
+
+	// Like a watch on the back of the left wrist. In the controller's axes
+	// the back of the hand is -X, the thumb side +Y, the fingers +Z. With
+	// your wrist raised in front of you, palm down, you look at the face
+	// along +X; its right runs toward your fingers (+Z) and its top away
+	// from you (-Y). (LTRotation(forward, up) gives right = +Z for these.)
+	LTRotation rFace(LTVector(1.0f, 0.0f, 0.0f), LTVector(0.0f, -1.0f, 0.0f));
+	rRot = rCamRot * rLeft * rFace;
+
+	// Fades in as you turn it toward you: fully shown within about 35
+	// degrees of facing you, gone past about 60.
+	LTVector vToHead = vCamPos - vPos;
+	float fDist = vToHead.Mag();
+	if (fDist < 0.001f)
+		return false;
+	float fFacing = -rRot.Forward().Dot(vToHead / fDist);
+	fOpacity = (fFacing - 0.5f) / (0.82f - 0.5f);
+	if (fOpacity < 0.0f) fOpacity = 0.0f;
+	if (fOpacity > 1.0f) fOpacity = 1.0f;
+	return true;
 }
 
 bool CVRMgr::GetGunHudPos(LTVector& vPos) const
 {
-	LTVector vHand;
-	LTRotation rAim, rGun;
-	if (!ComputeGun(vHand, rAim, rGun))
+	LTVector vHand, vCamPos;
+	LTRotation rAim, rGun, rCamRot;
+	if (!ComputeGun(vHand, rAim, rGun) || !GetCamera(vCamPos, rCamRot))
 		return false;
 	const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
 	LTVector vOffset(g_vtVRGunHudX.GetFloat(-6.0f), g_vtVRGunHudY.GetFloat(-2.0f), g_vtVRGunHudZ.GetFloat(6.0f));
-	return CameraToWorld(vHand + VR_Rotate(rGun, vOffset * fUnitsPerCm), vPos);
+	vPos = vCamPos + VR_Rotate(rCamRot, vHand + VR_Rotate(rGun, vOffset * fUnitsPerCm));
+	return true;
 }
 
 bool CVRMgr::RenderHudItem(CHUDItem* pItem)
@@ -1573,13 +1607,21 @@ bool CVRMgr::RenderHudItem(CHUDItem* pItem)
 	int nLayer = -1;
 	float fWidthCm = 0.0f;
 	LTVector vPos;
+	LTRotation rRot;
+	bool bTurned = false;
+	float fOpacity = 1.0f;
 	switch (pItem->GetVRSpot())
 	{
 		case kHUDVRWrist:
-			if (g_vtVRWristHud.GetFloat(1.0f) == 0.0f || !GetWristHudPos(vPos))
+			if (g_vtVRWristHud.GetFloat(1.0f) == 0.0f || !GetWristHudPose(vPos, rRot, fOpacity))
 				return false;
+			if (fOpacity <= 0.0f)
+				return true;	// turned away: nothing to show
+			bTurned = (g_vtVRWristHudWatch.GetFloat(1.0f) != 0.0f);
+			if (bTurned && !m_pfnSetLayerPose)
+				return false;	// older engine: back on the panel
 			nLayer = LTVR_LAYER_WRIST;
-			fWidthCm = g_vtVRWristHudSize.GetFloat(12.0f);
+			fWidthCm = g_vtVRWristHudSize.GetFloat(9.0f);
 			break;
 
 		case kHUDVRGun:
@@ -1606,6 +1648,14 @@ bool CVRMgr::RenderHudItem(CHUDItem* pItem)
 	m_pfnEndLayer();
 
 	float aPos[3] = { vPos.x, vPos.y, vPos.z };
-	m_pfnSetLayer(nLayer, 1, aPos, fWidthCm / 100.0f);
+	if (bTurned)
+	{
+		float aRot[4] = { rRot.m_Quat[0], rRot.m_Quat[1], rRot.m_Quat[2], rRot.m_Quat[3] };
+		m_pfnSetLayerPose(nLayer, 1, aPos, aRot, fWidthCm / 100.0f, fOpacity);
+	}
+	else
+	{
+		m_pfnSetLayer(nLayer, 1, aPos, fWidthCm / 100.0f);
+	}
 	return true;
 }
