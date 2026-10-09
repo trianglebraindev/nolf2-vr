@@ -20,6 +20,7 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
+#include <float.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -63,6 +64,67 @@ void Log(const char* pszFormat, ...)
 }
 
 #define SAFE_RELEASE(p) do { if (p) { (p)->Release(); (p) = NULL; } } while (0)
+
+//------------------------------------------------------------------
+// Floating-point precision guard.
+//
+// LithTech lowers the x87 FPU to 24-bit precision every frame (an old
+// speed trick, see d3d_SetFPState). OpenXR measures time in
+// nanoseconds; values that large lose most of their digits at 24 bits,
+// so a runtime doing its frame-timing maths on our thread can compute
+// nonsense waits. Every entry point into the bridge therefore restores
+// full (53-bit) precision for its duration, then puts the engine's
+// setting back.
+//------------------------------------------------------------------
+
+struct FPUGuard
+{
+#if defined(_M_IX86)
+	unsigned int m_nOld;
+	FPUGuard()
+	{
+		unsigned int nTmp;
+		_controlfp_s(&m_nOld, 0, 0);
+		_controlfp_s(&nTmp, _PC_53, _MCW_PC);
+	}
+	~FPUGuard()
+	{
+		unsigned int nTmp;
+		_controlfp_s(&nTmp, m_nOld & _MCW_PC, _MCW_PC);
+	}
+	bool WasReduced() const { return (m_nOld & _MCW_PC) != _PC_53; }
+#else
+	bool WasReduced() const { return false; }
+#endif
+};
+
+//------------------------------------------------------------------
+// Timing of calls that can block, so a stall shows up in the log.
+//------------------------------------------------------------------
+
+static double NowMs()
+{
+	static LARGE_INTEGER s_Freq = { 0 };
+	if (!s_Freq.QuadPart)
+		QueryPerformanceFrequency(&s_Freq);
+	LARGE_INTEGER now;
+	QueryPerformanceCounter(&now);
+	return (double)now.QuadPart * 1000.0 / (double)s_Freq.QuadPart;
+}
+
+struct SlowCallLog
+{
+	const char*	m_pszWhat;
+	double		m_fStart;
+	bool		m_bAlways;
+	SlowCallLog(const char* pszWhat, bool bAlways) : m_pszWhat(pszWhat), m_fStart(NowMs()), m_bAlways(bAlways) {}
+	~SlowCallLog()
+	{
+		double fMs = NowMs() - m_fStart;
+		if (m_bAlways || fMs > 500.0)
+			Log("%s took %.1f ms%s", m_pszWhat, fMs, fMs > 500.0 ? "  <-- SLOW" : "");
+	}
+};
 
 //------------------------------------------------------------------
 // Copy shader: draws a source texture over the whole target.
@@ -308,6 +370,7 @@ Bridge::~Bridge()
 
 bool Bridge::InitInstance(const char* pszAppName)
 {
+	FPUGuard fpu;
 	Impl& im = *m_pImpl;
 
 	// Is there a runtime, and does it speak D3D11?
@@ -643,6 +706,7 @@ bool Bridge::Impl::CreateAppSpace(const XrPosef& offset)
 
 bool Bridge::InitSession(IDirect3DDevice9Ex* pDevice, const ScreenDesc& screen)
 {
+	FPUGuard fpu;
 	Impl& im = *m_pImpl;
 	if (im.m_hInstance == XR_NULL_HANDLE || !pDevice)
 		return false;
@@ -718,6 +782,8 @@ void Bridge::Shutdown()
 {
 	if (!m_pImpl)
 		return;
+	FPUGuard fpu;
+	SlowCallLog slow("Shutdown", false);
 	Impl& im = *m_pImpl;
 
 	if (im.m_hSession != XR_NULL_HANDLE && im.m_bSessionRunning)
@@ -807,11 +873,26 @@ bool Bridge::BeginFrame()
 {
 	if (!m_bSessionCreated)
 		return false;
+	FPUGuard fpu;
 	Impl& im = *m_pImpl;
+
+	static bool s_bReportedFPU = false;
+	if (!s_bReportedFPU)
+	{
+		s_bReportedFPU = true;
+		Log("FPU precision on entry: %s", fpu.WasReduced() ? "reduced (restored to 53-bit for OpenXR calls)" : "full");
+	}
 
 	im.PollEvents();
 	if (!im.m_bSessionRunning)
 		return false;
+
+	// Log the first few frames' timings in full, then only stalls.
+	static unsigned s_nFrame = 0;
+	bool bVerbose = (++s_nFrame <= 3);
+	char szWhat[64];
+	_snprintf(szWhat, sizeof(szWhat), "frame %u xrWaitFrame", s_nFrame);
+	SlowCallLog slowWait(szWhat, bVerbose);
 
 	ZeroMemory(&im.m_FrameState, sizeof(im.m_FrameState));
 	im.m_FrameState.type = XR_TYPE_FRAME_STATE;
@@ -912,8 +993,11 @@ void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst)
 	XrSwapchainImageWaitInfo wi;
 	ZeroMemory(&wi, sizeof(wi));
 	wi.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO;
-	wi.timeout = XR_INFINITE_DURATION;
-	if (Check(xrWaitSwapchainImage(dst.m_hSwapchain, &wi), "xrWaitSwapchainImage"))
+	wi.timeout = 1000000000;	// 1 s: never hang the game on the headset
+	XrResult resWait = xrWaitSwapchainImage(dst.m_hSwapchain, &wi);
+	if (resWait == XR_TIMEOUT_EXPIRED)
+		Log("xrWaitSwapchainImage timed out; skipping this image");
+	if (resWait == XR_SUCCESS)
 	{
 		float aParams[4] = { dst.m_bLinearize ? 1.0f : 0.0f, 0, 0, 0 };
 		m_pCtx11->UpdateSubresource(m_pParams, 0, NULL, aParams, 0, 0);
@@ -950,6 +1034,8 @@ void Bridge::EndFrame(bool bSubmitEyes, bool bSubmitScreen)
 {
 	if (!m_bSessionCreated || !m_pImpl->m_bSessionRunning)
 		return;
+	FPUGuard fpu;
+	SlowCallLog slow("EndFrame", false);
 	Impl& im = *m_pImpl;
 
 	bool bEyes = bSubmitEyes && im.m_bViewsValid && im.m_FrameState.shouldRender;
