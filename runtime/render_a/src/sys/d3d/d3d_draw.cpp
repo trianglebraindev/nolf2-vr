@@ -1,4 +1,5 @@
 #include "precompile.h"
+#include "d3d_vr.h"
 
 #include "d3d_convar.h"
 #include "3d_ops.h"
@@ -777,6 +778,11 @@ int d3d_RenderScene(SceneDesc *pDesc)
 
 	// Update the gamma ramp based on the current console variable state
 	d3d_UpdateGamma();
+
+	// VR: if this is the frame's main view, draw it once per eye into the
+	// headset's textures first. The normal pass below still draws the
+	// monitor's picture.
+	d3d_VR_RenderEyes(pDesc);
 
 	if (d3d_InitFrame(&g_ViewParams, pDesc)) 
 	{

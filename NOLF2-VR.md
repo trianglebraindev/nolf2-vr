@@ -24,7 +24,7 @@ retail NOLF2 install (patched to 1.3).
 | `update.bat` | Pull the latest changes from GitHub, then build |
 | `build_vs2022.bat` | Build only (`clean` as an argument rebuilds from scratch) |
 | `run_nolf2.bat` | Play the built game, windowed |
-| `run_nolf2_vr.bat` | Play in VR (current stage: the game on a floating screen) |
+| `run_nolf2_vr.bat` | Play in VR (stereo world; menus on a floating screen) |
 | `run_vrprobe.bat` | Headset plumbing test (floating test picture) |
 | F5 in Visual Studio (`build\Lithtech.sln`, Release) | Play under the debugger |
 
@@ -45,6 +45,8 @@ The game runs from the `run\` folder, never from the retail install. See
 - **DirectMusic** (the adaptive music): headers from the Wine project
   (LGPL 2.1, see `runtime/compat/directmusic/README.txt`) and the interface
   IDs in `runtime/kernel/src/sys/win/dmusic_guids.cpp`.
+
+Design notes and the VR comfort/QoL backlog: `docs/VR-DESIGN.md`.
 
 Credits: the original engine source is from the bwrsandman/lithtech project,
 whose history this repository continues.

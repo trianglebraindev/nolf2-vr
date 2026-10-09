@@ -42,6 +42,7 @@ DynamicLight *g_ObjectDynamicLights[MAX_VISIBLE_LIGHTS];
 uint32 g_nNumObjectDynamicLights;
 
 ViewParams g_ViewParams;
+const ViewBoxDef* g_pVRViewBoxOverride = NULL;
 
 // Increments the frame code and resets all the world structures' frame
 // codes if it wraps around.
@@ -472,6 +473,23 @@ bool d3d_InitFrame(ViewParams* pParams, SceneDesc *pDesc)
 
 	// Setup the viewport...
 	g_Device.SetupViewport(pDesc->m_Rect.left,pDesc->m_Rect.right,pDesc->m_Rect.top,pDesc->m_Rect.bottom,0.1f,1.0f);
+
+	// VR eye: use the headset's exact (off-centre) frustum for this eye.
+	if (g_pVRViewBoxOverride)
+	{
+		ViewBoxDef viewBox = *g_pVRViewBoxOverride;
+		viewBox.m_NearZ = NEARZ;
+		viewBox.m_FarZ = g_CV_FarZ;
+
+		LTMatrix mat;
+		quat_ConvertToMatrix((float*)&pDesc->m_Rotation, mat.m);
+		mat.SetTranslation(pDesc->m_Pos);
+
+		return d3d_InitFrustum2(pParams, &viewBox,
+			(float)pDesc->m_Rect.left, (float)pDesc->m_Rect.top,
+			(float)pDesc->m_Rect.right - 0.1f, (float)pDesc->m_Rect.bottom - 0.1f,
+			&mat, LTVector(1.0f, 1.0f, 1.0f), ViewParams::eRenderMode_Normal);
+	}
 
 	// Note: since the numbers are truncated when converted to integers, it takes a little
 	// off the right and bottom to make sure it never exceeds those.

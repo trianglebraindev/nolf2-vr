@@ -20,6 +20,7 @@
 #include "ClientServerShared.h"
 #include "ClientWeaponUtils.h"
 #include "MsgIDs.h"
+#include "PlayerShared.h"
 #include "SurfaceFunctions.h"
 #include "SFXMgr.h"
 #include "CharacterFX.h"
@@ -1835,6 +1836,26 @@ void CMoveMgr::UpdatePlayerAnimation()
 		oldDims = m_vWantedDims;
 		m_vWantedDims.Init(1.0f, 1.0f, 1.0f);
 		g_pCommonLT->GetModelAnimUserDims(m_hObject, &m_vWantedDims, modelAnim);
+
+		// VR world-scale calibration: record the player's size (half-extents,
+		// game units) whenever it changes, with the camera's height above the
+		// player's centre. Real eye height / (dims.y + camera offset) gives
+		// the game's units per metre. Written to vr_game.log in the run folder.
+		{
+			static LTVector s_vLoggedDims(0.0f, 0.0f, 0.0f);
+			if (!m_vWantedDims.NearlyEquals(s_vLoggedDims, 0.01f))
+			{
+				s_vLoggedDims = m_vWantedDims;
+				FILE* pLog = fopen("vr_game.log", "a");
+				if (pLog)
+				{
+					fprintf(pLog, "Player dims (half-size): %.2f %.2f %.2f  camera above centre: %.2f  eye above feet: %.2f\n",
+						m_vWantedDims.x, m_vWantedDims.y, m_vWantedDims.z, g_kvPlayerCameraOffset.y,
+						m_vWantedDims.y + g_kvPlayerCameraOffset.y);
+					fclose(pLog);
+				}
+			}
+		}
 
 		// Figure out a position offset.
 		LTVector offset;

@@ -107,6 +107,12 @@ public:
 
 	D3DFORMAT				GetDefaultDepthStencilFormat(uint32 iZBitDepth,uint32 iStencilBitDepth);
 
+	// Forget the cached viewport. Needed after switching render targets
+	// outside the engine's own code (the D3D viewport resets to the new
+	// target's size, but SetupViewport would skip setting it if the
+	// requested rectangle happened to match the cached one).
+	void					InvalidateViewport() { m_rcViewport.left = m_rcViewport.right = m_rcViewport.top = m_rcViewport.bottom = 0; }
+
 	// Note: m_pD3DDevice is public for quick access...
     CDirect3DDevice9Wrapper *m_pD3DDevice;		// The D3D rendering device
 

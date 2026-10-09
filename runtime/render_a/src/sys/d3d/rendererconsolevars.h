@@ -34,6 +34,13 @@
 RCONVAR(g_CV_CacheTextures, "CacheTextures", int, 0);
 
 //------------------------------
+// VR (only used with -vr)
+// World scale: how many game units make one real-world metre. Wrong
+// values make the world look like a doll's house (too high) or a giant's
+// (too low), and make the distance between your eyes feel wrong.
+RCONVAR(g_CV_VRUnitsPerMeter, "VRUnitsPerMeter", float, 60.0f);
+
+//------------------------------
 // Really Close settings
 RCONVAR(g_CV_ModelNear, "reallyclose_near", float, 0.1f);
 RCONVAR(g_CV_ModelFar, "reallyclose_far", float, 7.0f);

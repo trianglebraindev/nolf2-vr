@@ -113,6 +113,10 @@ public:
 	IDirect3DTexture9*	GetEyeTexture(Eye eEye) const;
 	IDirect3DTexture9*	GetScreenTexture() const;
 
+	// True when this frame's eye poses are tracked (valid after a
+	// BeginFrame() that returned true). If false, draw the flat screen.
+	bool				HasValidViews() const;
+
 	// Valid after a BeginFrame() that returned true.
 	const EyeView&		GetEyeView(Eye eEye) const;
 
@@ -120,6 +124,7 @@ public:
 	const Pose&			GetHeadPose() const;
 
 	// Re-centre: the current head position/heading becomes the origin.
+	// Takes effect at the next BeginFrame where the head is tracked.
 	void		Recenter();
 
 private:

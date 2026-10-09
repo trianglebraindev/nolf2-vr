@@ -11,6 +11,8 @@
 #ifndef __D3D_VR_H__
 #define __D3D_VR_H__
 
+struct SceneDesc;
+
 // True if -vr was given on the command line.
 bool d3d_VR_Requested();
 
@@ -29,8 +31,15 @@ void d3d_VR_Term();
 // True while VR is up and running.
 bool d3d_VR_IsActive();
 
+// Called from d3d_RenderScene before the normal (monitor) pass. If this
+// scene is the frame's main view of the world, renders it once per eye
+// into the headset's textures.
+void d3d_VR_RenderEyes(SceneDesc* pDesc);
+
 // Called once per frame, just before Present: sends the finished frame
-// to the headset.
+// to the headset (3D eyes if they were drawn this frame, otherwise the
+// flat screen), then waits for the headset's next frame slot. That wait
+// is what paces the game to the headset.
 void d3d_VR_OnSwapBuffers();
 
 #endif // __D3D_VR_H__

@@ -334,7 +334,7 @@ struct Bridge::Impl
 	void WaitForD3D9();
 	void WaitForD3D11();
 	void Blit(SharedTexture& src, Swapchain& dst);
-	void DoRecenter();
+	bool DoRecenter();
 };
 
 static XrPosef IdentityPose()
@@ -908,11 +908,9 @@ bool Bridge::BeginFrame()
 	if (!im.Check(xrBeginFrame(im.m_hSession, &bi), "xrBeginFrame"))
 		return false;
 
+	// Retried every frame until the head is tracked.
 	if (im.m_bRecenterPending)
-	{
-		im.m_bRecenterPending = false;
-		im.DoRecenter();
-	}
+		im.m_bRecenterPending = !im.DoRecenter();
 
 	// Eye poses and fields of view for this frame.
 	XrViewLocateInfo li;
@@ -1108,7 +1106,7 @@ void Bridge::EndFrame(bool bSubmitEyes, bool bSubmitScreen)
 	im.Check(xrEndFrame(im.m_hSession, &ei), "xrEndFrame");
 }
 
-void Bridge::Impl::DoRecenter()
+bool Bridge::Impl::DoRecenter()
 {
 	// New origin = where the head is now, turned to face where the head
 	// faces now (yaw only, so the floor stays level).
@@ -1119,8 +1117,7 @@ void Bridge::Impl::DoRecenter()
 		!(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) ||
 		!(loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT))
 	{
-		Log("Recentre skipped: head not tracked");
-		return;
+		return false;	// head not tracked yet; try again next frame
 	}
 
 	// Forward = orientation applied to -Z.
@@ -1137,6 +1134,7 @@ void Bridge::Impl::DoRecenter()
 	offset.position = loc.pose.position;
 	CreateAppSpace(offset);
 	Log("Recentred (yaw %.1f deg)", fYaw * 57.29578f);
+	return true;
 }
 
 bool Bridge::IsSessionRunning() const	{ return m_pImpl && m_pImpl->m_bSessionRunning; }
@@ -1146,6 +1144,7 @@ unsigned Bridge::GetEyeHeight() const	{ return m_pImpl->m_aEyeTex[0].m_nHeight; 
 IDirect3DTexture9* Bridge::GetEyeTexture(Eye eEye) const	{ return m_pImpl->m_aEyeTex[eEye].m_p9; }
 IDirect3DTexture9* Bridge::GetScreenTexture() const			{ return m_pImpl->m_ScreenTex.m_p9; }
 const EyeView& Bridge::GetEyeView(Eye eEye) const			{ return m_pImpl->m_aEyeViews[eEye]; }
+bool Bridge::HasValidViews() const							{ return m_pImpl->m_bViewsValid && m_pImpl->m_FrameState.shouldRender; }
 const Pose& Bridge::GetHeadPose() const						{ return m_pImpl->m_HeadPose; }
 void Bridge::Recenter()										{ if (m_pImpl) m_pImpl->m_bRecenterPending = true; }
 

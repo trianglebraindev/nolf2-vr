@@ -46,6 +46,11 @@ extern uint32 g_nNumObjectDynamicLights;
 
 bool d3d_InitFrame(ViewParams* pParams, SceneDesc *pDesc);
 
+// VR: when set, d3d_InitFrame uses this (lopsided, per-eye) view box
+// instead of building a centred one from the scene's field of view.
+// Only m_COP and m_WindowSize are used; near/far come from the engine.
+extern const ViewBoxDef* g_pVRViewBoxOverride;
+
 // Init the view box.
 void d3d_InitViewBox(ViewBoxDef *pDef,
 	float nearZ, float  farZ, float xFov, float yFov);

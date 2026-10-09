@@ -1,7 +1,8 @@
 @echo off
 REM ============================================================
-REM  Runs the game in VR (currently: the normal game shown on a
-REM  large floating screen in the headset).
+REM  Runs the game in VR: the 3D world in stereo with head tracking;
+REM  menus and movies on a large floating screen.
+REM  World scale: add e.g. +VRUnitsPerMeter 55 to the line below.
 REM  Connect the Quest through Virtual Desktop (VDXR) first.
 REM  VR log: run\xrbridge.log
 REM ============================================================
