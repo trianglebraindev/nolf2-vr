@@ -52,13 +52,15 @@ class CPlayerViewAttachmentMgr
 				CPlayerViewAttachment()
 				:	m_hModel	( LTNULL ),
 					m_hSocket	( INVALID_MODEL_SOCKET ),
-					m_bHidden	( false )
+					m_bHidden	( false ),
+					m_bAtCuff	( false )
 				{
 				}
 
 				LTObjRef		m_hModel;
 				HMODELSOCKET	m_hSocket;
 				bool			m_bHidden;
+				bool			m_bAtCuff;		// a sleeve at a forearm's cuff (hidden in VR hands-only)
 		};
 		typedef std::vector<CPlayerViewAttachment> PVAttachmentList;
 	

@@ -61,6 +61,11 @@
 //                   too far forward of your hand, raise VRGunHandZ.
 //   VRGunPitch      tilts the gun relative to the controller, degrees
 //                   (positive = barrel down)
+//   VRArms          0 = just hands (default), 1 = the game's full arms
+//
+// HANDS (see VRMgr.h): the left hand follows the left controller. Squeeze
+// the left grip with your left hand near where Cate's left hand sits on
+// the weapon to hold it with both hands (steadier aim); let go to free it.
 //
 // ----------------------------------------------------------------------- //
 
@@ -88,6 +93,10 @@ static VarTrack g_vtVRGunHandX;
 static VarTrack g_vtVRGunHandY;
 static VarTrack g_vtVRGunHandZ;
 static VarTrack g_vtVRGunPitch;
+static VarTrack g_vtVRArms;
+
+static const float kGrabDistanceMeters = 0.2f;	// how close the left hand must be to grab the gun
+static const float kArmShrink = 0.03f;			// forearm size left when hiding arms
 
 static const float kStickDeadZone = 0.15f;
 
@@ -137,6 +146,16 @@ CVRMgr::CVRMgr()
 	m_nCurrentFit		= -1;
 	m_szCurrentGun[0]	= '\0';
 	m_bAdjusting		= false;
+	m_hGunModel			= LTNULL;
+	m_hNodeArmL = m_hNodeWristL = m_hNodeArmR = m_hNodeWristR = INVALID_MODEL_NODE;
+	m_pArmLMatrix		= NULL;
+	m_pArmRMatrix		= NULL;
+	m_bGunPlaced		= false;
+	m_bLeftAnimValid	= false;
+	m_bTwoHand			= false;
+	m_vTwoHandDir.Init(0.0f, 0.0f, 1.0f);
+	m_bLeftOffsetValid	= false;
+	m_vLeftOffset.Init(0.0f, 0.0f, 0.0f);
 	memset(&m_State, 0, sizeof(m_State));
 	m_aPrevButtons[0] = m_aPrevButtons[1] = 0;
 	m_bSnapLatched		= false;
@@ -174,6 +193,7 @@ void CVRMgr::Init()
 	g_vtVRGunHandY.Init(g_pLTClient, "VRGunHandY", NULL, -18.0f);
 	g_vtVRGunHandZ.Init(g_pLTClient, "VRGunHandZ", NULL, 30.0f);
 	g_vtVRGunPitch.Init(g_pLTClient, "VRGunPitch", NULL, 0.0f);
+	g_vtVRArms.Init(g_pLTClient, "VRArms", NULL, 0.0f);
 
 	LoadGunFits();
 }
@@ -256,7 +276,14 @@ void CVRMgr::Update(float fFrameTime)
 	UpdateMenuControls(fFrameTime);
 	UpdateHudMode();
 	if (bPlaying)
+	{
 		UpdateGunAdjust(fFrameTime);
+		UpdateTwoHand();
+	}
+	else
+	{
+		m_bTwoHand = false;
+	}
 
 	if (m_pfnSetCloseScale)
 		m_pfnSetCloseScale(GetGunScale());
@@ -275,7 +302,7 @@ void CVRMgr::Log(const char* pszFormat, ...)
 	fclose(pFile);
 }
 
-bool CVRMgr::GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot) const
+bool CVRMgr::GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot, bool bGunPitch) const
 {
 	if (!IsActive() || nHand < 0 || nHand > 1)
 		return false;
@@ -292,7 +319,7 @@ bool CVRMgr::GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot) const
 	LTRotation rAim(hand.aim.rot[0], hand.aim.rot[1], hand.aim.rot[2], hand.aim.rot[3]);
 	rRot = (~rHead) * rAim;
 
-	float fPitch = g_vtVRGunPitch.GetFloat();
+	float fPitch = bGunPitch ? g_vtVRGunPitch.GetFloat() : 0.0f;
 	if (fPitch != 0.0f)
 		rRot = rRot * LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(fPitch));
 	return true;
@@ -310,8 +337,8 @@ float CVRMgr::GetGunScale() const
 bool CVRMgr::GetGunPlacement(const LTVector& vModelPos, LTVector& vObjPos, LTRotation& rObjRot) const
 {
 	LTVector vHand;
-	LTRotation rHand;
-	if (!GetHandInCamera(LTVR_RIGHT, vHand, rHand))
+	LTRotation rHand, rGun;
+	if (!ComputeGun(vHand, rHand, rGun))
 		return false;
 
 	// Positions here are in really-close units: game units / scale.
@@ -320,16 +347,11 @@ bool CVRMgr::GetGunPlacement(const LTVector& vModelPos, LTVector& vObjPos, LTRot
 	LTVector vNatural(g_vtVRGunHandX.GetFloat() * fUnitsPerCm, g_vtVRGunHandY.GetFloat() * fUnitsPerCm,
 		g_vtVRGunHandZ.GetFloat() * fUnitsPerCm);
 
-	// This weapon's own fit: slide (along the controller's axes), then turn
-	// and tilt about the hand.
-	LTRotation rGun = rHand;
+	// This weapon's own fit: slide, along the controller's axes (the turn
+	// and tilt are in rGun already, see ComputeGun).
 	const GunFit* pFit = GetCurrentFit();
 	if (pFit)
-	{
 		vHand += VR_Rotate(rHand, LTVector(pFit->fX, pFit->fY, pFit->fZ) * fUnitsPerCm);
-		rGun = rHand * LTRotation(LTVector(0.0f, 1.0f, 0.0f), DEG2RAD(pFit->fYaw)) *
-			LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(pFit->fPitch));
-	}
 
 	// A point X of the normal view moves to: hand + gunRot * (X - natural).
 	vObjPos = vHand / fScale + VR_Rotate(rGun, vModelPos - vNatural / fScale);
@@ -375,6 +397,8 @@ void CVRMgr::SetCurrentGun(const char* pszName, HOBJECT hModel)
 		}
 		strncpy(m_szCurrentGun, pszName, sizeof(m_szCurrentGun) - 1);
 		m_szCurrentGun[sizeof(m_szCurrentGun) - 1] = '\0';
+		m_bTwoHand = false;
+		m_bLeftAnimValid = false;
 		m_nCurrentFit = -1;
 		for (int i = 0; i < m_nGunFits; ++i)
 		{
@@ -406,31 +430,61 @@ void CVRMgr::SetCurrentGun(const char* pszName, HOBJECT hModel)
 	}
 }
 
+// Fits tested in the headset, used for any weapon vr_guns.txt doesn't
+// mention. (Tre's, from the in-game adjust mode.)
+static const struct { const char* pszName; float x, y, z, yaw, pitch, scale; } kDefaultGunFits[] =
+{
+	{ "Crossbow",	0.10f, 0.00f, 0.25f,	5.62f, 1.39f,	12.0f },
+};
+
 // vr_guns.txt: one line per weapon:  "Name" x y z yaw pitch scale
 void CVRMgr::LoadGunFits()
 {
 	m_nGunFits = 0;
 	FILE* pFile = fopen(kGunFitFile, "r");
-	if (!pFile)
-		return;
-	char szLine[256];
-	while (m_nGunFits < kMaxGunFits && fgets(szLine, sizeof(szLine), pFile))
+	if (pFile)
 	{
-		char* pStart = strchr(szLine, '"');
-		char* pEnd = pStart ? strchr(pStart + 1, '"') : NULL;
-		if (!pStart || !pEnd || pEnd == pStart + 1)
-			continue;
-		GunFit fit;
-		memset(&fit, 0, sizeof(fit));
-		int nLen = (int)(pEnd - pStart - 1);
-		if (nLen > (int)sizeof(fit.szName) - 1)
-			nLen = (int)sizeof(fit.szName) - 1;
-		strncpy(fit.szName, pStart + 1, nLen);
-		fit.szName[nLen] = '\0';
-		if (sscanf(pEnd + 1, "%f %f %f %f %f %f", &fit.fX, &fit.fY, &fit.fZ, &fit.fYaw, &fit.fPitch, &fit.fScale) >= 5)
-			m_aGunFits[m_nGunFits++] = fit;
+		char szLine[256];
+		while (m_nGunFits < kMaxGunFits && fgets(szLine, sizeof(szLine), pFile))
+		{
+			char* pStart = strchr(szLine, '"');
+			char* pEnd = pStart ? strchr(pStart + 1, '"') : NULL;
+			if (!pStart || !pEnd || pEnd == pStart + 1)
+				continue;
+			GunFit fit;
+			memset(&fit, 0, sizeof(fit));
+			int nLen = (int)(pEnd - pStart - 1);
+			if (nLen > (int)sizeof(fit.szName) - 1)
+				nLen = (int)sizeof(fit.szName) - 1;
+			strncpy(fit.szName, pStart + 1, nLen);
+			fit.szName[nLen] = '\0';
+			if (sscanf(pEnd + 1, "%f %f %f %f %f %f", &fit.fX, &fit.fY, &fit.fZ, &fit.fYaw, &fit.fPitch, &fit.fScale) >= 5)
+				m_aGunFits[m_nGunFits++] = fit;
+		}
+		fclose(pFile);
 	}
-	fclose(pFile);
+
+	// Built-in fits for weapons the file doesn't have.
+	for (int d = 0; d < (int)(sizeof(kDefaultGunFits) / sizeof(kDefaultGunFits[0])) && m_nGunFits < kMaxGunFits; ++d)
+	{
+		bool bHave = false;
+		for (int i = 0; i < m_nGunFits; ++i)
+		{
+			if (!stricmp(m_aGunFits[i].szName, kDefaultGunFits[d].pszName))
+				bHave = true;
+		}
+		if (bHave)
+			continue;
+		GunFit& fit = m_aGunFits[m_nGunFits++];
+		memset(&fit, 0, sizeof(fit));
+		strncpy(fit.szName, kDefaultGunFits[d].pszName, sizeof(fit.szName) - 1);
+		fit.fX = kDefaultGunFits[d].x;
+		fit.fY = kDefaultGunFits[d].y;
+		fit.fZ = kDefaultGunFits[d].z;
+		fit.fYaw = kDefaultGunFits[d].yaw;
+		fit.fPitch = kDefaultGunFits[d].pitch;
+		fit.fScale = kDefaultGunFits[d].scale;
+	}
 }
 
 void CVRMgr::SaveGunFits()
@@ -520,11 +574,241 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 	if (pFit->fScale > 60.0f)	pFit->fScale = 60.0f;
 }
 
+// ----------------------------------------------------------------------- //
+// Hands
+// ----------------------------------------------------------------------- //
+
+bool CVRMgr::ComputeGun(LTVector& vHand, LTRotation& rAim, LTRotation& rGun) const
+{
+	if (!GetHandInCamera(LTVR_RIGHT, vHand, rAim))
+		return false;
+
+	// This weapon's fit: turn and tilt about the hand.
+	rGun = rAim;
+	const GunFit* pFit = GetCurrentFit();
+	if (pFit)
+	{
+		rGun = rAim * LTRotation(LTVector(0.0f, 1.0f, 0.0f), DEG2RAD(pFit->fYaw)) *
+			LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(pFit->fPitch));
+	}
+
+	// Two hands: turn the gun (and the aim with it) about the right hand so
+	// the line from the right hand to the left keeps the direction, relative
+	// to the gun, that it had when the left hand grabbed on.
+	if (m_bTwoHand)
+	{
+		LTVector vLeft;
+		LTRotation rLeft;
+		if (GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
+		{
+			LTVector vWant = vLeft - vHand;
+			float fLen = vWant.Mag();
+			if (fLen > 0.001f)
+			{
+				vWant /= fLen;
+				LTRotation rTurn = VR_Arc(VR_Rotate(rGun, m_vTwoHandDir), vWant);
+				rGun = rTurn * rGun;
+				rAim = rTurn * rAim;
+			}
+		}
+	}
+	return true;
+}
+
+bool CVRMgr::HideArms() const
+{
+	return IsActive() && g_vtVRArms.GetFloat() < 0.5f;
+}
+
+void CVRMgr::AttachHands(HOBJECT hGunModel)
+{
+	m_hGunModel = hGunModel;
+	m_hNodeArmL = m_hNodeWristL = m_hNodeArmR = m_hNodeWristR = INVALID_MODEL_NODE;
+	m_pArmLMatrix = m_pArmRMatrix = NULL;
+	m_bLeftAnimValid = false;
+	m_bGunPlaced = false;
+	if (!hGunModel)
+		return;
+
+	// The bones every first-person model in NOLF2 shares (see vr_models.log).
+	struct { const char* pszName; HMODELNODE* phNode; } aNodes[] = {
+		{ "armL",		&m_hNodeArmL },
+		{ "wristL",		&m_hNodeWristL },
+		{ "forearmR",	&m_hNodeArmR },
+		{ "wristR",		&m_hNodeWristR } };
+
+	// Remove-then-add, so a model is never hooked twice (weapon models are
+	// made afresh on every switch, and this can be called more than once).
+	for (int i = 0; i < 4; ++i)
+	{
+		HMODELNODE hNode = INVALID_MODEL_NODE;
+		if (LT_OK == g_pModelLT->GetNode(hGunModel, aNodes[i].pszName, hNode))
+		{
+			*aNodes[i].phNode = hNode;
+			g_pModelLT->RemoveNodeControlFn(hGunModel, hNode, HandsNodeControl, this);
+			g_pModelLT->AddNodeControlFn(hGunModel, hNode, HandsNodeControl, this);
+		}
+	}
+}
+
+void CVRMgr::SetGunModelTransform(const LTVector& vPos, const LTRotation& rRot)
+{
+	m_vGunObjPos = vPos;
+	m_rGunObjRot = rRot;
+	m_bGunPlaced = true;
+}
+
+// Where the left wrist goes when the left hand is free (model space).
+bool CVRMgr::GetLeftWristTarget(LTMatrix& mWrist) const
+{
+	if (!m_bGunPlaced || !m_bLeftAnimValid)
+		return false;
+	LTVector vLeft;
+	LTRotation rLeft;
+	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
+		return false;
+
+	// The left controller in the gun model's own space.
+	const float fScale = GetGunScale();
+	LTVector vModel = VR_Unrotate(m_rGunObjRot, vLeft / fScale - m_vGunObjPos);
+	LTRotation rModel = (~m_rGunObjRot) * rLeft;
+
+	LTRotation rOffset;
+	LTVector vOffset(0.0f, 0.0f, 0.0f);
+	if (m_bLeftOffsetValid)
+	{
+		rOffset = m_rLeftOffset;
+		vOffset = m_vLeftOffset;
+	}
+	else
+	{
+		// Until the first two-hand grab teaches it better: the hand turned
+		// the way Cate's left hand is on the weapon, as if the left
+		// controller pointed the same way as the right one.
+		LTVector vRight;
+		LTRotation rRight;
+		if (!GetHandInCamera(LTVR_RIGHT, vRight, rRight, false))
+			return false;
+		LTRotation rAnim;
+		rAnim.ConvertFromMatrix(m_mLeftWristAnim);
+		rOffset = (~((~m_rGunObjRot) * rRight)) * rAnim;
+	}
+
+	LTRotation rWrist = rModel * rOffset;
+	LTVector vWrist = vModel + VR_Rotate(rModel, vOffset);
+	rWrist.ConvertToMatrix(mWrist);
+	mWrist.SetTranslation(vWrist);
+	return true;
+}
+
+// Left grip near Cate's left hand: hold the gun with both hands.
+void CVRMgr::UpdateTwoHand()
+{
+	bool bGrip = (m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) != 0;
+	if (m_bTwoHand && (!bGrip || m_bAdjusting))
+		m_bTwoHand = false;
+	if (m_bTwoHand || m_bAdjusting || !Pressed(LTVR_LEFT, LTVR_BTN_GRIP) || !m_bGunPlaced || !m_bLeftAnimValid)
+		return;
+
+	LTVector vLeft, vRight;
+	LTRotation rLeft, rAim, rGun;
+	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false) || !ComputeGun(vRight, rAim, rGun))
+		return;
+
+	// Where Cate's left hand is on the weapon, in camera space.
+	const float fScale = GetGunScale();
+	LTVector vAnim;
+	m_mLeftWristAnim.GetTranslation(vAnim);
+	LTVector vAnimCam = (m_vGunObjPos + VR_Rotate(m_rGunObjRot, vAnim)) * fScale;
+	float fUnitsPerMeter = m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 60.0f;
+	if ((vLeft - vAnimCam).Mag() / fUnitsPerMeter > kGrabDistanceMeters)
+		return;
+
+	// Learn how a hand sits relative to its controller from this grab: the
+	// free left hand uses it from now on.
+	LTVector vModel = VR_Unrotate(m_rGunObjRot, vLeft / fScale - m_vGunObjPos);
+	LTRotation rModel = (~m_rGunObjRot) * rLeft;
+	LTRotation rAnim;
+	rAnim.ConvertFromMatrix(m_mLeftWristAnim);
+	m_rLeftOffset = (~rModel) * rAnim;
+	m_vLeftOffset = VR_Unrotate(rModel, vAnim - vModel);
+	m_bLeftOffsetValid = true;
+
+	LTVector vDir = vLeft - vRight;
+	float fLen = vDir.Mag();
+	if (fLen < 0.001f)
+		return;
+	m_vTwoHandDir = VR_Unrotate(rGun, vDir / fLen);
+	m_bTwoHand = true;
+}
+
+// Called by the engine while it works out the gun model's skeleton, once
+// per hooked bone, parents before children.
+void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
+{
+	CVRMgr* p = (CVRMgr*)pUser;
+	if (!p || !data.m_pNodeTransform || data.m_hModel != p->m_hGunModel)
+		return;
+	const HMODELNODE hNode = data.m_hNode;
+
+	if (hNode == p->m_hNodeArmL)
+	{
+		p->m_pArmLMatrix = data.m_pNodeTransform;
+		return;
+	}
+	if (hNode == p->m_hNodeArmR)
+	{
+		p->m_pArmRMatrix = data.m_pNodeTransform;
+		return;
+	}
+
+	LTMatrix** ppArm = NULL;
+	if (hNode == p->m_hNodeWristL)
+	{
+		ppArm = &p->m_pArmLMatrix;
+		p->m_mLeftWristAnim = *data.m_pNodeTransform;
+		p->m_bLeftAnimValid = true;
+
+		// Free left hand: put it on the left controller (the fingers, which
+		// hang off the wrist, come along).
+		if (p->IsActive() && !p->m_bTwoHand)
+		{
+			LTMatrix mWrist;
+			if (p->GetLeftWristTarget(mWrist))
+				*data.m_pNodeTransform = mWrist;
+		}
+	}
+	else if (hNode == p->m_hNodeWristR)
+	{
+		ppArm = &p->m_pArmRMatrix;
+	}
+	else
+	{
+		return;
+	}
+
+	// Hands only: shrink the forearm into the wrist. Its children (the hand)
+	// have been placed already, so only the forearm's own skin is affected.
+	if (*ppArm && p->HideArms())
+	{
+		LTVector vWrist;
+		data.m_pNodeTransform->GetTranslation(vWrist);
+		LTMatrix mShrink;
+		mShrink.Identity();
+		mShrink.m[0][0] = mShrink.m[1][1] = mShrink.m[2][2] = kArmShrink;
+		mShrink.SetTranslation(vWrist * (1.0f - kArmShrink));
+		LTMatrix mArm;
+		MatMul(&mArm, &mShrink, *ppArm);
+		**ppArm = mArm;
+	}
+	*ppArm = NULL;
+}
+
 bool CVRMgr::GetAimRay(LTVector& vFrom, LTRotation& rRot) const
 {
 	LTVector vHand;
-	LTRotation rHand;
-	if (!g_pPlayerMgr || !GetHandInCamera(LTVR_RIGHT, vHand, rHand))
+	LTRotation rHand, rGun;
+	if (!g_pPlayerMgr || !ComputeGun(vHand, rHand, rGun))
 		return false;
 	HOBJECT hCamera = g_pPlayerMgr->GetCamera();
 	if (!hCamera)

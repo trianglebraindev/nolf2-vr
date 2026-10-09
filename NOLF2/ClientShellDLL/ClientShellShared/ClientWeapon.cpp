@@ -1465,6 +1465,12 @@ void CClientWeapon::ResetWeaponFilenames()
 	// Set the filenames...
 	g_pCommonLT->SetObjectFilenames( m_hObject, &createStruct );
 
+	// VR: a new model loses its bone hooks; hook the hands again.
+	if ( W_INACTIVE != GetState() )
+	{
+		g_VRMgr.AttachHands( m_hObject );
+	}
+
 	// Always put the weapon in the correct position after we reset the model...
 
 	UpdateWeaponPosition( LTVector() );
@@ -2042,10 +2048,11 @@ void CClientWeapon::SetDisable( bool bDisable /*=true*/)
 
 void CClientWeapon::Select()
 {
-	// VR: this weapon's fit in your hand.
+	// VR: this weapon's fit in your hand, and its hands.
 	if ( m_pWeapon )
 	{
 		g_VRMgr.SetCurrentGun( m_pWeapon->szName, m_hObject );
+		g_VRMgr.AttachHands( m_hObject );
 	}
 
 	if ( W_INACTIVE == GetState() )
@@ -2336,8 +2343,10 @@ bool CClientWeapon::Activate()
 		}
 	}
 
-	// VR: this weapon's fit in your hand (and its make-up, for the log).
+	// VR: this weapon's fit in your hand (and its make-up, for the log),
+	// and its hands.
 	g_VRMgr.SetCurrentGun( m_pWeapon->szName, m_hObject );
+	g_VRMgr.AttachHands( m_hObject );
 
     return true;
 }
@@ -2948,6 +2957,7 @@ void CClientWeapon::UpdateWeaponPosition( LTVector const &vOffset )
 		m_vVRObjPos += VR_Rotate( m_rVRObjRot, vOffset );
 		g_pLTClient->SetObjectPos( m_hObject, &m_vVRObjPos );
 		g_pLTClient->SetObjectRotation( m_hObject, &m_rVRObjRot );
+		g_VRMgr.SetGunModelTransform( m_vVRObjPos, m_rVRObjRot );
 		m_bVRPlaced = true;
 		return;
 	}

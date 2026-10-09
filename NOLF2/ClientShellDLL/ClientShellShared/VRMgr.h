@@ -26,6 +26,18 @@ inline LTVector VR_Unrotate(const LTRotation& r, const LTVector& v)
 	return LTVector(v.Dot(r.Right()), v.Dot(r.Up()), v.Dot(r.Forward()));
 }
 
+// The smallest rotation that turns direction a into direction b (both unit
+// length).
+inline LTRotation VR_Arc(const LTVector& a, const LTVector& b)
+{
+	LTVector c = a.Cross(b);
+	float w = 1.0f + a.Dot(b);
+	if (w < 1e-4f)
+		return LTRotation(0.0f, 0.0f, 0.0f, 1.0f);	// opposite: leave alone
+	float fLen = (float)sqrt(c.x * c.x + c.y * c.y + c.z * c.z + w * w);
+	return LTRotation(c.x / fLen, c.y / fLen, c.z / fLen, w / fLen);
+}
+
 class CVRMgr
 {
 public:
@@ -83,7 +95,7 @@ public:
 	// A controller relative to the game's camera (your head), in game units
 	// and the camera's axes: the hand's position (grip) and pointing
 	// direction (aim, plus VRGunPitch). False if it isn't tracked.
-	bool		GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot) const;
+	bool		GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot, bool bGunPitch = true) const;
 
 	float		GetGunScale() const;
 
@@ -111,6 +123,26 @@ public:
 	// slide, tilt and resize the gun in your hand; saved to vr_guns.txt.
 	bool		IsAdjustingGun() const	{ return m_bAdjusting; }
 
+	// --- Hands ---
+	//
+	// The game's gun models have both of Cate's arms in them. In VR the
+	// forearms are shrunk away so only the gloved hands are left (VRArms 0),
+	// the right hand stays on the gun and the left hand follows the left
+	// controller. Squeeze the left grip with your left hand near where
+	// Cate's left hand holds the weapon to hold it with both hands: the
+	// left hand goes back onto the weapon and the gun aims along the line
+	// between your hands. Done with the skeleton (node controls), so the
+	// models themselves are untouched.
+
+	// After the gun model is made (or remade): hook its arm and wrist bones.
+	void		AttachHands(HOBJECT hGunModel);
+	// Each frame: where the gun model was put (really-close space).
+	void		SetGunModelTransform(const LTVector& vPos, const LTRotation& rRot);
+	bool		HideArms() const;
+	bool		IsTwoHanded() const		{ return m_bTwoHand; }
+
+	static void	HandsNodeControl(const NodeControlData& data, void* pUser);
+
 private:
 
 	void		Init();
@@ -118,6 +150,27 @@ private:
 	void		UpdateMenuControls(float fFrameTime);
 	void		UpdateHudMode();
 	void		UpdateGunAdjust(float fFrameTime);
+	void		UpdateTwoHand();
+
+	// The right hand's position and aim, and the gun's rotation (fit and
+	// two-hand steadying applied), in camera space.
+	bool		ComputeGun(LTVector& vHand, LTRotation& rAim, LTRotation& rGun) const;
+	bool		GetLeftWristTarget(LTMatrix& mWrist) const;
+
+	HOBJECT		m_hGunModel;
+	HMODELNODE	m_hNodeArmL, m_hNodeWristL, m_hNodeArmR, m_hNodeWristR;
+	LTMatrix*	m_pArmLMatrix;			// this evaluation's arm bones (shrunk once the wrists are known)
+	LTMatrix*	m_pArmRMatrix;
+	bool		m_bGunPlaced;
+	LTVector	m_vGunObjPos;
+	LTRotation	m_rGunObjRot;
+	bool		m_bLeftAnimValid;		// the left wrist as the game animates it (model space)
+	LTMatrix	m_mLeftWristAnim;
+	bool		m_bTwoHand;
+	LTVector	m_vTwoHandDir;			// right hand -> left hand when grabbed, gun axes
+	bool		m_bLeftOffsetValid;		// left controller -> left wrist, learnt at the first grab
+	LTRotation	m_rLeftOffset;
+	LTVector	m_vLeftOffset;
 
 	// How a gun sits in your hand, on top of the VRGun* settings.
 	struct GunFit

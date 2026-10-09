@@ -16,6 +16,7 @@
 	#include "CMoveMgr.h"
 	#include "CharacterFX.h"
 	#include "PlayerViewAttachmentMgr.h"
+#include "VRMgr.h"
 
 //
 // Globals...
@@ -168,6 +169,7 @@ void CPlayerViewAttachmentMgr::CreatePVAttachment( const char *pszPVAttachmentPo
 	{
 		return;
 	}
+	pva.m_bAtCuff = ( 0 == strnicmp( pszPVAttachmentPosition, "cuff", 4 ));
 	
 	// Make sure the attachment record actually exists...
 	
@@ -245,6 +247,13 @@ void CPlayerViewAttachmentMgr::UpdatePVAttachment( uint8 nPVAttachIndex )
 
 	if( PlayerViewAttachment.m_hModel )
 	{
+		// VR, hands only: the forearms are gone, so are their sleeves.
+		if( PlayerViewAttachment.m_bAtCuff && g_VRMgr.HideArms() )
+		{
+			g_pCommonLT->SetObjectFlags( PlayerViewAttachment.m_hModel, OFT_Flags, 0, FLAG_VISIBLE );
+			return;
+		}
+
 		if( INVALID_MODEL_SOCKET != PlayerViewAttachment.m_hSocket )
 		{
 			LTransform transform;

@@ -104,6 +104,7 @@ needs. Not ordered within a group yet.
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
 | Left stick click | adjust gun (again: done, saves) | |
+| Left grip (hand on the weapon) | hold the gun with both hands | |
 | Conversation choices | right stick up/down highlights, right trigger or A picks, B says nothing | |
 | Home key (keyboard) | recentre | recentre |
 
@@ -142,14 +143,27 @@ positive = barrel down).
   settings go on the launch line (`+Name value`) or through the in-game
   adjust mode.
 
-## Hands (next)
+## Hands (first pass)
 
-Goal (Tre): hands separate like Half-Life: Alyx / Titanfall 2 VR. The right
-hand holds the gun; the left hand is free; optional two-hand grip for
-stability. The game's gun models include both arms, so first we look at
-how they're built (`run\vr_models.log`: pieces, bones and sockets per
-weapon) to decide between hiding the left arm and driving it to the left
-controller.
+Goal (Tre): hands separate like Half-Life: Alyx / Titanfall 2 VR, done in
+code rather than by editing models where possible.
+
+- Every first-person model shares one skeleton (`run\vr_models.log`):
+  `armL > wristL > fingers`, `forearmR > wristR > fingers`, and the
+  weapon's own bones under the root. Pieces are generic (arms and gloves
+  together), so it's done with bone hooks (node control functions).
+- Hands only (`VRArms 0`, default): once a wrist is placed, its forearm
+  bone is shrunk into the wrist, so only the gloved hand remains and the
+  fingers keep the game's animation. Sleeves on the `cuff` sockets are
+  hidden.
+- Left hand free: the left wrist follows the left controller.
+- Two-hand grip: left grip with the left hand within 20 cm of where Cate's
+  left hand is on the weapon. The hand goes back onto the weapon and the
+  gun turns about the right hand so the line between the hands keeps its
+  direction (steadier aim, aim follows). Let go to free it. The first grab
+  also teaches how the hand sits relative to the controller.
+- Next: a relaxed pose for the free hand's fingers, tool animations
+  (lock pick etc.), what the left hand does with the trigger and grip.
 
 ## Interface in the headset (first pass)
 
