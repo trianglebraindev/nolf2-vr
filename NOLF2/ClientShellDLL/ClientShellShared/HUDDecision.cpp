@@ -16,6 +16,7 @@
 #include "MsgIDs.h"
 #include "ClientUtilities.h"
 #include "CMoveMgr.h"
+#include "VRMgr.h"
 
 
 static const char* szOpenSound = "interface\\snd\\dialogueopen.wav";
@@ -31,6 +32,8 @@ CHUDDecision::CHUDDecision()
 	}
 	m_hObject = LTNULL;
 	m_fRadius = 0.0f;
+	m_nVRSelection = 0;
+	m_nTextColor = 0xFFFFFFFF;
 }
 	
 
@@ -166,6 +169,18 @@ void CHUDDecision::Show(ILTMessage_Read *pMsg)
 		m_Dlg.SetSize(m_nWidth,(offset.y+m_Offset.y));
 		m_Dlg.SetScale(m_fScale);
 
+		// VR: start with the first answer highlighted.
+		m_nVRSelection = 0;
+		for (int i = 0; i < MAX_DECISION_CHOICES; i++)
+		{
+			if (IsChoiceShown(i))
+			{
+				m_nVRSelection = i;
+				break;
+			}
+		}
+		UpdateVRHighlight();
+
 		if (!m_bVisible)
 			g_pClientSoundMgr->PlayInterfaceSound(szOpenSound);
 
@@ -209,6 +224,53 @@ void CHUDDecision::Choose(uint8 nChoice)
 	m_hObject = LTNULL;
 }
 
+void CHUDDecision::VR_MoveSelection(int nDir)
+{
+	if (!m_bVisible || !nDir)
+		return;
+	for (int i = m_nVRSelection + nDir; i >= 0 && i < MAX_DECISION_CHOICES; i += nDir)
+	{
+		if (IsChoiceShown(i))
+		{
+			m_nVRSelection = i;
+			UpdateVRHighlight();
+			return;
+		}
+	}
+}
+
+void CHUDDecision::VR_ChooseSelection()
+{
+	if (!m_bVisible || !IsChoiceShown(m_nVRSelection))
+		return;
+	Choose((uint8)m_nVRSelection);
+}
+
+// In VR the highlighted answer keeps the normal text colour and the others
+// are dimmed. Without VR all answers look the same, as they always did.
+void CHUDDecision::UpdateVRHighlight()
+{
+	const bool bVR = g_VRMgr.IsActive();
+	uint32 nDim = m_nTextColor;
+	if (bVR)
+	{
+		uint32 a = (m_nTextColor >> 24) & 0xFF;
+		uint32 r = ((m_nTextColor >> 16) & 0xFF) * 45 / 100;
+		uint32 g = ((m_nTextColor >> 8) & 0xFF) * 45 / 100;
+		uint32 b = (m_nTextColor & 0xFF) * 45 / 100;
+		nDim = (a << 24) | (r << 16) | (g << 8) | b;
+	}
+	for (int i = 0; i < MAX_DECISION_CHOICES; i++)
+	{
+		if (!m_pText[i])
+			continue;
+		LTBOOL bSelected = (bVR && i == m_nVRSelection) ? LTTRUE : LTFALSE;
+		m_pText[i]->SetColors(m_nTextColor, nDim, m_nTextColor);
+		m_pText[i]->Select(!bSelected);		// force the colours to be re-applied
+		m_pText[i]->Select(bSelected);
+	}
+}
+
 void CHUDDecision::SetScale(float fScale)
 {
 	m_Dlg.SetScale(fScale);
@@ -238,6 +300,7 @@ void CHUDDecision::UpdateLayout()
 	uint8 nG = (uint8)vCol.y;
 	uint8 nB = (uint8)vCol.z;
 	uint32 color = SET_ARGB(0xFF,nR,nG,nB);
+	m_nTextColor = color;
 
 	char szFrame[128] = "";
 	g_pLayoutMgr->GetString(pTag,"Frame",szFrame,sizeof(szFrame));

@@ -173,6 +173,9 @@ bool CD3D_Device::SetMode(D3DModeInfo* pMode)
 	// Reset the device caps, since some of them are specific to the screen mode
 	PreCalcSomeDeviceCaps();
 
+	// VR: the interface layer follows the new screen size.
+	d3d_VR_OnModeChange(PresentationParam.BackBufferWidth, PresentationParam.BackBufferHeight);
+
 	m_rcViewport.left			= 0;	// Force a viewport reset...
 	m_rcViewport.right			= 0;
 	m_rcViewport.top			= 0;

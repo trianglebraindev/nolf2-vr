@@ -20,6 +20,11 @@
 //   In menus: either stick moves the selection, trigger or A selects,
 //   B goes back.
 //
+//   Conversation choices (e.g. the crow robot): right stick up/down
+//   moves the highlight, right trigger or A picks it, B says nothing.
+//   Fire, jump and crouch are off while the choices are up; you can
+//   still walk and turn.
+//
 // INTERFACE
 //
 //   While the world is in the headset, the game's interface is shown
@@ -44,6 +49,8 @@
 #include "GameClientShell.h"
 #include "InterfaceMgr.h"
 #include "VarTrack.h"
+#include "HUDMgr.h"
+#include "HUDDecision.h"
 
 CVRMgr g_VRMgr;
 
@@ -155,7 +162,20 @@ void CVRMgr::Update(float fFrameTime)
 	// Gameplay bindings only while playing; in menus the controllers drive
 	// the menu instead (and e.g. the trigger mustn't also count as "fire").
 	static bool s_bBindingsOn = false;
-	bool bPlaying = g_pInterfaceMgr && g_pInterfaceMgr->GetGameState() == GS_PLAYING;
+	bool bPlaying = g_pInterfaceMgr && g_pInterfaceMgr->GetGameState() == GS_PLAYING && !IsDecisionOpen();
+
+	// Coming back to play (closing a menu or picking a conversation answer
+	// with the trigger): wait until the buttons are let go, or the same
+	// press would also fire or jump.
+	// (The left stick's directions don't count: that stick walks.)
+	const unsigned kButtons = LTVR_BTN_TRIGGER | LTVR_BTN_GRIP | LTVR_BTN_PRIMARY | LTVR_BTN_SECONDARY | LTVR_BTN_STICK;
+	const unsigned kStickDirs = LTVR_BTN_STICK_UP | LTVR_BTN_STICK_DOWN;
+	if (bPlaying && !s_bBindingsOn &&
+		((m_State.hand[LTVR_LEFT].buttons & kButtons) || (m_State.hand[LTVR_RIGHT].buttons & (kButtons | kStickDirs))))
+	{
+		bPlaying = false;
+	}
+
 	if (bPlaying != s_bBindingsOn)
 	{
 		s_bBindingsOn = bPlaying;
@@ -216,7 +236,10 @@ void CVRMgr::UpdateMenuControls(float fFrameTime)
 		// Pause menu.
 		if (Pressed(LTVR_LEFT, LTVR_BTN_SECONDARY) || Pressed(LTVR_LEFT, LTVR_BTN_MENU))
 			SendKey(VK_ESCAPE);
-		m_nRepeatKey = 0;
+		if (IsDecisionOpen())
+			UpdateDecisionControls(fFrameTime);
+		else
+			m_nRepeatKey = 0;
 		return;
 	}
 
@@ -232,7 +255,15 @@ void CVRMgr::UpdateMenuControls(float fFrameTime)
 		SendKey(VK_ESCAPE);
 
 	// Either stick moves the selection, repeating while held.
-	unsigned nDirs = m_State.hand[0].buttons | m_State.hand[1].buttons;
+	int nKey = StickRepeat(m_State.hand[0].buttons | m_State.hand[1].buttons, fFrameTime);
+	if (nKey)
+		SendKey(nKey);
+}
+
+// Turns stick directions into arrow keys: one on the push, then repeating
+// while held. Returns the key to send this frame (0 for none).
+int CVRMgr::StickRepeat(unsigned nDirs, float fFrameTime)
+{
 	int nKey = 0;
 	if (nDirs & LTVR_BTN_STICK_UP)			nKey = VK_UP;
 	else if (nDirs & LTVR_BTN_STICK_DOWN)	nKey = VK_DOWN;
@@ -243,18 +274,39 @@ void CVRMgr::UpdateMenuControls(float fFrameTime)
 	{
 		m_nRepeatKey = nKey;
 		m_fRepeatTimer = 0.4f;		// delay before repeating
-		if (nKey)
-			SendKey(nKey);
+		return nKey;
 	}
-	else if (nKey)
+	if (nKey)
 	{
 		m_fRepeatTimer -= fFrameTime;
 		if (m_fRepeatTimer <= 0.0f)
 		{
 			m_fRepeatTimer = 0.12f;	// repeat rate
-			SendKey(nKey);
+			return nKey;
 		}
 	}
+	return 0;
+}
+
+bool CVRMgr::IsDecisionOpen() const
+{
+	return g_pDecision && g_pDecision->IsVisible();
+}
+
+void CVRMgr::UpdateDecisionControls(float fFrameTime)
+{
+	// Right stick up/down only (left/right still turns you).
+	unsigned nDirs = m_State.hand[LTVR_RIGHT].buttons & (LTVR_BTN_STICK_UP | LTVR_BTN_STICK_DOWN);
+	int nKey = StickRepeat(nDirs, fFrameTime);
+	if (nKey == VK_UP)
+		g_pDecision->VR_MoveSelection(-1);
+	else if (nKey == VK_DOWN)
+		g_pDecision->VR_MoveSelection(1);
+
+	if (Pressed(LTVR_RIGHT, LTVR_BTN_TRIGGER) || Pressed(LTVR_RIGHT, LTVR_BTN_PRIMARY))
+		g_pDecision->VR_ChooseSelection();
+	else if (Pressed(LTVR_RIGHT, LTVR_BTN_SECONDARY))
+		g_pDecision->Choose(MAX_DECISION_CHOICES);	// say nothing, like Escape
 }
 
 LTVector CVRMgr::GetHeadOffset() const

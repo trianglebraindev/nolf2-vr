@@ -45,6 +45,11 @@ public:
 
 	void	Choose(uint8 nChoice);
 
+	// VR: the controllers pick an answer by moving a highlight (nDir -1 =
+	// up, +1 = down) and confirming it. The number keys still work.
+	void	VR_MoveSelection(int nDir);
+	void	VR_ChooseSelection();
+
 	HOBJECT GetObject() { return m_hObject; }
 	float	GetRadius() { return m_fRadius; }
 
@@ -67,6 +72,10 @@ protected:
 
 	CLTGUIWindow	    m_Dlg;
 	CLTGUIColumnCtrl*	m_pText[MAX_DECISION_CHOICES];
+
+	int		m_nVRSelection;
+	bool	IsChoiceShown(int i) { return m_pText[i] && m_pText[i]->IsVisible(); }
+	void	UpdateVRHighlight();
 
 };
 

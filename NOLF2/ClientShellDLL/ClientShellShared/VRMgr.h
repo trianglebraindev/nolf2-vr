@@ -70,6 +70,9 @@ private:
 	void		UpdateHudMode();
 	bool		Pressed(int nHand, unsigned nButton) const;		// went down this frame
 	void		SendKey(int nKey);
+	int			StickRepeat(unsigned nDirs, float fFrameTime);	// stick as arrow keys, with repeat
+	bool		IsDecisionOpen() const;
+	void		UpdateDecisionControls(float fFrameTime);
 
 	bool					m_bInitialized;
 	LTVR_GetStateFn			m_pfnGetState;

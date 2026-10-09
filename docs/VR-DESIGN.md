@@ -103,6 +103,7 @@ needs. Not ordered within a group yet.
 | Left trigger | activate (use, talk, search) | select |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
+| Conversation choices | right stick up/down highlights, right trigger or A picks, B says nothing | |
 | Home key (keyboard) | recentre | recentre |
 
 Console settings (type in the console or add `+Name value` to the launch

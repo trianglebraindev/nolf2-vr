@@ -1425,6 +1425,35 @@ bool Bridge::Impl::DoRecenter()
 	return true;
 }
 
+bool Bridge::ResizeScreen(unsigned nWidth, unsigned nHeight)
+{
+	if (!m_bSessionCreated || !nWidth || !nHeight)
+		return false;
+	FPUGuard fpu;
+	Impl& im = *m_pImpl;
+	if (nWidth == im.m_ScreenTex.m_nWidth && nHeight == im.m_ScreenTex.m_nHeight)
+		return true;
+
+	// Nothing may still be using the old texture on either side.
+	im.WaitForD3D9();
+	im.WaitForD3D11();
+	im.m_ScreenChain.Release();
+	im.m_ScreenTex.Release();
+	im.m_Screen.width = nWidth;
+	im.m_Screen.height = nHeight;
+
+	if (!im.m_ScreenTex.Create(im.m_pDev9, im.m_pDev11, nWidth, nHeight) ||
+		!im.CreateSwapchain(im.m_ScreenChain, nWidth, nHeight))
+	{
+		Log("ERROR: could not resize the screen texture to %ux%u", nWidth, nHeight);
+		im.m_ScreenChain.Release();
+		im.m_ScreenTex.Release();
+		return false;
+	}
+	Log("Screen texture resized to %ux%u", nWidth, nHeight);
+	return true;
+}
+
 bool Bridge::IsSessionRunning() const	{ return m_pImpl && m_pImpl->m_bSessionRunning; }
 bool Bridge::ShouldQuit() const			{ return m_pImpl && m_pImpl->m_bQuit; }
 unsigned Bridge::GetEyeWidth() const	{ return m_pImpl->m_aEyeTex[0].m_nWidth; }

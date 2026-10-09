@@ -248,6 +248,30 @@ void d3d_VR_PostDeviceCreate(IDirect3DDevice9Ex* pDevice, uint32 nScreenWidth, u
 		g_pVRBridge->GetEyeHeight(), nScreenWidth, nScreenHeight);
 }
 
+void d3d_VR_OnModeChange(uint32 nScreenWidth, uint32 nScreenHeight)
+{
+	if (!d3d_VR_IsActive())
+		return;
+	if (nScreenWidth == g_nVRScreenWidth && nScreenHeight == g_nVRScreenHeight)
+		return;
+
+	VR_EndHud();
+	if (g_pVRScreenSurf)
+	{
+		g_pVRScreenSurf->Release();
+		g_pVRScreenSurf = NULL;
+	}
+	g_nVRScreenWidth = g_nVRScreenHeight = 0;
+
+	if (g_pVRBridge->ResizeScreen(nScreenWidth, nScreenHeight) && g_pVRBridge->GetScreenTexture() &&
+		SUCCEEDED(g_pVRBridge->GetScreenTexture()->GetSurfaceLevel(0, &g_pVRScreenSurf)))
+	{
+		g_nVRScreenWidth = nScreenWidth;
+		g_nVRScreenHeight = nScreenHeight;
+	}
+	xrb::Log("Game screen is now %ux%u", nScreenWidth, nScreenHeight);
+}
+
 void d3d_VR_Term()
 {
 	VR_Destroy();
@@ -932,7 +956,7 @@ void d3d_VR_OnSwapBuffers()
 			// No world this frame: show the monitor picture on the screen.
 			IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
 			IDirect3DSurface9* pBackBuffer = NULL;
-			if (SUCCEEDED(pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer)))
+			if (g_pVRScreenSurf && SUCCEEDED(pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer)))
 			{
 				pDevice->StretchRect(pBackBuffer, NULL, g_pVRScreenSurf, NULL, D3DTEXF_LINEAR);
 				pBackBuffer->Release();

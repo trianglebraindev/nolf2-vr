@@ -149,6 +149,10 @@ public:
 	IDirect3DTexture9*	GetEyeTexture(Eye eEye) const;
 	IDirect3DTexture9*	GetScreenTexture() const;
 
+	// Remakes the screen texture at a new size (the game changed its
+	// screen resolution). The old GetScreenTexture() is gone afterwards.
+	bool				ResizeScreen(unsigned nWidth, unsigned nHeight);
+
 	// True when this frame's eye poses are tracked (valid after a
 	// BeginFrame() that returned true). If false, draw the flat screen.
 	bool				HasValidViews() const;

@@ -25,6 +25,10 @@ bool d3d_VR_PreDeviceCreate(uint32 iAdapter);
 // textures shared with it.
 void d3d_VR_PostDeviceCreate(IDirect3DDevice9Ex* pDevice, uint32 nScreenWidth, uint32 nScreenHeight);
 
+// After the device has been reset to a new screen size (the game changed
+// resolution): the interface layer has to match the new size.
+void d3d_VR_OnModeChange(uint32 nScreenWidth, uint32 nScreenHeight);
+
 // Before the device is released.
 void d3d_VR_Term();
 
