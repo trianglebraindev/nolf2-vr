@@ -7,3 +7,8 @@ CMakeFiles/
 cmake_install.cmake
 cmake-build-*/
 .idea/
+build/
+run/
+build_log.txt
+build_errors.txt
+build_configure_log.txt
