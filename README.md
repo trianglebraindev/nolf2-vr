@@ -43,7 +43,7 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
 - **VR settings in the game**: Options > VR (turning, walking direction,
   world size, HUD distance and size, wrist and gun read-outs, hands or arms).
 
-Still to come (see `docs/VR-DESIGN.md`): a laser pointer for menus, scopes and zoom in
+Still to come (see `docs/VR-DESIGN.md`): scopes and zoom in
 VR, melee swinging, comfort options.
 
 ## Requirements
@@ -100,7 +100,7 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `VRUnitsPerMeter` | 60 | world scale (lower = everything bigger) |
+| `VRUnitsPerMeter` | 54.5 | world scale (lower = everything bigger); "World size" on the VR page, where 110% = 54.5 and 100% = 60 |
 | `VRSnapTurn` | 0 | 1 = snap turning |
 | `VRTurnSpeed` / `VRSnapAngle` | 150 / 45 | smooth turn speed (degrees/s), snap step (degrees) |
 | `VRMoveWithHand` | 0 | 1 = walk where the left controller points |

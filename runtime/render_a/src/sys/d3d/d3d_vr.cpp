@@ -433,7 +433,7 @@ static LTVector RotateVec(const LTRotation& r, const LTVector& v)
 
 static float VR_UnitsPerMeter()
 {
-	return g_CV_VRUnitsPerMeter.m_Val > 1.0f ? g_CV_VRUnitsPerMeter.m_Val : 60.0f;
+	return g_CV_VRUnitsPerMeter.m_Val > 1.0f ? g_CV_VRUnitsPerMeter.m_Val : 54.5454f;
 }
 
 static void VR_ToLTPose(const xrb::Pose& in, bool bValid, float fUnitsPerMeter, LTVR_Pose& out)

@@ -75,8 +75,11 @@ needs. Not ordered within a group yet.
   VDXR (Virtual Desktop) is the target runtime; it supports 32-bit apps.
 - The bridge restores full FPU precision around every OpenXR call (LithTech
   runs the FPU at 24 bits).
-- World scale: `VRUnitsPerMeter` = 60. Measured: the player is 106 units tall
-  with the eye 94 units above the feet; a ~1.58 m eye height gives ~60.
+- World scale: default `VRUnitsPerMeter` 54.5 ("110%" world size; Tre
+  plays at 120% and picked 110% as the default). It started at 60 from
+  measuring: the player is 106 units tall with the eye 94 units above the
+  feet, and a ~1.58 m eye height gives ~60; in play the world felt a
+  little small at that.
 - Recentre only once the head is actively tracked and the session is visible
   (an early placeholder pose put the view high above the character). The
   runtime's own recentre is followed. Interim recentre key: Home.
@@ -110,7 +113,7 @@ needs. Not ordered within a group yet.
 
 Console settings (type in the console or add `+Name value` to the launch
 line): `VRSnapTurn 0/1`, `VRTurnSpeed 150` (degrees per second),
-`VRSnapAngle 45`, `VRMoveWithHand 0/1`, `VRUnitsPerMeter 60`,
+`VRSnapAngle 45`, `VRMoveWithHand 0/1`, `VRUnitsPerMeter 54.5`,
 `VRHudDistance 2` (metres), `VRHudAngle 60` (how wide the HUD looks, degrees),
 `VRScreenDistance 2`, `VRScreenAngle 62` (menus and the floating screen),
 `VRHudFollow 1` (0 = HUD locked to your view), `VRHudFollowAngle 35`.
@@ -243,7 +246,8 @@ Next, in a suggested order:
 3. VR settings menu in the game's options (console is compiled out):
    first pass done, Options > VR (see below). Gun size stays with the
    in-headset adjust mode (it's per weapon).
-4. Laser pointer for menus.
+4. ~~Laser pointer for menus.~~ Dropped for now: Tre finds the stick
+   menu control solid.
 5. Recentre on a controller button; open/close left hand.
 6. Scopes / zoom / binoculars in VR; tool animations (lock pick etc.).
 Later: melee swinging (Tre wants it), comfort vignette, height

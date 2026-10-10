@@ -38,7 +38,9 @@ RCONVAR(g_CV_CacheTextures, "CacheTextures", int, 0);
 // World scale: how many game units make one real-world metre. Wrong
 // values make the world look like a doll's house (too high) or a giant's
 // (too low), and make the distance between your eyes feel wrong.
-RCONVAR(g_CV_VRUnitsPerMeter, "VRUnitsPerMeter", float, 60.0f);
+// 54.5 = "110%" world size on the Options > VR page (100% = 60), the size
+// Tre settled on in play.
+RCONVAR(g_CV_VRUnitsPerMeter, "VRUnitsPerMeter", float, 54.5454f);
 // The HUD, fixed in front of your eyes: how far away it seems (metres)
 // and how wide it looks (degrees).
 RCONVAR(g_CV_VRHudDistance, "VRHudDistance", float, 2.0f);

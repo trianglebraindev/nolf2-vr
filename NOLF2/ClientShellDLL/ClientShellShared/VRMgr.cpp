@@ -290,7 +290,7 @@ struct VRSettingDef
 // VRUnitsPerMeter and VRHud* / VRScreen*, are read by the renderer by name.)
 static const VRSettingDef s_aVRSettings[] =
 {
-	{ "VRUnitsPerMeter",	60.0f },
+	{ "VRUnitsPerMeter",	54.5454f },	// "110%" world size (100% = 60)
 	{ "VRSnapTurn",			0.0f },
 	{ "VRTurnSpeed",		150.0f },
 	{ "VRSnapAngle",		45.0f },
@@ -912,7 +912,7 @@ bool CVRMgr::GetLeftWristTarget(LTMatrix& mWrist) const
 	// Only the hand's turn comes from the grab; the wrist always sits a
 	// little behind the palm (where the controller is held), so the hand
 	// turns about your hand rather than about some point off to the side.
-	float fUnitsPerMeter = m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 60.0f;
+	float fUnitsPerMeter = m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 54.5454f;
 	float fBack = g_vtVRWristBack.GetFloat(7.0f) * 0.01f * fUnitsPerMeter / GetGunScale();
 	mOffset.SetTranslation(0.0f, 0.0f, -fBack);
 
@@ -1002,7 +1002,7 @@ void CVRMgr::UpdateTwoHand()
 	LTVector vAnim;
 	m_mLeftWristAnim.GetTranslation(vAnim);
 	LTVector vAnimCam = vAnim * fScale;
-	float fUnitsPerMeter = m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 60.0f;
+	float fUnitsPerMeter = m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 54.5454f;
 	if ((vLeft - vAnimCam).Mag() / fUnitsPerMeter > kGrabDistanceMeters)
 		return;
 
@@ -1515,7 +1515,7 @@ void CVRMgr::UpdateWeaponRing(float fFrameTime)
 	if (!GetRingCentre(vCentre) || !GetAimRay(vHand, rAim))
 		return;
 	LTVector vOffset = vHand - vCentre;
-	float fHalf = kRingWidthMeters * 0.5f * (m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 60.0f);
+	float fHalf = kRingWidthMeters * 0.5f * (m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 54.5454f);
 	float x = vOffset.Dot(m_vRingRight) / fHalf;
 	float y = vOffset.Dot(m_vRingUp) / fHalf;
 
