@@ -109,7 +109,7 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRScreenDistance` / `VRScreenAngle` | 2 / 62 | menus and the floating screen |
 | `VRGunScale` | 12 | size of the gun in your hand |
 | `VRArms` | 0 | 1 = the game's full arms instead of hands |
-| `VRWristBack` | 7 | how far the left wrist sits behind the controller (cm) |
+| `VRWristBack` / `VRHandPalm` | 7 / 3.5 | the free left hand: how far the wrist sits behind the middle of the controller's handle, and how far the hand sits off the handle toward its back (cm) |
 | `VRWristHud` / `VRGunHud` | 1 / 1 | 0 = health / ammo back on the HUD panel |
 | `VRWristHudWatch` | 1 | 1 = health shows as you turn your wrist toward you; 0 = always shown, facing you |
 | `VRWristHudX/Y/Z`, `VRWristHudSize` | -3 / 0 / -9, 9 | where health sits on the left wrist (cm), its width (cm) |
@@ -121,7 +121,6 @@ Files the game writes in `run\`:
 |---|---|
 | `vr_settings.txt` | your VR settings (Options > VR, or edit by hand) |
 | `vr_guns.txt` | each weapon's fit in your hand (from the adjust mode) |
-| `vr_lefthand.txt` | how your left hand sits on the controller (learnt from two-hand grips) |
 | `xrbridge.log`, `vr_game.log`, `vr_models.log` | headset, game and model logs |
 | `crash_*.txt`, `crash_*.dmp` | crash reports |
 

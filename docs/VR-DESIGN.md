@@ -160,16 +160,24 @@ code rather than by editing models where possible.
   bone is shortened along its length to a cuff at the wrist (thickness
   kept, so no spike), leaving the gloved hand with the game's finger
   animation. Sleeves on the `cuff` sockets stay hidden.
-- Left hand free: the left wrist follows the left controller, and the
-  fingers follow the left grip (CurlFinger): a slight relaxed curl let go,
-  a fist squeezed. The gun animation's finger pose is replaced while the
-  hand is free. Each finger bends toward the palm (+X of the left
-  controller) about an axis across its knuckles; each joint gets an angle
-  from the finger's base bone (pointer..pinky: knuckle 8..80, middle joint
-  12..95, end joint 8..65 degrees; thumb 5..30, 5..45), so the pose is the
-  same whatever the animation was doing. Bone directions come from the
-  model's resting pose (GetBindPoseNodeTransform). Holding the gun with
-  both hands, the fingers keep the game's own grip.
+- Left hand free: every weapon model has its own copy of Cate's left hand,
+  posed for that item (resting finger curl 15..110 degrees, wrist bend
+  5..35 degrees across models), so the free hand ignores the weapon's
+  animation and uses the model's resting pose instead, placed the same way
+  for every model (FindHandRest / GetFreeHandTransform): the hand's frame
+  from its joints (wrist -> middle knuckle, pointer -> pinky knuckle, palm)
+  is put on the left controller's grip pose (knuckles = -Up, across the
+  knuckles = -Forward, palm = +Right), the wrist `VRWristBack` cm (7)
+  behind the middle of the handle and `VRHandPalm` cm (3.5) toward the back
+  of the hand. The forearm comes along rigidly (then trimmed to a cuff).
+  This also gives a left hand with one-handed items (grenades, shuriken),
+  whose animation hides it. The fingers then follow the left grip
+  (CurlFinger): a slight relaxed curl let go, a fist squeezed; each finger
+  bends toward the palm about an axis across its knuckles, each joint at
+  an angle from the finger's base bone (pointer..pinky: knuckle 8..80,
+  middle joint 12..95, end joint 8..65 degrees; thumb 5..30, 5..45).
+  Holding the gun with both hands, the hand and fingers are the game's own.
+  (The old learnt hand offset, vr_lefthand.txt, is no longer used.)
 - Two-hand grip: left grip with the left hand within 20 cm of where Cate's
   left hand is on the weapon. The hand goes back onto the weapon and the
   gun turns about the right hand so the line between the hands keeps its

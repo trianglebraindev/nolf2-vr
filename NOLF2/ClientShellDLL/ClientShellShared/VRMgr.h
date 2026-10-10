@@ -217,7 +217,6 @@ private:
 	// The right hand's position and aim, and the gun's rotation (fit and
 	// two-hand steadying applied), in camera space.
 	bool		ComputeGun(LTVector& vHand, LTRotation& rAim, LTRotation& rGun) const;
-	bool		GetLeftWristTarget(LTMatrix& mWrist) const;
 
 	HOBJECT		m_hGunModel;
 	HMODELNODE	m_hNodeArmL, m_hNodeWristL, m_hNodeArmR, m_hNodeWristR;
@@ -232,6 +231,7 @@ private:
 		int			nFinger;		// 0 thumb, 1 pointer, 2 middle, 3 ring, 4 pinky
 		int			nSeg;			// 1 = base (not bent), 2.. = joints that bend
 		LTVector	vDirLocal;
+		LTMatrix	mBind;			// resting pose (model space)
 	};
 	FingerJoint	m_aFingerJoints[kMaxFingerJoints];
 	int			m_nFingerJoints;
@@ -241,6 +241,19 @@ private:
 	LTVector	m_avFingerBase[kNumFingers];		// its direction
 	LTVector	m_avFingerAxis[kNumFingers];		// the axis the finger curls about
 	void		FindFingers(HOBJECT hModel);
+
+	// The free left hand's resting shape: every weapon model has its own
+	// copy of Cate's left hand, posed the way it holds that item, so the
+	// free hand is built from the model's resting pose instead of its
+	// animation, the same way for every model. The hand's own frame (from
+	// where its joints are): wrist -> middle knuckle (F), pointer -> pinky
+	// knuckle (S), palm (N = F x S).
+	bool		m_bHandRest;
+	LTMatrix	m_mBindWristL, m_mBindArmL;
+	LTVector	m_vBindWrist, m_vBindF, m_vBindS, m_vBindN;
+	LTMatrix	m_mFreeHand;		// resting pose -> on the controller, this evaluation
+	void		FindHandRest(HOBJECT hModel);
+	bool		GetFreeHandTransform(LTMatrix& mT, LTVector& vPalm) const;
 	void		CurlFinger(const FingerJoint& joint, LTMatrix& mNode);
 	LTMatrix*	m_pArmLMatrix;			// this evaluation's arm bones (shrunk once the wrists are known)
 	LTMatrix*	m_pArmRMatrix;
@@ -251,12 +264,6 @@ private:
 	LTMatrix	m_mLeftWristAnim;
 	bool		m_bTwoHand;
 	LTVector	m_vTwoHandDir;			// right hand -> left hand when grabbed, gun axes
-	bool		m_bLeftOffsetValid;		// left controller -> left wrist, learnt at each grab
-	LTMatrix	m_mLeftOffset;			// (kept as a full matrix: the left arm's bones may be
-										//  mirrored, which a plain rotation can't hold)
-	bool		GetLeftControllerInModel(LTMatrix& mCtrl) const;
-	void		LoadHandFit();
-	void		SaveHandFit();
 
 	// How a gun sits in your hand, on top of the VRGun* settings.
 	struct GunFit
