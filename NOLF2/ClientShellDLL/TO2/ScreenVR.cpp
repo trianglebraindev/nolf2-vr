@@ -17,6 +17,9 @@
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
 #include "VRMgr.h"
+#include "GameClientShell.h"	// (brings the interface, layout and string ids)
+#include "InterfaceMgr.h"
+#include "LayoutMgr.h"
 
 namespace
 {
