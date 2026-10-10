@@ -398,6 +398,12 @@ hang.
   xrbridge.log, "Snapshot taken" with the weapon to vr_game.log). While
   the left grip is held the left trigger is unbound from "activate", and
   the "saved" message waits a few frames so it isn't in the picture.
+- Which eye: the left, except while looking through a scope, when it's
+  the eye at the scope (the game knows which, LTVR_SetMirrorEye). Tre's
+  first scoped snapshot (left eye) had the lens edge-on at the right
+  edge, because he sights with his right eye.
+- Cat eyes (angry kitty) on target after the effects fix (Tre); the
+  sniper scope's measured offset "felt good, lines up" (Tre).
 
 ## Effects on the gun
 

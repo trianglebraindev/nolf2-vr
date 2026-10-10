@@ -355,6 +355,7 @@ private:
 	LTVR_SetLayerPoseFn		m_pfnSetLayerPose;
 	LTVR_SetScopeViewFn		m_pfnSetScopeView;
 	LTVR_TakeSnapshotFn		m_pfnTakeSnapshot;
+	LTVR_SetMirrorEyeFn		m_pfnSetMirrorEye;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

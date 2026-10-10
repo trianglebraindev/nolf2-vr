@@ -212,6 +212,7 @@ CVRMgr::CVRMgr()
 	m_pfnSetLayerPose	= NULL;
 	m_pfnSetScopeView	= NULL;
 	m_pfnTakeSnapshot	= NULL;
+	m_pfnSetMirrorEye	= NULL;
 	m_bSnapTriggerOff	= false;
 	m_nSnapMsgFrames	= 0;
 	m_bScoped			= false;
@@ -283,6 +284,7 @@ void CVRMgr::Init()
 	m_pfnSetLayerPose	= (LTVR_SetLayerPoseFn)GetProcAddress(hEngine, "LTVR_SetLayerPose");
 	m_pfnSetScopeView	= (LTVR_SetScopeViewFn)GetProcAddress(hEngine, "LTVR_SetScopeView");
 	m_pfnTakeSnapshot	= (LTVR_TakeSnapshotFn)GetProcAddress(hEngine, "LTVR_TakeSnapshot");
+	m_pfnSetMirrorEye	= (LTVR_SetMirrorEyeFn)GetProcAddress(hEngine, "LTVR_SetMirrorEye");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
 	g_vtVRTurnSpeed.Init(g_pLTClient, "VRTurnSpeed", NULL, 150.0f);
@@ -1023,6 +1025,7 @@ void CVRMgr::UpdateScope()
 	m_bScoped = false;
 
 	int nLevel = 0;
+	int nScopeEye = -1;		// the eye at the scope (0 left, 1 right)
 	LTVector vLens, vFrom, vCamPos;
 	LTRotation rAim, rCamRot;
 	if (IsActive() && g_vtVRScope.GetFloat(1.0f) != 0.0f && g_pPlayerMgr && g_pPlayerStats && g_pWeaponMgr &&
@@ -1071,6 +1074,7 @@ void CVRMgr::UpdateScope()
 				float fOff = vOff.Mag() / fUnitsPerCm;
 				if (fOff < fBestOff)
 				{
+					nScopeEye = e;
 					fBestOff = fOff;
 					fBestBehind = -t / fUnitsPerCm;
 					vBestOnLine = vOnLine;
@@ -1112,6 +1116,10 @@ void CVRMgr::UpdateScope()
 		return;		// (zoom is the flat game's own then)
 	g_pPlayerMgr->VR_SetZoom(nLevel);
 	m_bScoped = (nLevel > 0);
+
+	// The monitor and snapshots show the eye at the scope.
+	if (m_bScoped && m_pfnSetMirrorEye)
+		m_pfnSetMirrorEye(nScopeEye);
 
 	if (!m_bScoped || !m_pfnSetScopeView || !m_pfnSetLayerPose)
 	{

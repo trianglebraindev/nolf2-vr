@@ -61,7 +61,8 @@
 //  The layers above (scope, crosshair, watch, HUD) are put together by
 //  the headset, so the monitor (the game's own flat camera) and the
 //  headset's own captures never show them. With VRMirror on, the monitor
-//  shows the middle of the left eye's picture with every layer drawn onto
+//  shows the middle of the left eye's picture (the eye at the scope while
+//  you look through one, LTVR_SetMirrorEye) with every layer drawn onto
 //  it where the headset puts it (each layer's corners projected with that
 //  eye's own pose and field of view). LTVR_TakeSnapshot saves that same
 //  picture, at the eye's full sharpness, as a PNG in run\Snapshots.
@@ -168,6 +169,7 @@ static IDirect3DSurface9*	g_pVRMirror			= NULL;		// the left eye's middle, layer
 static uint32				g_nVRMirrorWidth	= 0;
 static uint32				g_nVRMirrorHeight	= 0;
 static bool					g_bVRSnapshotWanted	= false;
+static int					g_nVRMirrorEye		= -1;		// this frame's eye (LTVR_SetMirrorEye), -1 = left
 
 // Where the game says the player's eyes are this frame, and the body's
 // heading (see LTVR_SetOrigin). Falls back to the camera if not set.
@@ -1527,11 +1529,11 @@ struct VRMirrorView
 	RECT				rcCrop;
 };
 
-static bool VR_GetMirrorView(VRMirrorView& mv)
+static bool VR_GetMirrorView(VRMirrorView& mv, int nEye)
 {
-	if (!g_pVRBridge || !g_pVREyeSurf[0])
+	if (!g_pVRBridge || nEye < 0 || nEye > 1 || !g_pVREyeSurf[nEye])
 		return false;
-	mv.pEye = &g_pVRBridge->GetEyeView(xrb::EYE_LEFT);
+	mv.pEye = &g_pVRBridge->GetEyeView((xrb::Eye)nEye);
 	mv.nEyeWidth = g_pVRBridge->GetEyeWidth();
 	mv.nEyeHeight = g_pVRBridge->GetEyeHeight();
 	mv.fTanLeft  = (float)tan(mv.pEye->fov.angleLeft);
@@ -1566,7 +1568,7 @@ static bool VR_GetMirrorView(VRMirrorView& mv)
 }
 
 // Draws a headset layer onto the mirror where the headset shows it: its
-// four corners, through the left eye, into the mirror's pixels. (Its
+// four corners, through the mirror's eye, into the mirror's pixels. (Its
 // texture is premultiplied, as for the headset.)
 static void VR_MirrorLayer(IDirect3DTexture9* pTex, const xrb::ScreenPlacement& place, const VRMirrorView& mv)
 {
@@ -1618,8 +1620,9 @@ static bool VR_ComposeMirror(const xrb::ScreenPlacement* pScreen, const xrb::Scr
 {
 	if (!PD3DDEVICE)
 		return false;
+	const int nEye = (g_nVRMirrorEye == 1) ? 1 : 0;
 	VRMirrorView mv;
-	if (!VR_GetMirrorView(mv))
+	if (!VR_GetMirrorView(mv, nEye))
 		return false;
 	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
 	const uint32 nW = (uint32)(mv.rcCrop.right - mv.rcCrop.left);
@@ -1634,10 +1637,10 @@ static bool VR_ComposeMirror(const xrb::ScreenPlacement* pScreen, const xrb::Scr
 		}
 		g_nVRMirrorWidth = nW;
 		g_nVRMirrorHeight = nH;
-		xrb::Log("Mirror: %ux%u from the left eye (%ux%u)", nW, nH, mv.nEyeWidth, mv.nEyeHeight);
+		xrb::Log("Mirror: %ux%u from an eye (%ux%u)", nW, nH, mv.nEyeWidth, mv.nEyeHeight);
 	}
 
-	if (FAILED(pDevice->StretchRect(g_pVREyeSurf[0], &mv.rcCrop, g_pVRMirror, NULL, D3DTEXF_NONE)))
+	if (FAILED(pDevice->StretchRect(g_pVREyeSurf[nEye], &mv.rcCrop, g_pVRMirror, NULL, D3DTEXF_NONE)))
 		return false;
 
 	IDirect3DSurface9* pOldRT = NULL;
@@ -1728,6 +1731,12 @@ static void VR_ComposeMirrorAndShow(bool bShow, const xrb::ScreenPlacement* pScr
 extern "C" __declspec(dllexport) void LTVR_TakeSnapshot(void)
 {
 	g_bVRSnapshotWanted = true;
+}
+
+// Which eye the mirror shows this frame (0 left, 1 right, -1 the usual).
+extern "C" __declspec(dllexport) void LTVR_SetMirrorEye(int eye)
+{
+	g_nVRMirrorEye = (eye == 0 || eye == 1) ? eye : -1;
 }
 
 //------------------------------------------------------------------
@@ -1895,6 +1904,7 @@ void d3d_VR_OnSwapBuffers()
 	g_nVRSpotDrawing = -1;
 	g_bVRSpotFromCanvas = false;
 	g_bVRScopeSet = false;		// the game sets it again each frame you look through one
+	g_nVRMirrorEye = -1;		// (so is the mirror's eye)
 	g_bVRBodyUsedValid = false;
 
 	// The game sets the origin again each frame it draws the world.

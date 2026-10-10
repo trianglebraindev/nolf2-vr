@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	7
+#define LTVR_VERSION	8
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -185,6 +185,11 @@ typedef void (*LTVR_SetScopeViewFn)(int bOn, const float pos[3], const float rot
 // watch and the other layers on it) as a PNG in run\Snapshots, as this
 // frame is shown. (The monitor shows the same picture while VRMirror is 1.)
 typedef void (*LTVR_TakeSnapshotFn)(void);
+
+// Which eye the monitor and snapshots show this frame (version 8): 0 left,
+// 1 right, -1 the usual (left). Call every frame it applies, e.g. the eye
+// at the scope while looking through one.
+typedef void (*LTVR_SetMirrorEyeFn)(int eye);
 
 // Writes a model's pieces, skeleton and sockets to vr_models.log (for
 // working out how the first-person gun models are built).
