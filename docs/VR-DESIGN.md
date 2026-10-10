@@ -191,6 +191,12 @@ code rather than by editing models where possible.
   around when you turn your head well away. In-game menus, popups
   and message boxes appear on a panel where you're looking and stay put.
 - Screen fades darken the whole headset view; the letterbox bars are off.
+- The game runs at 1440x1080 (4:3) in VR (run_nolf2_vr.bat). Its menus
+  were made for 4:3: menu items are placed by the width ratio in both
+  directions (CLTGUICtrl::SetScale(GetXRatio())), so on a 16:9 size the
+  bottom quarter of every menu page falls off the picture (Quit, the last
+  options). 4:3 also keeps the HUD art from being stretched sideways.
+  Picking a widescreen size in Display options brings the problem back.
 
 ## Wrist and gun HUD (first pass)
 
