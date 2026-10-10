@@ -459,6 +459,17 @@ protected:
 	LTRotation    m_rVRObjRot;
 	LTVector      m_vCamPos;
 
+	// VR: swinging a melee weapon for real (see VR_UpdateSwing). The blade's
+	// hilt and tip in the world last frame, and when the next hit may land.
+	bool          m_bVRBladeValid;
+	LTVector      m_vVRPrevHilt;
+	LTVector      m_vVRPrevTip;
+	float         m_fVRSwingReady;
+	int           m_nVRSwingLoggedId;	// weapon whose blade was last written to the log
+	void          VR_UpdateSwing();
+	bool          VR_GetBlade( LTVector &vHilt, LTVector &vTip ) const;
+	void          VR_SwingFire( LTVector const &vFrom, LTVector const &vDir );
+
 	HLTSOUND      m_hLoopSound;
 	uint8         m_nLoopSoundId;
 

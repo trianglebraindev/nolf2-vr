@@ -48,8 +48,15 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   the scope, click the left stick while looking through it and move it
   with the left stick (saved per weapon).
 
-Still to come (see `docs/VR-DESIGN.md`): tool animations, melee swinging,
-comfort options.
+- **Swords**: swing the katana or tulwar and it hits what the blade passes
+  through (the trigger still does the game's own slash). How hard a swing
+  has to be, or off: Options > VR > Sword swings.
+
+- **Snapshots**: left grip + left trigger saves what the headset shows to
+  `run\Snapshots`; the monitor shows the same picture.
+
+Still to come (see `docs/VR-DESIGN.md`): comfort options, height and real
+crouch, vehicles, cutscene options.
 
 ## Requirements
 
@@ -125,6 +132,7 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRScopeEye` | 5 | how close (cm) an eye must be to the scope's line to look through it |
 | `VRScopeDist` / `VRScopeSize` | 8 / 5.5 | how far in front of that eye the lens sits, and how wide it looks (cm) |
 | `VRScopeZoom` | 4 | magnification of a basic scope; stronger scopes are 2x and 4x that |
+| `VRSwing` / `VRSwingSpeed` | 1 / 2.5 | swinging a sword hits (0 = trigger only); how fast the blade's tip must move, m/s |
 | `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the game's flat camera |
 
 Files the game writes in `run\`:

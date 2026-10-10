@@ -60,6 +60,7 @@ protected:
 	uint8	m_nWristMode;		// 0 off (on the HUD), 1 watch, 2 always shown
 	LTBOOL	m_bGunHud;
 	uint8	m_nArms;			// 0 hands only, 1 full arms
+	uint8	m_nSwing;			// 0 off, else 1 + index into kSwingSpeeds
 };
 
 #endif // _SCREEN_VR_H_

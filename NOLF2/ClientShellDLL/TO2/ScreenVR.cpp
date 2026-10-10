@@ -32,6 +32,9 @@ namespace
 	const float kHudSizes[]		= { 40.0f, 50.0f, 60.0f, 70.0f, 80.0f };	// degrees across
 
 	const int kNumSnapAngles	= sizeof(kSnapAngles) / sizeof(kSnapAngles[0]);
+	// Sword swings: how fast the blade's tip must move (m/s), light / normal / hard.
+	const float kSwingSpeeds[]	= { 1.5f, 2.5f, 4.0f };
+	const int kNumSwingSpeeds	= sizeof(kSwingSpeeds) / sizeof(kSwingSpeeds[0]);
 	const int kNumHudDistances	= sizeof(kHudDistances) / sizeof(kHudDistances[0]);
 	const int kNumHudSizes		= sizeof(kHudSizes) / sizeof(kHudSizes[0]);
 
@@ -50,6 +53,7 @@ namespace
 		kHelpWrist,
 		kHelpGunHud,
 		kHelpArms,
+		kHelpSwing,
 		kHelpReset,
 		kHelpGiveAll,
 		kHelpEnd
@@ -68,6 +72,7 @@ namespace
 		"Health and armour on your left wrist: shown as you turn it toward you like a watch, always shown, or off (on the HUD).",
 		"Show your ammo on the gun instead of on the HUD.",
 		"Show just Cate's hands, or her full arms.",
+		"Swing a sword to hit with it: how hard a swing has to be, or off (then only the trigger slashes). The trigger works either way.",
 		"Put every setting on this page back to how it started.",
 		"For testing: every weapon, gadget and piece of gear, with full ammo (single player, in a mission).",
 	};
@@ -102,6 +107,7 @@ CScreenVR::CScreenVR()
 	m_nWristMode = 1;
 	m_bGunHud = LTTRUE;
 	m_nArms = 0;
+	m_nSwing = 2;
 }
 
 CScreenVR::~CScreenVR()
@@ -197,6 +203,13 @@ LTBOOL CScreenVR::Build()
 	pCycle->AddString("Hands only");
 	pCycle->AddString("Full arms");
 
+	// Melee
+	pCycle = AddCycle((char*)"Sword swings", kHelpSwing, kGap, &m_nSwing);
+	pCycle->AddString("Off");
+	pCycle->AddString("Light");
+	pCycle->AddString("Normal");
+	pCycle->AddString("Hard");
+
 	AddTextItem((char*)"Reset to defaults", CMD_VR_RESET, kHelpReset);
 	AddTextItem((char*)"Testing: all weapons and gear", CMD_VR_GIVEALL, kHelpGiveAll);
 
@@ -220,7 +233,7 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 		{
 			const char* const aNames[] = { "VRSnapTurn", "VRTurnSpeed", "VRSnapAngle", "VRMoveWithHand",
 				"VRUnitsPerMeter", "VRHudDistance", "VRHudAngle", "VRHudFollow", "VRWristHud",
-				"VRWristHudWatch", "VRGunHud", "VRArms" };
+				"VRWristHudWatch", "VRGunHud", "VRArms", "VRSwing", "VRSwingSpeed" };
 			for (int i = 0; i < (int)(sizeof(aNames) / sizeof(aNames[0])); ++i)
 				CVRMgr::SetSetting(aNames[i], CVRMgr::GetSettingDefault(aNames[i]));
 			ReadSettings();
@@ -341,6 +354,10 @@ void CScreenVR::ReadSettings()
 
 	m_bGunHud		= CVRMgr::GetSetting("VRGunHud") != 0.0f;
 	m_nArms			= CVRMgr::GetSetting("VRArms") != 0.0f ? 1 : 0;
+	if (CVRMgr::GetSetting("VRSwing") == 0.0f)
+		m_nSwing = 0;
+	else
+		m_nSwing = 1 + Closest(kSwingSpeeds, kNumSwingSpeeds, CVRMgr::GetSetting("VRSwingSpeed"));
 }
 
 void CScreenVR::WriteSettings()
@@ -362,4 +379,7 @@ void CScreenVR::WriteSettings()
 		CVRMgr::SetSetting("VRWristHudWatch", m_nWristMode == 1 ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRGunHud",			m_bGunHud ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRArms",			m_nArms ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRSwing",			m_nSwing ? 1.0f : 0.0f);
+	if (m_nSwing > 0 && m_nSwing <= kNumSwingSpeeds)
+		CVRMgr::SetSetting("VRSwingSpeed",	kSwingSpeeds[m_nSwing - 1]);
 }

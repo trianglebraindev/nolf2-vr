@@ -187,6 +187,11 @@ CClientWeapon::CClientWeapon() :
 	, m_bVRHideModel( false )
 	, m_vVRObjPos( 0.0f, 0.0f, 0.0f )
 	, m_rVRObjRot( 0.0f, 0.0f, 0.0f, 1.0f )
+	, m_bVRBladeValid( false )
+	, m_vVRPrevHilt( 0.0f, 0.0f, 0.0f )
+	, m_vVRPrevTip( 0.0f, 0.0f, 0.0f )
+	, m_fVRSwingReady( 0.0f )
+	, m_nVRSwingLoggedId( -1 )
 	, m_hLoopSound( LTNULL )
 	, m_nLoopSoundId( PSI_INVALID )
 	, m_bFirstSelection( true )
@@ -1139,6 +1144,9 @@ WeaponState CClientWeapon::Update( bool bFire, FireType eFireType /*=FT_NORMAL_F
 
 	// Update the player-view attachments
 	g_pPVAttachmentMgr->UpdatePVAttachments();
+
+	// VR: a real swing of a sword hits what the blade passes through.
+	VR_UpdateSwing();
 
 	// Update the weapon's perturb value based on the player's movement.
 	UpdateMovementPerturb();
@@ -5952,4 +5960,169 @@ void CClientWeapon::ClearFiring()
 
 	PlayAnimation( nAni, true );
 	SetState( W_IDLE );
+}
+
+// ----------------------------------------------------------------------- //
+//
+//	VR: swinging a melee weapon
+//
+//	A sword (ammo doing sword or melee damage) hits what its blade passes
+//	through when you swing it fast enough: each frame the blade (from its
+//	"gun" bone, the hilt, to its "MotionTrail" socket, the tip) is swept from
+//	where it was last frame to where it is now, at a few points along its
+//	length, and if that touches anything, the game's own melee shot goes
+//	off from just before the touch, along the way the blade was moving. The
+//	server then does the weapon's normal damage, sounds and marks; no slash
+//	animation plays, the sword stays where your hand has it. The trigger
+//	still does the game's own slash (Tre: both). Swings only count while
+//	the weapon is idle (not mid-slash, reloading or switching), and no
+//	faster than the weapon may fire (the server would refuse them).
+//
+// ----------------------------------------------------------------------- //
+
+// The blade's hilt and tip in the world, now. False if this weapon has no
+// blade (no "gun" bone or "MotionTrail" socket) or isn't in your hand.
+bool CClientWeapon::VR_GetBlade( LTVector &vHilt, LTVector &vTip ) const
+{
+	if ( !m_bVRPlaced || !m_hObject )
+		return false;
+
+	HMODELNODE hHilt;
+	HMODELSOCKET hTip;
+	if ( LT_OK != g_pModelLT->GetNode( m_hObject, "gun", hHilt ) ||
+	     LT_OK != g_pModelLT->GetSocket( m_hObject, "MotionTrail", hTip ) )
+		return false;
+
+	// In the model's own space (so it doesn't matter whether the engine has
+	// caught up with this frame's placement yet), then where the gun was put
+	// in really-close space, then the world (as for the muzzle flash).
+	LTransform tHilt, tTip;
+	if ( LT_OK != g_pModelLT->GetNodeTransform( m_hObject, hHilt, tHilt, LTFALSE ) ||
+	     LT_OK != g_pModelLT->GetSocketTransform( m_hObject, hTip, tTip, LTFALSE ) )
+		return false;
+
+	const float fScale = g_VRMgr.GetGunScale();
+	LTVector vHiltClose = m_vVRObjPos + VR_Rotate( m_rVRObjRot, tHilt.m_Pos );
+	LTVector vTipClose = m_vVRObjPos + VR_Rotate( m_rVRObjRot, tTip.m_Pos );
+	vHilt = m_vCamPos + VR_Rotate( m_rCamRot, vHiltClose * fScale );
+	vTip = m_vCamPos + VR_Rotate( m_rCamRot, vTipClose * fScale );
+	return true;
+}
+
+static bool VR_SwingPolyFilterFn( HPOLY hPoly, void *pUserData )
+{
+	return GetSurfaceType( hPoly ) != ST_INVISIBLE;
+}
+
+void CClientWeapon::VR_UpdateSwing()
+{
+	LTVector vHilt, vTip;
+	bool bMelee = m_pWeapon && m_pAmmo && ( VECTOR == m_pAmmo->eType ) &&
+		( DT_SWORD == m_pAmmo->eInstDamageType || DT_MELEE == m_pAmmo->eInstDamageType );
+	if ( !bMelee || !g_VRMgr.IsSwingOn() || !VR_GetBlade( vHilt, vTip ) )
+	{
+		m_bVRBladeValid = false;
+		return;
+	}
+
+	const float fUnitsPerMeter = g_VRMgr.GetUnitsPerMeter();
+	if ( fUnitsPerMeter <= 0.0f )
+	{
+		m_bVRBladeValid = false;
+		return;
+	}
+
+	// (Once per weapon: its blade, for the log.)
+	if ( m_nVRSwingLoggedId != m_nWeaponId )
+	{
+		m_nVRSwingLoggedId = m_nWeaponId;
+		CVRMgr::Log( "Swing: %s swings (blade %.0f cm, fires at most every %u ms)", m_pWeapon->szName,
+			( vTip - vHilt ).Mag() / fUnitsPerMeter * 100.0f, m_pWeapon->m_nFireDelay );
+	}
+
+	LTVector vPrevHilt = m_vVRPrevHilt, vPrevTip = m_vVRPrevTip;
+	bool bHadBlade = m_bVRBladeValid;
+	m_vVRPrevHilt = vHilt;
+	m_vVRPrevTip = vTip;
+	m_bVRBladeValid = true;
+
+	const float fFrameTime = g_pLTClient->GetFrameTime();
+	const float fNow = g_pLTClient->GetTime();
+	if ( !bHadBlade || fFrameTime <= 0.0f || fNow < m_fVRSwingReady || W_IDLE != m_eState )
+		return;
+
+	// Fast enough?
+	float fTipSpeed = ( vTip - vPrevTip ).Mag() / fUnitsPerMeter / fFrameTime;
+	if ( fTipSpeed < g_VRMgr.GetSwingSpeed() )
+		return;
+
+	// Sweep points along the blade (the part beyond the hand, out to the
+	// tip) from where they were to where they are.
+	HOBJECT hClientHitBox = LTNULL;
+	CCharacterFX *pMe = g_pGameClientShell->GetSFXMgr()->GetCharacterFX( g_pLTClient->GetClientObject() );
+	if ( pMe )
+		hClientHitBox = pMe->GetHitBox();
+	HOBJECT ahFilter[] = { g_pLTClient->GetClientObject(), g_pPlayerMgr->GetMoveMgr()->GetObject(),
+		hClientHitBox, m_hObject, LTNULL };
+
+	static const float kAlong[] = { 0.35f, 0.6f, 0.8f, 1.0f };
+	for ( int i = 0; i < (int)( sizeof( kAlong ) / sizeof( kAlong[0] ) ); ++i )
+	{
+		LTVector vFrom = vPrevHilt + ( vPrevTip - vPrevHilt ) * kAlong[i];
+		LTVector vTo = vHilt + ( vTip - vHilt ) * kAlong[i];
+		LTVector vMove = vTo - vFrom;
+		float fMove = vMove.Mag();
+		if ( fMove < 0.01f )
+			continue;
+
+		IntersectQuery query;
+		IntersectInfo info;
+		query.m_From = vFrom;
+		query.m_To = vTo;
+		query.m_Flags = INTERSECT_OBJECTS | IGNORE_NONSOLID | INTERSECT_HPOLY;
+		query.m_FilterFn = ObjListFilterFn;
+		query.m_pUserData = ahFilter;
+		query.m_PolyFilterFn = VR_SwingPolyFilterFn;
+		if ( !g_pLTClient->IntersectSegment( &query, &info ) )
+			continue;
+
+		// Hit: the game's melee shot from a little before the touch, the way
+		// the blade was going.
+		LTVector vDir = vMove / fMove;
+		LTVector vShotFrom = info.m_Point - vDir * ( 0.15f * fUnitsPerMeter );
+		VR_SwingFire( vShotFrom, vDir );
+
+		float fDelay = (float)m_pWeapon->m_nFireDelay / 1000.0f + 0.05f;
+		m_fVRSwingReady = fNow + ( ( fDelay < 0.3f ) ? 0.3f : fDelay );
+
+		const char *pszWhat = "an object";
+		CSFXMgr *pSFX = g_pGameClientShell->GetSFXMgr();
+		if ( !info.m_hObject || IsMainWorld( info.m_hObject ) )
+			pszWhat = "the world";
+		else if ( pSFX->GetCharacterFX( info.m_hObject ) || pSFX->GetCharacterFromHitBox( info.m_hObject ) )
+			pszWhat = "a character";
+		else if ( pSFX->GetBodyFX( info.m_hObject ) || pSFX->GetBodyFromHitBox( info.m_hObject ) )
+			pszWhat = "a body";
+		CVRMgr::Log( "Swing: %s hit %s (tip %.1f m/s, %d%% along the blade)", m_pWeapon->szName, pszWhat, fTipSpeed,
+			(int)( kAlong[i] * 100.0f ) );
+		return;
+	}
+}
+
+// The game's own melee shot, from vFrom along vDir (as CClientWeapon::Fire,
+// without the spread or the slash animation).
+void CClientWeapon::VR_SwingFire( LTVector const &vFrom, LTVector const &vDir )
+{
+	m_wIgnoreFX = WFX_FIRESOUND | WFX_ALTFIRESND;
+	if ( !m_bHaveSilencer )
+		m_wIgnoreFX |= WFX_SILENCED;
+
+	LTVector vObjectImpactPos( 0.0f, 0.0f, 0.0f );
+	HOBJECT hObjectImpact = INVALID_HOBJECT;
+	ClientFire( vDir, vFrom, &vObjectImpactPos, &hObjectImpact );
+
+	LTVector vPos( 0, 0, 0 );
+	::PlayWeaponSound( m_pWeapon, vPos, PSI_FIRE, LTTRUE );
+
+	SendFireMessage( true, 0.0f, vFrom, vDir, vObjectImpactPos, hObjectImpact );
 }

@@ -128,6 +128,12 @@ public:
 	bool		IsAdjustingGun() const	{ return m_bAdjusting; }
 	float		GetHandScale() const;
 
+	// Swinging a melee weapon (see CClientWeapon::VR_UpdateSwing): on or
+	// off, and how fast the blade's tip must move (metres per second).
+	bool		IsSwingOn() const;
+	float		GetSwingSpeed() const;
+	float		GetUnitsPerMeter() const	{ return m_State.unitsPerMeter; }
+
 	// --- Hands ---
 	//
 	// The game's gun models have both of Cate's arms in them. In VR the

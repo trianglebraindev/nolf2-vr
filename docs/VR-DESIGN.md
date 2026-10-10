@@ -309,9 +309,9 @@ Next, in a suggested order:
    scope off its tube (per-weapon scope adjust), laser dots / kitty eyes
    adrift (see "Effects on the gun"). (No binoculars in NOLF2: OVM_BINOC is
    defined but never used.)
-Later: melee swinging (Tre wants it), comfort vignette, height
-calibration and real crouch, vehicles, cutscene options, the shutdown
-hang.
+8. Melee swinging (first pass, see "Melee").
+Later: comfort vignette, height calibration and real crouch, vehicles,
+cutscene options, the shutdown hang.
 
 ## VR settings page (first pass)
 
@@ -404,6 +404,36 @@ hang.
   edge, because he sights with his right eye.
 - Cat eyes (angry kitty) on target after the effects fix (Tre); the
   sniper scope's measured offset "felt good, lines up" (Tre).
+
+## Melee (first pass)
+
+- Tre's picks: a real swing hits AND the trigger still does the game's
+  own slash ("give players options"); the weapon's own damage whatever
+  the speed; during a real swing the blade stays where your hand has it
+  (no slash animation).
+- Which weapons: ammo doing DT_SWORD or DT_MELEE damage (a VECTOR ammo),
+  with a blade in the model: the "gun" bone (hilt) to the "MotionTrail"
+  socket (tip), about 58 cm on the katana and tulwar (vr_models.log). The
+  log says "Swing: <weapon> swings (blade N cm ...)" once per weapon.
+- Each frame (CClientWeapon::VR_UpdateSwing) the hilt and tip are put in
+  the world (model space -> the gun's placement in really-close space ->
+  the world, as for the muzzle flash). When the tip moves faster than
+  `VRSwingSpeed` (2.5 m/s; Options > VR > Sword swings: Off / Light 1.5 /
+  Normal 2.5 / Hard 4), four points along the blade (35 / 60 / 80 / 100%
+  of the way to the tip) are swept from last frame's place to this
+  frame's, with the targeting's filters (not you, your hit box or the gun).
+- A touch sends the game's own melee shot (VR_SwingFire: the fire sound
+  and MID_WEAPON_FIRE, as CClientWeapon::Fire without the spread) from
+  15 cm before the touch along the blade's motion; the server's own trace
+  (the weapon's range) does the damage, sound and marks. In single player
+  the client does no hit test of its own (only against a remote server),
+  so the server's trace is what counts.
+- Only while the weapon is idle (not mid-slash, reloading or switching),
+  and no sooner than the weapon's fire delay (at least 0.3 s) after the
+  last hit: the server refuses shots faster than m_nFireDelay.
+- Hits on walls count too (the game's clang and marks). Logged: "Swing:
+  <weapon> hit a character / a body / the world / an object (tip speed,
+  where along the blade)".
 
 ## Effects on the gun
 

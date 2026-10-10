@@ -97,6 +97,12 @@
 //   VRScopeZoom     magnification of a level-1 scope (4); stronger scopes
 //                   are 2x and 4x that
 //
+//   Melee (see CClientWeapon::VR_UpdateSwing):
+//   VRSwing         1 = swinging a sword hits what the blade passes
+//                   through (default), 0 = only the trigger slashes
+//   VRSwingSpeed    how fast the blade's tip must move to count as a
+//                   swing, metres per second (2.5)
+//
 // HANDS (see VRMgr.h): the left hand follows the left controller. Squeeze
 // the left grip with your left hand near where Cate's left hand sits on
 // the weapon to hold it with both hands (steadier aim); let go to free it.
@@ -156,6 +162,8 @@ static VarTrack g_vtVRScopeHeight;
 static VarTrack g_vtVRScopeZoom;
 static VarTrack g_vtVRScopeSize;
 static VarTrack g_vtVRScopeEye;
+static VarTrack g_vtVRSwing;
+static VarTrack g_vtVRSwingSpeed;
 
 static const float kGrabDistanceMeters = 0.2f;	// how close the left hand must be to grab the gun
 static const float kRingWidthMeters = 0.36f;	// the weapon ring's size
@@ -315,6 +323,8 @@ void CVRMgr::Init()
 	g_vtVRScopeSize.Init(g_pLTClient, "VRScopeSize", NULL, 5.5f);
 	g_vtVRScopeZoom.Init(g_pLTClient, "VRScopeZoom", NULL, 4.0f);
 	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 5.0f);
+	g_vtVRSwing.Init(g_pLTClient, "VRSwing", NULL, 1.0f);
+	g_vtVRSwingSpeed.Init(g_pLTClient, "VRSwingSpeed", NULL, 2.5f);
 
 	LoadGunFits();
 	LoadSettings();
@@ -366,6 +376,8 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRScopeSize",		5.5f },
 	{ "VRScopeZoom",		4.0f },
 	{ "VRScopeEye",			5.0f },
+	{ "VRSwing",			1.0f },
+	{ "VRSwingSpeed",		2.5f },
 	{ "VRArms",				0.0f },
 	{ "VRWristBack",		7.0f },
 	{ "VRHandPalm",			3.5f },
@@ -391,6 +403,17 @@ float CVRMgr::GetSettingDefault(const char* pszName)
 {
 	const VRSettingDef* pDef = VR_FindSetting(pszName);
 	return pDef ? pDef->fDefault : 0.0f;
+}
+
+bool CVRMgr::IsSwingOn() const
+{
+	return IsActive() && g_vtVRSwing.GetFloat(1.0f) != 0.0f;
+}
+
+float CVRMgr::GetSwingSpeed() const
+{
+	float f = g_vtVRSwingSpeed.GetFloat(2.5f);
+	return (f < 0.5f) ? 0.5f : f;
 }
 
 float CVRMgr::GetSetting(const char* pszName)
