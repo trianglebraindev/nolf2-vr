@@ -329,15 +329,17 @@ bool CBaseFX::Update(float tmFrameTime)
 				LTransform lTrans;
 				HMODELNODE hNode;
 				
+				// NOLF2 VR: the gun model's full transform (position AND
+				// rotation), not just its position. The original code added
+				// only the position, which is right while the gun never turns
+				// relative to the camera (the flat game), but in VR the gun
+				// turns with your hand and the effect was left hanging at an
+				// unturned offset (the kitty's eyes, launcher laser dots).
 				if( LT_OK == pModelLT->GetNode( m_hParent, GetProps()->m_szAttach, hNode ) )
 				{
-					if( LT_OK == pModelLT->GetNodeTransform( m_hParent, hNode, lTrans, LTFALSE ) )
+					if( LT_OK == pModelLT->GetNodeTransform( m_hParent, hNode, lTrans, LTTRUE ) )
 					{	
-						//grab the position of the object to compensate for offset
-						LTVector vObjectPos;
-						m_pLTClient->GetObjectPos(m_hParent, &vObjectPos);
-
-						m_vPos	= lTrans.m_Pos + vAlignedOffset + vObjectPos;
+						m_vPos	= lTrans.m_Pos + vAlignedOffset;
 						rRot	= lTrans.m_Rot;
 
 					}
@@ -352,15 +354,12 @@ bool CBaseFX::Update(float tmFrameTime)
 				LTransform		lTrans;
 				HMODELSOCKET	hSocket;
 
+				// NOLF2 VR: full transform, see UP_PVNODEATTACH above.
 				if( LT_OK == pModelLT->GetSocket( m_hParent, GetProps()->m_szAttach, hSocket ) )
 				{
-					if( LT_OK == pModelLT->GetSocketTransform( m_hParent, hSocket, lTrans, LTFALSE ) )
+					if( LT_OK == pModelLT->GetSocketTransform( m_hParent, hSocket, lTrans, LTTRUE ) )
 					{
-						//grab the position of the object to compensate for offset
-						LTVector vObjectPos;
-						m_pLTClient->GetObjectPos(m_hParent, &vObjectPos);
-
-						m_vPos	= lTrans.m_Pos + vAlignedOffset + vObjectPos;
+						m_vPos	= lTrans.m_Pos + vAlignedOffset;
 						rRot	= lTrans.m_Rot;
 					}
 				}

@@ -226,6 +226,7 @@ CVRMgr::CVRMgr()
 	m_nCurrentFit		= -1;
 	m_szCurrentGun[0]	= '\0';
 	m_bAdjusting		= false;
+	m_bAdjustScope		= false;
 	m_hGunModel			= LTNULL;
 	m_hNodeArmL = m_hNodeWristL = m_hNodeArmR = m_hNodeWristR = INVALID_MODEL_NODE;
 	m_nFingerJoints		= 0;
@@ -672,12 +673,18 @@ void CVRMgr::SetCurrentGun(const char* pszName, HOBJECT hModel)
 
 // Fits tested in the headset, used for any weapon vr_guns.txt doesn't
 // mention. (Tre's, from the in-game adjust mode.)
-static const struct { const char* pszName; float x, y, z, yaw, pitch, scale; } kDefaultGunFits[] =
+// The Sterlings are modelled about half again too big next to the other
+// guns (the hands are the same size in every gun model, measured from
+// vr_models.log; the Sterling's breech-to-muzzle is as long as the AK-47's),
+// so they start smaller. The adjust mode's A / B fine-tunes it.
+static const struct { const char* pszName; float x, y, z, yaw, pitch, scale, scopeUp, scopeRight; } kDefaultGunFits[] =
 {
-	{ "Crossbow",	0.10f, 0.00f, 0.25f,	5.62f, 1.39f,	12.0f },
+	{ "Crossbow",			0.10f, 0.00f, 0.25f,	5.62f, 1.39f,	12.0f,	0.0f, 0.0f },
+	{ "Sterling",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f },
+	{ "SilencedSterling",	0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f },
 };
 
-// vr_guns.txt: one line per weapon:  "Name" x y z yaw pitch scale
+// vr_guns.txt: one line per weapon:  "Name" x y z yaw pitch scale [scopeUp scopeRight]
 void CVRMgr::LoadGunFits()
 {
 	m_nGunFits = 0;
@@ -698,7 +705,8 @@ void CVRMgr::LoadGunFits()
 				nLen = (int)sizeof(fit.szName) - 1;
 			strncpy(fit.szName, pStart + 1, nLen);
 			fit.szName[nLen] = '\0';
-			if (sscanf(pEnd + 1, "%f %f %f %f %f %f", &fit.fX, &fit.fY, &fit.fZ, &fit.fYaw, &fit.fPitch, &fit.fScale) >= 5)
+			if (sscanf(pEnd + 1, "%f %f %f %f %f %f %f %f", &fit.fX, &fit.fY, &fit.fZ, &fit.fYaw, &fit.fPitch, &fit.fScale,
+				&fit.fScopeUp, &fit.fScopeRight) >= 5)
 				m_aGunFits[m_nGunFits++] = fit;
 		}
 		fclose(pFile);
@@ -724,6 +732,8 @@ void CVRMgr::LoadGunFits()
 		fit.fYaw = kDefaultGunFits[d].yaw;
 		fit.fPitch = kDefaultGunFits[d].pitch;
 		fit.fScale = kDefaultGunFits[d].scale;
+		fit.fScopeUp = kDefaultGunFits[d].scopeUp;
+		fit.fScopeRight = kDefaultGunFits[d].scopeRight;
 	}
 }
 
@@ -734,12 +744,12 @@ void CVRMgr::SaveGunFits()
 		return;
 	fprintf(pFile, "# NOLF2 VR: how each gun sits in your hand. Made by the in-game\n");
 	fprintf(pFile, "# \"adjust gun\" mode (click the left stick while playing).\n");
-	fprintf(pFile, "# \"weapon\"  slide right / up / forward (cm)  turn  tilt (degrees)  size\n");
+	fprintf(pFile, "# \"weapon\"  slide right / up / forward (cm)  turn  tilt (degrees)  size  scope up / right (cm)\n");
 	for (int i = 0; i < m_nGunFits; ++i)
 	{
 		const GunFit& fit = m_aGunFits[i];
-		fprintf(pFile, "\"%s\"  %.2f %.2f %.2f  %.2f %.2f  %.2f\n", fit.szName, fit.fX, fit.fY, fit.fZ,
-			fit.fYaw, fit.fPitch, fit.fScale);
+		fprintf(pFile, "\"%s\"  %.2f %.2f %.2f  %.2f %.2f  %.2f  %.2f %.2f\n", fit.szName, fit.fX, fit.fY, fit.fZ,
+			fit.fYaw, fit.fPitch, fit.fScale, fit.fScopeUp, fit.fScopeRight);
 	}
 	fclose(pFile);
 }
@@ -760,16 +770,35 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 			if (!m_szCurrentGun[0] || !GetOrAddCurrentFit())
 				return;
 			m_bAdjusting = true;
-			Message("ADJUST GUN: left stick slides it, right stick tilts and turns it.");
-			Message("Right grip + right stick up/down raises it. A / B: bigger / smaller.");
-			Message("Line the sights up with the crosshair. Click the left stick when done.");
+			// Looking through the scope: adjust where the scope is instead.
+			m_bAdjustScope = m_bScoped;
+			if (m_bAdjustScope)
+			{
+				Message("ADJUST SCOPE: left stick moves the scope picture up / down / left / right.");
+				Message("Put it over the scope on the gun. Click the left stick when done.");
+			}
+			else
+			{
+				Message("ADJUST GUN: left stick slides it, right stick tilts and turns it.");
+				Message("Right grip + right stick up/down raises it. A / B: bigger / smaller.");
+				Message("Line the sights up with the crosshair. Click the left stick when done.");
+			}
 		}
 		else
 		{
 			m_bAdjusting = false;
 			SaveGunFits();
 			char szMsg[128];
-			_snprintf(szMsg, sizeof(szMsg), "Gun fit saved (%s).", m_szCurrentGun);
+			if (m_bAdjustScope)
+			{
+				const GunFit* pDone = GetCurrentFit();
+				_snprintf(szMsg, sizeof(szMsg), "Scope saved (%s: %.1f cm up, %.1f cm right).", m_szCurrentGun,
+					pDone ? pDone->fScopeUp : 0.0f, pDone ? pDone->fScopeRight : 0.0f);
+				szMsg[sizeof(szMsg) - 1] = '\0';
+				Log("%s", szMsg);
+			}
+			else
+				_snprintf(szMsg, sizeof(szMsg), "Gun fit saved (%s).", m_szCurrentGun);
 			szMsg[sizeof(szMsg) - 1] = '\0';
 			Message(szMsg);
 		}
@@ -791,6 +820,14 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 	float rx = m_State.hand[LTVR_RIGHT].stick[0], ry = m_State.hand[LTVR_RIGHT].stick[1];
 	ApplyDeadZone(lx, ly);
 	ApplyDeadZone(rx, ry);
+
+	if (m_bAdjustScope)
+	{
+		const float kScopeCmPerSec = 3.0f;
+		pFit->fScopeRight += lx * kScopeCmPerSec * fFrameTime;
+		pFit->fScopeUp += ly * kScopeCmPerSec * fFrameTime;
+		return;
+	}
 
 	pFit->fX += lx * kSlideCmPerSec * fFrameTime;
 	pFit->fZ += ly * kSlideCmPerSec * fFrameTime;
@@ -928,7 +965,7 @@ void CVRMgr::UpdateScope()
 	LTVector vLens, vFrom, vCamPos;
 	LTRotation rAim, rCamRot;
 	if (IsActive() && g_vtVRScope.GetFloat(1.0f) != 0.0f && g_pPlayerMgr && g_pPlayerStats && g_pWeaponMgr &&
-		g_pInterfaceMgr && g_pInterfaceMgr->GetGameState() == GS_PLAYING && !m_bAdjusting && !m_bRingOpen &&
+		g_pInterfaceMgr && g_pInterfaceMgr->GetGameState() == GS_PLAYING && (!m_bAdjusting || m_bAdjustScope) && !m_bRingOpen &&
 		g_pPlayerMgr->GetClientWeaponMgr() && g_pPlayerMgr->GetClientWeaponMgr()->WeaponsEnabled() &&
 		GetAimRay(vFrom, rAim) && GetCamera(vCamPos, rCamRot))
 	{
@@ -953,10 +990,15 @@ void CVRMgr::UpdateScope()
 			// aim line (which the adjust mode lines the gun up with) but
 			// VRScopeHeight cm above it: the scope sits on top of the gun.
 			// (Measured on the crossbow: eye 7 - 10 cm off the aim line.)
+			// Each gun's own scope offset (the scope adjust mode) on top:
+			// the sniper rifle's scope is part of its model and sits
+			// elsewhere, and nothing in the game data says where.
 			const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
 			const LTVector vFwd = rAim.Forward();
-			const float fHeight = g_vtVRScopeHeight.GetFloat(8.0f);
-			const LTVector vScopeFrom = vFrom + rAim.Up() * (fHeight * fUnitsPerCm);
+			const GunFit* pFit = GetCurrentFit();
+			const float fHeight = g_vtVRScopeHeight.GetFloat(8.0f) + (pFit ? pFit->fScopeUp : 0.0f);
+			const float fSide = pFit ? pFit->fScopeRight : 0.0f;
+			const LTVector vScopeFrom = vFrom + rAim.Up() * (fHeight * fUnitsPerCm) + rAim.Right() * (fSide * fUnitsPerCm);
 			float fBestOff = 1e9f, fBestBehind = 0.0f, fBestUp = 0.0f, fBestRight = 0.0f;
 			LTVector vBestOnLine;
 			for (int e = 0; e < 2; ++e)
@@ -973,13 +1015,16 @@ void CVRMgr::UpdateScope()
 					vBestOnLine = vOnLine;
 					// (Where the eye is from the aim line, for the log.)
 					fBestUp = fHeight + vOff.Dot(rAim.Up()) / fUnitsPerCm;
-					fBestRight = vOff.Dot(rAim.Right()) / fUnitsPerCm;
+					fBestRight = fSide + vOff.Dot(rAim.Right()) / fUnitsPerCm;
 				}
 			}
 			float fFacing = vFwd.Dot(rCamRot.Forward());
 			float fNear = g_vtVRScopeEye.GetFloat(5.0f);
 			bool bOn = fBestOff < (bWas ? fNear * 1.6f : fNear) && fBestBehind > 0.0f && fBestBehind < 80.0f &&
 				fFacing > (bWas ? 0.75f : 0.85f);
+			// Adjusting it: keep it up while you move it about.
+			if (m_bAdjusting && m_bAdjustScope && fBestBehind > 0.0f && fFacing > 0.5f)
+				bOn = true;
 			if (bOn)
 			{
 				nLevel = pMod->nZoomLevel;

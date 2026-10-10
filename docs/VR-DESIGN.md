@@ -106,7 +106,7 @@ needs. Not ordered within a group yet.
 | Left trigger | activate (use, talk, search) | select |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
-| Left stick click | adjust gun (again: done, saves) | |
+| Left stick click | adjust gun; while looking through a scope, adjust the scope (again: done, saves) | |
 | Left grip (hand on the weapon) | hold the gun with both hands | |
 | Conversation choices | right stick up/down highlights, right trigger or A picks, B says nothing | |
 | Home key (keyboard) | recentre | recentre |
@@ -142,7 +142,16 @@ positive = barrel down).
   resize the current gun relative to the hand while the aim stays on the
   controller's pointing ray, so you line the sights up with the crosshair.
   Saved per weapon to `run\vr_guns.txt`; once good, it becomes the shipped
-  default.
+  default. Clicked while looking through a scope, it adjusts the scope
+  instead: the left stick moves the scope's line (and so the lens picture)
+  up / down / left / right, saved as that weapon's last two numbers
+  (scope up / right, cm, on top of `VRScopeHeight`).
+- Gun size: the hands are the same size in every gun model (0.38 units
+  wrist to middle knuckle, vr_models.log), so the guns' own proportions
+  decide how big they look. The Sterling and silenced Sterling are
+  modelled about as long breech-to-muzzle as the AK-47 (a much bigger
+  gun) and looked "cannon-like" (Tre), so their built-in fit starts at
+  size 8.5 instead of 12.
 - The engine's console key is compiled out in this ("final") build, so
   settings go on the launch line (`+Name value`) or through the in-game
   adjust mode.
@@ -290,7 +299,10 @@ Next, in a suggested order:
    button recentres through the headset); open/close left hand (first
    pass done: follows the left grip).
 6. Scopes / zoom in VR (first pass done, see "Scopes"); tool animations
-   (lock pick etc.) still to do. (No binoculars in NOLF2: OVM_BINOC is
+   (lock pick etc.) look right (Tre).
+7. Fixes from weapon testing: Sterlings too big (smaller default), sniper
+   scope off its tube (per-weapon scope adjust), laser dots / kitty eyes
+   adrift (see "Effects on the gun"). (No binoculars in NOLF2: OVM_BINOC is
    defined but never used.)
 Later: melee swinging (Tre wants it), comfort vignette, height
 calibration and real crouch, vehicles, cutscene options, the shutdown
@@ -358,6 +370,23 @@ hang.
   layer the headset adds on top.)
 - While scoped the world crosshair is hidden (the reticle replaces it) and
   the flat game's scope sway (which would turn your whole body) is off.
+- Per weapon: the sniper rifle's scope is part of its model (no "scope"
+  socket or bone, vr_models.log), so nothing in the game data says where
+  its tube is. Each weapon's fit has a scope offset, set by eye with the
+  scope adjust mode (left stick click while looking through it). While
+  adjusting, the scope stays up wherever your eye is.
+
+## Effects on the gun
+
+- Effects fixed to a socket or bone of the first-person model (the angry
+  kitty's eyes on L_Eye / R_Eye, laser dots, glows: ClientFX with follow
+  type UP_PVSOCKETATTACH / UP_PVNODEATTACH) took the socket's position in
+  the model's own space and added only the model's position, not its
+  rotation (ClientFxDLL BaseFx.cpp). Right while the gun never turns
+  relative to the camera (the flat game); in VR it turns with your hand,
+  so the effects hung at an unturned offset and drifted as you looked
+  around. They now take the socket's full transform, as attached effects
+  on other models always did.
 
 ## Weapon ring (first pass)
 

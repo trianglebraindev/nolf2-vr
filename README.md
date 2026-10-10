@@ -44,7 +44,9 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   world size, HUD distance and size, wrist and gun read-outs, hands or arms).
 
 - **Scopes**: raise a scoped weapon (or the camera gadget) to your eye and
-  the lens shows the magnified view.
+  the lens shows the magnified view. If a scope's picture doesn't sit on
+  the scope, click the left stick while looking through it and move it
+  with the left stick (saved per weapon).
 
 Still to come (see `docs/VR-DESIGN.md`): tool animations, melee swinging,
 comfort options.
@@ -89,7 +91,7 @@ install stays untouched.
 | Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
-| Left stick click | adjust the gun's fit in your hand | |
+| Left stick click | adjust the gun's fit in your hand (looking through a scope: adjust the scope) | |
 | Conversation choices | right stick up / down, right trigger or A to pick, B to say nothing | |
 | Home key (keyboard) | recentre | recentre |
 
@@ -128,7 +130,7 @@ Files the game writes in `run\`:
 | File | What it is |
 |---|---|
 | `vr_settings.txt` | your VR settings (Options > VR, or edit by hand) |
-| `vr_guns.txt` | each weapon's fit in your hand (from the adjust mode) |
+| `vr_guns.txt` | each weapon's fit in your hand and its scope offset (from the adjust mode) |
 | `xrbridge.log`, `vr_game.log`, `vr_models.log` | headset, game and model logs |
 | `crash_*.txt`, `crash_*.dmp` | crash reports |
 

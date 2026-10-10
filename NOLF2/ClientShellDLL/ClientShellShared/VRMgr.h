@@ -309,6 +309,7 @@ private:
 		float	fX, fY, fZ;			// slide, cm: right, up, forward (controller axes)
 		float	fYaw, fPitch;		// turn / tilt, degrees (pitch positive = barrel down)
 		float	fScale;				// size; 0 = use VRGunScale
+		float	fScopeUp, fScopeRight;	// scope line, cm, on top of VRScopeHeight
 	};
 	enum { kMaxGunFits = 64 };
 	GunFit		m_aGunFits[kMaxGunFits];
@@ -316,6 +317,7 @@ private:
 	int			m_nCurrentFit;		// index into m_aGunFits, -1 = none
 	char		m_szCurrentGun[64];
 	bool		m_bAdjusting;
+	bool		m_bAdjustScope;			// (adjusting the scope's line, not the gun)
 
 	const GunFit*	GetCurrentFit() const;
 	GunFit*		GetOrAddCurrentFit();
