@@ -221,6 +221,27 @@ private:
 
 	HOBJECT		m_hGunModel;
 	HMODELNODE	m_hNodeArmL, m_hNodeWristL, m_hNodeArmR, m_hNodeWristR;
+
+	// The free left hand's fingers (see CurlFinger): each joint, which
+	// finger and which joint along it, and the way its bone points in its
+	// own frame (from the model's resting pose).
+	enum { kNumFingers = 5, kMaxFingerJoints = 20 };
+	struct FingerJoint
+	{
+		HMODELNODE	hNode;
+		int			nFinger;		// 0 thumb, 1 pointer, 2 middle, 3 ring, 4 pinky
+		int			nSeg;			// 1 = base (not bent), 2.. = joints that bend
+		LTVector	vDirLocal;
+	};
+	FingerJoint	m_aFingerJoints[kMaxFingerJoints];
+	int			m_nFingerJoints;
+	bool		m_bLeftFree;						// the left hand was put on the controller this evaluation
+	LTVector	m_vPalmNormal;						// the way the left palm faces (really-close space)
+	bool		m_abFingerBase[kNumFingers];		// base bone seen this evaluation
+	LTVector	m_avFingerBase[kNumFingers];		// its direction
+	LTVector	m_avFingerAxis[kNumFingers];		// the axis the finger curls about
+	void		FindFingers(HOBJECT hModel);
+	void		CurlFinger(const FingerJoint& joint, LTMatrix& mNode);
 	LTMatrix*	m_pArmLMatrix;			// this evaluation's arm bones (shrunk once the wrists are known)
 	LTMatrix*	m_pArmRMatrix;
 	bool		m_bGunPlaced;

@@ -160,7 +160,16 @@ code rather than by editing models where possible.
   bone is shortened along its length to a cuff at the wrist (thickness
   kept, so no spike), leaving the gloved hand with the game's finger
   animation. Sleeves on the `cuff` sockets stay hidden.
-- Left hand free: the left wrist follows the left controller.
+- Left hand free: the left wrist follows the left controller, and the
+  fingers follow the left grip (CurlFinger): a slight relaxed curl let go,
+  a fist squeezed. The gun animation's finger pose is replaced while the
+  hand is free. Each finger bends toward the palm (+X of the left
+  controller) about an axis across its knuckles; each joint gets an angle
+  from the finger's base bone (pointer..pinky: knuckle 8..80, middle joint
+  12..95, end joint 8..65 degrees; thumb 5..30, 5..45), so the pose is the
+  same whatever the animation was doing. Bone directions come from the
+  model's resting pose (GetBindPoseNodeTransform). Holding the gun with
+  both hands, the fingers keep the game's own grip.
 - Two-hand grip: left grip with the left hand within 20 cm of where Cate's
   left hand is on the weapon. The hand goes back onto the weapon and the
   gun turns about the right hand so the line between the hands keeps its
@@ -248,7 +257,9 @@ Next, in a suggested order:
    in-headset adjust mode (it's per weapon).
 4. ~~Laser pointer for menus.~~ Dropped for now: Tre finds the stick
    menu control solid.
-5. Recentre on a controller button; open/close left hand.
+5. ~~Recentre on a controller button~~ (not needed: holding the Meta
+   button recentres through the headset); open/close left hand (first
+   pass done: follows the left grip).
 6. Scopes / zoom / binoculars in VR; tool animations (lock pick etc.).
 Later: melee swinging (Tre wants it), comfort vignette, height
 calibration and real crouch, vehicles, cutscene options, the shutdown
