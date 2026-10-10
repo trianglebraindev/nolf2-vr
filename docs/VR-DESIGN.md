@@ -104,6 +104,7 @@ needs. Not ordered within a group yet.
 | Right A / B | next ammo / holster | select / back |
 | Right stick click | reload | |
 | Left trigger | activate (use, talk, search) | select |
+| Left grip + left trigger | snapshot (the trigger doesn't activate while the grip is held) | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
 | Left stick click | adjust gun; while looking through a scope, adjust the scope (again: done, saves) | |
@@ -383,9 +384,20 @@ hang.
   log lines while it wouldn't engage), the eye sat 14.4 cm up (+-1) and
   3 - 6 cm left of the aim line over 15 samples in two sessions, so it's
   6.4 cm up and 4.1 cm left of the crossbow's line.
-- Not on the monitor or in Quest captures: the monitor window shows the
-  game's own flat camera with the HUD, and the headset-only layers (scope
-  lens, watch, ammo, crosshair) are added by the headset.
+- The monitor and snapshots: the headset puts the layers (scope lens,
+  watch, ammo, crosshair, HUD) together itself, so neither the game's
+  flat camera on the monitor nor the Quest's own captures had them. With
+  `VRMirror` 1 (default) the monitor shows the middle of the left eye
+  (the monitor's shape, 3/4 of the eye's height, centred on straight
+  ahead) with every layer drawn on where the headset puts it: each
+  layer's corners are taken through the left eye's pose and field of
+  view, drawn in perspective, premultiplied, in the headset's order
+  (VR_ComposeMirror). Left grip + left trigger (Tre's pick) saves that
+  picture at the eye's own sharpness as `run\Snapshots\vr_<date>_<time>.png`
+  (LTVR_TakeSnapshot, D3DXSaveSurfaceToFile; the file name goes to
+  xrbridge.log, "Snapshot taken" with the weapon to vr_game.log). While
+  the left grip is held the left trigger is unbound from "activate", and
+  the "saved" message waits a few frames so it isn't in the picture.
 
 ## Effects on the gun
 

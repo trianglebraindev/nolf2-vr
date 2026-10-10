@@ -53,6 +53,10 @@ RCONVAR(g_CV_VRHudFollowAngle, "VRHudFollowAngle", float, 35.0f);
 // Menus and the floating screen: distance (metres) and width (degrees).
 RCONVAR(g_CV_VRScreenDistance, "VRScreenDistance", float, 2.0f);
 RCONVAR(g_CV_VRScreenAngle, "VRScreenAngle", float, 62.0f);
+// The monitor window while playing: 1 = what the headset shows (the left
+// eye with the scope, crosshair, watch and other layers on it), 0 = the
+// game's own flat camera with the HUD on top.
+RCONVAR(g_CV_VRMirror, "VRMirror", int, 1);
 
 //------------------------------
 // Really Close settings

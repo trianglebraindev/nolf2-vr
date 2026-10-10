@@ -216,6 +216,9 @@ private:
 	void		UpdateTwoHand();
 	void		UpdateMoveBody();
 	bool		m_bMoveBodyBound;		// left grip is bound to "move body" while held
+	bool		m_bSnapTriggerOff;		// left trigger unbound (snapshot) while the left grip is held
+	int			m_nSnapMsgFrames;		// frames until "snapshot saved" (kept out of the picture)
+	void		UpdateSnapshot();
 	void		UpdateWeaponRing(float fFrameTime);
 	bool		OpenWeaponRing();
 	void		CloseWeaponRing(bool bChoose);
@@ -351,6 +354,7 @@ private:
 	LTVR_BeginLayerFromScreenFn	m_pfnBeginLayerFromScreen;
 	LTVR_SetLayerPoseFn		m_pfnSetLayerPose;
 	LTVR_SetScopeViewFn		m_pfnSetScopeView;
+	LTVR_TakeSnapshotFn		m_pfnTakeSnapshot;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

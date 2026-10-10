@@ -57,6 +57,15 @@
 //  the scope, narrow, into its own round layer at the eyepiece (no gun or
 //  hands in it), with a reticle and a darker rim baked into a mask.
 //
+//  THE MONITOR AND SNAPSHOTS
+//  The layers above (scope, crosshair, watch, HUD) are put together by
+//  the headset, so the monitor (the game's own flat camera) and the
+//  headset's own captures never show them. With VRMirror on, the monitor
+//  shows the middle of the left eye's picture with every layer drawn onto
+//  it where the headset puts it (each layer's corners projected with that
+//  eye's own pose and field of view). LTVR_TakeSnapshot saves that same
+//  picture, at the eye's full sharpness, as a PNG in run\Snapshots.
+//
 //  COORDINATES
 //  OpenXR:   metres, right-handed, +X right, +Y up, -Z forward.
 //  LithTech: game units, left-handed, +X right, +Y up, +Z forward.
@@ -154,6 +163,12 @@ static IDirect3DTexture9*	g_pVRScopeMask		= NULL;
 static const uint32			kVRScopeMaskSize	= 256;
 static void VR_RenderScopeView(IDirect3DDevice9* pDevice, const SceneDesc* pDesc);
 
+// The monitor mirror and snapshots (see the top of this file).
+static IDirect3DSurface9*	g_pVRMirror			= NULL;		// the left eye's middle, layers on it
+static uint32				g_nVRMirrorWidth	= 0;
+static uint32				g_nVRMirrorHeight	= 0;
+static bool					g_bVRSnapshotWanted	= false;
+
 // Where the game says the player's eyes are this frame, and the body's
 // heading (see LTVR_SetOrigin). Falls back to the camera if not set.
 static bool					g_bVROriginSet		= false;
@@ -170,6 +185,16 @@ static int					g_nVRBindings		= 0;
 
 static void VR_BuildState();
 static void VR_EndHud();
+
+static void VR_ReleaseMirror()
+{
+	if (g_pVRMirror)
+	{
+		g_pVRMirror->Release();
+		g_pVRMirror = NULL;
+	}
+	g_nVRMirrorWidth = g_nVRMirrorHeight = 0;
+}
 
 static void VR_ReleaseCanvas()
 {
@@ -234,6 +259,8 @@ static void VR_Destroy()
 	}
 	g_nVRSpotDrawing = -1;
 	VR_ReleaseCanvas();
+	VR_ReleaseMirror();
+	g_bVRSnapshotWanted = false;
 	if (g_pVRScopeMask)		{ g_pVRScopeMask->Release();	g_pVRScopeMask = NULL; }
 	g_bVRScopeSet = false;
 	g_bVRBodyUsedValid = false;
@@ -741,7 +768,11 @@ struct VRQuadVert
 // (nWidth x nHeight): pTex, or the flat colour if pTex is NULL. Every
 // device setting is put back afterwards, so this can be called in the
 // middle of the game's own drawing.
-static void VR_DrawFullQuad(IDirect3DTexture9* pTex, D3DCOLOR color, uint32 nWidth, uint32 nHeight, VRQuadBlend eBlend)
+// Draws one four-cornered shape (a triangle strip: top left, top right,
+// bottom left, bottom right) onto the current render target (nWidth x
+// nHeight), as VR_DrawFullQuad below does for the whole target.
+static void VR_DrawQuadVerts(IDirect3DTexture9* pTex, const VRQuadVert aVerts[4], uint32 nWidth, uint32 nHeight,
+	VRQuadBlend eBlend)
 {
 	if (!PD3DDEVICE || !nWidth || !nHeight)
 		return;
@@ -803,6 +834,18 @@ static void VR_DrawFullQuad(IDirect3DTexture9* pTex, D3DCOLOR color, uint32 nWid
 	pDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 	pDevice->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, FALSE);
 
+	pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, aVerts, sizeof(VRQuadVert));
+
+	if (bOwnScene)
+		pDevice->EndScene();
+
+	pSaved->Apply();
+	pSaved->Release();
+	g_Device.InvalidateViewport();
+}
+
+static void VR_DrawFullQuad(IDirect3DTexture9* pTex, D3DCOLOR color, uint32 nWidth, uint32 nHeight, VRQuadBlend eBlend)
+{
 	// Pixel centres sit half a pixel in.
 	const float fRight = (float)nWidth - 0.5f;
 	const float fBottom = (float)nHeight - 0.5f;
@@ -813,14 +856,7 @@ static void VR_DrawFullQuad(IDirect3DTexture9* pTex, D3DCOLOR color, uint32 nWid
 		{ -0.5f,  fBottom, 0.0f, 1.0f, color, 0.0f, 1.0f },
 		{ fRight, fBottom, 0.0f, 1.0f, color, 1.0f, 1.0f },
 	};
-	pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, aVerts, sizeof(VRQuadVert));
-
-	if (bOwnScene)
-		pDevice->EndScene();
-
-	pSaved->Apply();
-	pSaved->Release();
-	g_Device.InvalidateViewport();
+	VR_DrawQuadVerts(pTex, aVerts, nWidth, nHeight, eBlend);
 }
 
 // Switches the game's drawing over to the interface layer (right after
@@ -1445,6 +1481,256 @@ static bool VR_GetSpotPlacement(int nSpot, xrb::ScreenPlacement& place)
 }
 
 //------------------------------------------------------------------
+// The monitor mirror and snapshots
+//------------------------------------------------------------------
+
+static xrb::Vec3 XR_Add(const xrb::Vec3& a, const xrb::Vec3& b)
+{
+	xrb::Vec3 r = { a.x + b.x, a.y + b.y, a.z + b.z };
+	return r;
+}
+
+static xrb::Vec3 XR_Sub(const xrb::Vec3& a, const xrb::Vec3& b)
+{
+	xrb::Vec3 r = { a.x - b.x, a.y - b.y, a.z - b.z };
+	return r;
+}
+
+// v turned by q (q * v * q^-1), written out.
+static xrb::Vec3 XR_Rotate(const xrb::Quat& q, const xrb::Vec3& v)
+{
+	// t = 2 (q.xyz x v);  v' = v + w t + q.xyz x t
+	float tx = 2.0f * (q.y * v.z - q.z * v.y);
+	float ty = 2.0f * (q.z * v.x - q.x * v.z);
+	float tz = 2.0f * (q.x * v.y - q.y * v.x);
+	xrb::Vec3 r;
+	r.x = v.x + q.w * tx + (q.y * tz - q.z * ty);
+	r.y = v.y + q.w * ty + (q.z * tx - q.x * tz);
+	r.z = v.z + q.w * tz + (q.x * ty - q.y * tx);
+	return r;
+}
+
+// v turned back by q (by its inverse).
+static xrb::Vec3 XR_Unrotate(const xrb::Quat& q, const xrb::Vec3& v)
+{
+	xrb::Quat c = { -q.x, -q.y, -q.z, q.w };
+	return XR_Rotate(c, v);
+}
+
+// Which part of the left eye's picture the mirror shows: the monitor's
+// shape, three quarters of the eye's height, centred on straight ahead.
+struct VRMirrorView
+{
+	const xrb::EyeView*	pEye;
+	float				fTanLeft, fTanRight, fTanUp, fTanDown;
+	uint32				nEyeWidth, nEyeHeight;
+	RECT				rcCrop;
+};
+
+static bool VR_GetMirrorView(VRMirrorView& mv)
+{
+	if (!g_pVRBridge || !g_pVREyeSurf[0])
+		return false;
+	mv.pEye = &g_pVRBridge->GetEyeView(xrb::EYE_LEFT);
+	mv.nEyeWidth = g_pVRBridge->GetEyeWidth();
+	mv.nEyeHeight = g_pVRBridge->GetEyeHeight();
+	mv.fTanLeft  = (float)tan(mv.pEye->fov.angleLeft);
+	mv.fTanRight = (float)tan(mv.pEye->fov.angleRight);
+	mv.fTanUp    = (float)tan(mv.pEye->fov.angleUp);
+	mv.fTanDown  = (float)tan(mv.pEye->fov.angleDown);
+	if (mv.nEyeWidth < 16 || mv.nEyeHeight < 16 || mv.fTanRight - mv.fTanLeft < 1e-3f || mv.fTanUp - mv.fTanDown < 1e-3f)
+		return false;
+
+	float fAspect = (g_nVRScreenWidth && g_nVRScreenHeight) ? (float)g_nVRScreenWidth / (float)g_nVRScreenHeight : 4.0f / 3.0f;
+	float fH = (float)mv.nEyeHeight * 0.75f;
+	float fW = fH * fAspect;
+	if (fW > (float)mv.nEyeWidth * 0.95f)
+	{
+		fW = (float)mv.nEyeWidth * 0.95f;
+		fH = fW / fAspect;
+	}
+	int nW = (int)fW & ~1, nH = (int)fH & ~1;
+	float fCentreX = -mv.fTanLeft / (mv.fTanRight - mv.fTanLeft) * (float)mv.nEyeWidth;
+	float fCentreY = mv.fTanUp / (mv.fTanUp - mv.fTanDown) * (float)mv.nEyeHeight;
+	int nLeft = (int)(fCentreX - fW * 0.5f);
+	int nTop = (int)(fCentreY - fH * 0.5f);
+	if (nLeft < 0) nLeft = 0;
+	if (nTop < 0) nTop = 0;
+	if (nLeft + nW > (int)mv.nEyeWidth) nLeft = (int)mv.nEyeWidth - nW;
+	if (nTop + nH > (int)mv.nEyeHeight) nTop = (int)mv.nEyeHeight - nH;
+	mv.rcCrop.left = nLeft;
+	mv.rcCrop.top = nTop;
+	mv.rcCrop.right = nLeft + nW;
+	mv.rcCrop.bottom = nTop + nH;
+	return nW > 0 && nH > 0;
+}
+
+// Draws a headset layer onto the mirror where the headset shows it: its
+// four corners, through the left eye, into the mirror's pixels. (Its
+// texture is premultiplied, as for the headset.)
+static void VR_MirrorLayer(IDirect3DTexture9* pTex, const xrb::ScreenPlacement& place, const VRMirrorView& mv)
+{
+	D3DSURFACE_DESC desc;
+	if (!pTex || FAILED(pTex->GetLevelDesc(0, &desc)) || !desc.Width || !desc.Height || place.widthMeters <= 0.0f)
+		return;
+	const float fHalfW = place.widthMeters * 0.5f;
+	const float fHalfH = fHalfW * (float)desc.Height / (float)desc.Width;
+	const xrb::Pose& head = g_pVRBridge->GetHeadPose();
+
+	// Top left, top right, bottom left, bottom right (the quad faces +Z of
+	// its pose; the texture's top is its +Y).
+	static const float kCorner[4][4] =
+	{
+		{ -1.0f,  1.0f, 0.0f, 0.0f },
+		{  1.0f,  1.0f, 1.0f, 0.0f },
+		{ -1.0f, -1.0f, 0.0f, 1.0f },
+		{  1.0f, -1.0f, 1.0f, 1.0f },
+	};
+	VRQuadVert aVerts[4];
+	for (int i = 0; i < 4; ++i)
+	{
+		xrb::Vec3 vLocal = { kCorner[i][0] * fHalfW, kCorner[i][1] * fHalfH, 0.0f };
+		xrb::Vec3 p = XR_Add(place.pose.position, XR_Rotate(place.pose.orientation, vLocal));
+		if (place.headLocked)
+			p = XR_Add(head.position, XR_Rotate(head.orientation, p));
+		xrb::Vec3 e = XR_Unrotate(mv.pEye->pose.orientation, XR_Sub(p, mv.pEye->pose.position));
+		float fDepth = -e.z;		// OpenXR looks down -Z
+		if (fDepth < 0.02f)
+			return;					// (partly behind the eye: leave it out)
+		float x = e.x / fDepth, y = e.y / fDepth;
+		aVerts[i].x = (x - mv.fTanLeft) / (mv.fTanRight - mv.fTanLeft) * (float)mv.nEyeWidth - (float)mv.rcCrop.left - 0.5f;
+		aVerts[i].y = (mv.fTanUp - y) / (mv.fTanUp - mv.fTanDown) * (float)mv.nEyeHeight - (float)mv.rcCrop.top - 0.5f;
+		aVerts[i].z = 0.0f;
+		aVerts[i].rhw = 1.0f / fDepth;		// (so the picture is drawn in perspective)
+		aVerts[i].color = D3DCOLOR_ARGB(255, 255, 255, 255);
+		aVerts[i].u = kCorner[i][2];
+		aVerts[i].v = kCorner[i][3];
+	}
+	VR_DrawQuadVerts(pTex, aVerts, (uint32)(mv.rcCrop.right - mv.rcCrop.left), (uint32)(mv.rcCrop.bottom - mv.rcCrop.top),
+		VRBLEND_PREMULTIPLIED);
+}
+
+// The headset's picture (left eye), layers and all, into g_pVRMirror.
+// pScreen: the HUD layer, if shown; aSpots / anSpot: the spot layers shown
+// (their index in g_aVRSpots), in the headset's order.
+static bool VR_ComposeMirror(const xrb::ScreenPlacement* pScreen, const xrb::ScreenPlacement* aSpots,
+	const int* anSpot, unsigned nSpots)
+{
+	if (!PD3DDEVICE)
+		return false;
+	VRMirrorView mv;
+	if (!VR_GetMirrorView(mv))
+		return false;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	const uint32 nW = (uint32)(mv.rcCrop.right - mv.rcCrop.left);
+	const uint32 nH = (uint32)(mv.rcCrop.bottom - mv.rcCrop.top);
+	if (!g_pVRMirror || g_nVRMirrorWidth != nW || g_nVRMirrorHeight != nH)
+	{
+		VR_ReleaseMirror();
+		if (FAILED(pDevice->CreateRenderTarget(nW, nH, D3DFMT_A8R8G8B8, D3DMULTISAMPLE_NONE, 0, FALSE, &g_pVRMirror, NULL)))
+		{
+			g_pVRMirror = NULL;
+			return false;
+		}
+		g_nVRMirrorWidth = nW;
+		g_nVRMirrorHeight = nH;
+		xrb::Log("Mirror: %ux%u from the left eye (%ux%u)", nW, nH, mv.nEyeWidth, mv.nEyeHeight);
+	}
+
+	if (FAILED(pDevice->StretchRect(g_pVREyeSurf[0], &mv.rcCrop, g_pVRMirror, NULL, D3DTEXF_NONE)))
+		return false;
+
+	IDirect3DSurface9* pOldRT = NULL;
+	IDirect3DSurface9* pOldDepth = NULL;
+	pDevice->GetRenderTarget(0, &pOldRT);
+	pDevice->GetDepthStencilSurface(&pOldDepth);
+	pDevice->SetRenderTarget(0, g_pVRMirror);
+	pDevice->SetDepthStencilSurface(NULL);
+
+	// The headset's order: the spot layers, then the HUD on top.
+	for (unsigned i = 0; i < nSpots; ++i)
+		VR_MirrorLayer(g_pVRBridge->GetLayerTexture(g_aVRSpots[anSpot[i]].nLayer), aSpots[i], mv);
+	if (pScreen)
+		VR_MirrorLayer(g_pVRBridge->GetScreenTexture(), *pScreen, mv);
+
+	// Solid, for the snapshot file (the eye's alpha means nothing).
+	VR_DrawFullQuad(NULL, D3DCOLOR_ARGB(255, 0, 0, 0), nW, nH, VRBLEND_SETALPHA);
+
+	pDevice->SetRenderTarget(0, pOldRT);
+	pDevice->SetDepthStencilSurface(pOldDepth);
+	g_Device.InvalidateViewport();
+	if (pOldRT)		pOldRT->Release();
+	if (pOldDepth)	pOldDepth->Release();
+	return true;
+}
+
+// The mirror, as it is now, to run\Snapshots\vr_<date>_<time>.png.
+static void VR_SaveSnapshot()
+{
+	if (!g_pVRMirror || !PD3DDEVICE)
+		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	IDirect3DSurface9* pCopy = NULL;
+	if (FAILED(pDevice->CreateOffscreenPlainSurface(g_nVRMirrorWidth, g_nVRMirrorHeight, D3DFMT_A8R8G8B8,
+		D3DPOOL_SYSTEMMEM, &pCopy, NULL)) || !pCopy)
+	{
+		xrb::Log("Snapshot: couldn't make a copy surface");
+		return;
+	}
+	if (FAILED(pDevice->GetRenderTargetData(g_pVRMirror, pCopy)))
+	{
+		xrb::Log("Snapshot: couldn't read the picture back");
+		pCopy->Release();
+		return;
+	}
+	CreateDirectoryA("Snapshots", NULL);
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	char szFile[MAX_PATH];
+	_snprintf(szFile, sizeof(szFile), "Snapshots\\vr_%04d-%02d-%02d_%02d-%02d-%02d-%03d.png", st.wYear, st.wMonth, st.wDay,
+		st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	szFile[sizeof(szFile) - 1] = '\0';
+	HRESULT hr = D3DXSaveSurfaceToFileA(szFile, D3DXIFF_PNG, pCopy, NULL, NULL);
+	pCopy->Release();
+	if (SUCCEEDED(hr))
+		xrb::Log("Snapshot: %s (%ux%u)", szFile, g_nVRMirrorWidth, g_nVRMirrorHeight);
+	else
+		xrb::Log("Snapshot: saving %s failed (0x%08x)", szFile, (unsigned)hr);
+}
+
+// Puts the headset's picture together; saves it if a snapshot is wanted
+// and shows it on the monitor if bShow. If it can't be put together the
+// monitor keeps the game's own picture (drawn earlier when not mirroring;
+// when mirroring, the plain world without the interface).
+static void VR_ComposeMirrorAndShow(bool bShow, const xrb::ScreenPlacement* pScreen, const xrb::ScreenPlacement* aSpots,
+	const int* anSpot, unsigned nSpots)
+{
+	if (!VR_ComposeMirror(pScreen, aSpots, anSpot, nSpots))
+		return;
+	if (g_bVRSnapshotWanted)
+	{
+		g_bVRSnapshotWanted = false;
+		VR_SaveSnapshot();
+	}
+	if (!bShow)
+		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	IDirect3DSurface9* pBackBuffer = NULL;
+	if (SUCCEEDED(pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer)) && pBackBuffer)
+	{
+		pDevice->StretchRect(g_pVRMirror, NULL, pBackBuffer, NULL, D3DTEXF_LINEAR);
+		pBackBuffer->Release();
+	}
+}
+
+// The game asks for a snapshot of the headset's picture: taken as this
+// frame is shown (or the next frame with the world in it).
+extern "C" __declspec(dllexport) void LTVR_TakeSnapshot(void)
+{
+	g_bVRSnapshotWanted = true;
+}
+
+//------------------------------------------------------------------
 // Mouse
 //------------------------------------------------------------------
 
@@ -1496,18 +1782,27 @@ void d3d_VR_OnSwapBuffers()
 			VR_FadeEyes();
 			VR_ApplySpotOpacity();
 
-			// The monitor: the world, faded like the headset, with the
-			// interface on top.
-			if (g_fVRFade > 0.0f)
+			// The monitor: what the headset shows (VRMirror, drawn below,
+			// once the layers are placed), or the game's own camera,
+			// faded like the headset, with the interface on top.
+			const bool bMirror = g_CV_VRMirror.m_Val != 0;
+			if (!bMirror)
 			{
-				VR_DrawFullQuad(NULL, D3DCOLOR_ARGB((int)(g_fVRFade * 255.0f + 0.5f), 0, 0, 0),
-					g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_ALPHA);
+				if (g_fVRFade > 0.0f)
+				{
+					VR_DrawFullQuad(NULL, D3DCOLOR_ARGB((int)(g_fVRFade * 255.0f + 0.5f), 0, 0, 0),
+						g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_ALPHA);
+				}
+				if (bHud)
+				{
+					VR_DrawFullQuad(g_pVRBridge->GetScreenTexture(), D3DCOLOR_ARGB(255, 255, 255, 255),
+						g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_PREMULTIPLIED);
+				}
 			}
-			if (bHud)
-			{
-				VR_DrawFullQuad(g_pVRBridge->GetScreenTexture(), D3DCOLOR_ARGB(255, 255, 255, 255),
-					g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_PREMULTIPLIED);
-			}
+
+			xrb::ScreenPlacement aMirrorSpots[LTVR_NUM_LAYERS];
+			int anMirrorSpot[LTVR_NUM_LAYERS];
+			unsigned nMirrorSpots = 0;
 
 			if (bHud)
 			{
@@ -1546,12 +1841,22 @@ void d3d_VR_OnSwapBuffers()
 				for (int i = 0; i < LTVR_NUM_LAYERS; ++i)
 				{
 					if (VR_GetSpotPlacement(i, aSpots[nSpots].place))
-						aSpots[nSpots++].layer = g_aVRSpots[i].nLayer;
+					{
+						aSpots[nSpots].layer = g_aVRSpots[i].nLayer;
+						aMirrorSpots[nMirrorSpots] = aSpots[nSpots].place;
+						anMirrorSpot[nMirrorSpots++] = i;
+						++nSpots;
+					}
 				}
+				// (Before EndFrame: the eye poses and layers are this frame's.)
+				if (bMirror || g_bVRSnapshotWanted)
+					VR_ComposeMirrorAndShow(bMirror, &place, aMirrorSpots, anMirrorSpot, nMirrorSpots);
 				g_pVRBridge->EndFrame(true, &place, nSpots ? aSpots : NULL, nSpots);
 			}
 			else
 			{
+				if (bMirror || g_bVRSnapshotWanted)
+					VR_ComposeMirrorAndShow(bMirror, NULL, aMirrorSpots, anMirrorSpot, 0);
 				g_pVRBridge->EndFrame(true, (const xrb::ScreenPlacement*)NULL);
 			}
 		}

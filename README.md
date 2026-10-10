@@ -88,6 +88,7 @@ install stays untouched.
 | Right A / B | next ammo / holster | select / back |
 | Right stick click | reload | |
 | Left trigger | use, search, pick up (at the crosshair) | select |
+| Left grip + left trigger | snapshot of what the headset shows (`run\Snapshots`) | |
 | Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
@@ -124,6 +125,7 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRScopeEye` | 5 | how close (cm) an eye must be to the scope's line to look through it |
 | `VRScopeDist` / `VRScopeSize` | 8 / 5.5 | how far in front of that eye the lens sits, and how wide it looks (cm) |
 | `VRScopeZoom` | 4 | magnification of a basic scope; stronger scopes are 2x and 4x that |
+| `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the game's flat camera |
 
 Files the game writes in `run\`:
 
@@ -133,6 +135,7 @@ Files the game writes in `run\`:
 | `vr_guns.txt` | each weapon's fit in your hand and its scope offset (from the adjust mode) |
 | `xrbridge.log`, `vr_game.log`, `vr_models.log` | headset, game and model logs |
 | `crash_*.txt`, `crash_*.dmp` | crash reports |
+| `Snapshots\vr_*.png` | snapshots (left grip + left trigger) |
 
 ## How it works
 
