@@ -130,6 +130,14 @@ public:
 
 	// Swinging a melee weapon (see CClientWeapon::VR_UpdateSwing): on or
 	// off, and how fast the blade's tip must move (metres per second).
+	// The mouse in menus: in VR the controllers drive the menus, and a
+	// mouse cursor left sitting over an item kept taking the selection
+	// back. Only a mouse that really moves (3+ pixels) picks items and
+	// shows the cursor; any controller menu input hides it again.
+	// NoteMouseMove: call with every mouse-move message; true = a real move.
+	bool		NoteMouseMove(int x, int y);
+	bool		IsMouseInUse() const	{ return !IsActive() || m_bMouseInUse; }
+
 	bool		IsSwingOn() const;
 	float		GetSwingSpeed() const;
 	float		GetUnitsPerMeter() const	{ return m_State.unitsPerMeter; }
@@ -222,6 +230,9 @@ private:
 	void		UpdateTwoHand();
 	void		UpdateMoveBody();
 	bool		m_bMoveBodyBound;		// left grip is bound to "move body" while held
+	bool		m_bMouseInUse;
+	bool		m_bMouseKnown;
+	int			m_nLastMouseX, m_nLastMouseY;
 	bool		m_bSnapTriggerOff;		// left trigger unbound (snapshot) while the left grip is held
 	int			m_nSnapMsgFrames;		// frames until "snapshot saved" (kept out of the picture)
 	void		UpdateSnapshot();

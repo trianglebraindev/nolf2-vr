@@ -12,6 +12,7 @@
 
 
 #include "stdafx.h"
+#include "VRMgr.h"
 #include "VarTrack.h"
 #include "InterfaceMgr.h"
 #include "CursorMgr.h"
@@ -244,6 +245,17 @@ void CCursorMgr::Update()
 
 	if (!m_bUseCursor)
 		return;
+
+	// VR: no cursor while the controllers drive the menus (it shows again
+	// when the mouse really moves; see CVRMgr::NoteMouseMove).
+	if (!g_VRMgr.IsMouseInUse())
+	{
+		LTIntPt ptAway(-4000, -4000);
+		if (m_pCursorSprite)			m_pCursorSprite->SetPosition(ptAway);
+		if (m_pCursorGlowSprite)		m_pCursorGlowSprite->SetPosition(ptAway);
+		if (m_pCursorBackgroundSprite)	m_pCursorBackgroundSprite->SetPosition(ptAway);
+		return;
+	}
 
 	if (m_bUseHardwareCursor && !m_pCursorSprite)
 		return;

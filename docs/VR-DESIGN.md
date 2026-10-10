@@ -310,7 +310,9 @@ Next, in a suggested order:
    adrift (see "Effects on the gun"). (No binoculars in NOLF2: OVM_BINOC is
    defined but never used.)
 8. Melee swinging (done: "feels great", Tre).
-9. Comfort vignette (first pass, see "Comfort vignette").
+9. Comfort vignette (done; Tre has VR legs, it's for others).
+10. Menus: the parked mouse cursor no longer steals the selection (see
+    "Menus: the mouse steps aside").
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
@@ -405,6 +407,21 @@ the shutdown hang.
   edge, because he sights with his right eye.
 - Cat eyes (angry kitty) on target after the effects fix (Tre); the
   sniper scope's measured offset "felt good, lines up" (Tre).
+
+## Menus: the mouse steps aside
+
+- Problem (Tre): in menus the mouse cursor sat in the middle of the screen
+  (the game keeps it centred during play) and the item under it kept
+  taking the selection from the sticks. Cause: the menus re-check "what's
+  under the cursor" without the mouse moving: CBaseScreen::ForceMouseUpdate
+  whenever a screen gets focus, and Windows' mouse-move messages that
+  repeat the same position.
+- Fix, no laser needed: in VR only a mouse that really moves (3+ pixels
+  since the last message, CVRMgr::NoteMouseMove, called from
+  CInterfaceMgr::OnMouseMove) picks items, and ForceMouseUpdate does
+  nothing unless the mouse is in use. Any controller menu input
+  (CVRMgr::SendKey) hands the menus back to the controllers and hides the
+  cursor (CCursorMgr::Update); moving the mouse shows it again.
 
 ## Comfort vignette (first pass)
 

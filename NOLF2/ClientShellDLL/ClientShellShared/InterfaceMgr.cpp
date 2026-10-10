@@ -4565,6 +4565,11 @@ void CInterfaceMgr::OnMouseMove(int x, int y)
 	m_CursorPos.x = x;
 	m_CursorPos.y = y;
 
+	// VR: a cursor that hasn't really moved doesn't pick menu items (the
+	// controllers drive the menus; see CVRMgr::NoteMouseMove).
+	if (!g_VRMgr.NoteMouseMove(x, y))
+		return;
+
 	if (GetConsoleInt("ShowMousePos",0) > 0)
 	{
 		float fx = (float)x / g_pInterfaceResMgr->GetXRatio();

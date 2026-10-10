@@ -231,6 +231,10 @@ CVRMgr::CVRMgr()
 	m_pfnSetVignette	= NULL;
 	m_fVignette			= 0.0f;
 	m_bSnapTriggerOff	= false;
+	m_bMouseInUse		= false;
+	m_bMouseKnown		= false;
+	m_nLastMouseX		= 0;
+	m_nLastMouseY		= 0;
 	m_nSnapMsgFrames	= 0;
 	m_bScoped			= false;
 	m_bRingOpen			= false;
@@ -1909,8 +1913,23 @@ bool CVRMgr::Pressed(int nHand, unsigned nButton) const
 	return (m_State.hand[nHand].buttons & nButton) && !(m_aPrevButtons[nHand] & nButton);
 }
 
+bool CVRMgr::NoteMouseMove(int x, int y)
+{
+	if (!IsActive())
+		return true;
+	bool bMoved = m_bMouseKnown && (abs(x - m_nLastMouseX) + abs(y - m_nLastMouseY) >= 3);
+	m_nLastMouseX = x;
+	m_nLastMouseY = y;
+	m_bMouseKnown = true;
+	if (bMoved)
+		m_bMouseInUse = true;
+	return bMoved;
+}
+
 void CVRMgr::SendKey(int nKey)
 {
+	// The controllers are driving the menu: the mouse steps aside.
+	m_bMouseInUse = false;
 	if (!g_pGameClientShell)
 		return;
 	g_pGameClientShell->VR_SendKey(nKey);

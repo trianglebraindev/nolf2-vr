@@ -9,6 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 #include "stdafx.h"
+#include "VRMgr.h"
 #include "BaseScreen.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -1541,6 +1542,12 @@ void CBaseScreen::ForceMouseUpdate()
 {
 //	SetSelection(kNoSelection);
 	m_dwCurrHelpID = 0;
+
+	// VR: unless you're using the mouse, the item under the (parked) cursor
+	// doesn't take the selection (see CVRMgr::NoteMouseMove).
+	if (!g_VRMgr.IsMouseInUse())
+		return;
+
     LTIntPt cPos = g_pInterfaceMgr->GetCursorPos();
 	OnMouseMove(cPos.x,cPos.y);
 }
