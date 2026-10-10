@@ -88,9 +88,10 @@
 //   Scopes (see UpdateScope):
 //   VRScope         1 = look through a scope by raising it to your eye
 //                   (default), 0 = off
-//   VRScopeEye      how close (cm) an eye must be to the gun's sight line
-//                   (the aim line, which the adjust mode lines the sights
-//                   up with) to look through the scope (default 5)
+//   VRScopeHeight   how far above the aim line the scope's own line runs,
+//                   cm (default 8: the scope sits on top of the gun)
+//   VRScopeEye      how close (cm) an eye must be to the scope's line to
+//                   look through it (default 5)
 //   VRScopeDist     how far in front of that eye the lens sits, cm (8)
 //   VRScopeSize     how wide the lens looks, cm (4)
 //
@@ -111,6 +112,7 @@
 #include "PlayerMgr.h"
 #include "PlayerStats.h"
 #include "ClientWeaponMgr.h"
+#include "CMoveMgr.h"
 #include "ClientWeaponBase.h"
 #include "InterfaceResMgr.h"
 #include "LayoutMgr.h"
@@ -148,6 +150,7 @@ static VarTrack g_vtVRGunHudZ;
 static VarTrack g_vtVRGunHudSize;
 static VarTrack g_vtVRScope;
 static VarTrack g_vtVRScopeDist;
+static VarTrack g_vtVRScopeHeight;
 static VarTrack g_vtVRScopeSize;
 static VarTrack g_vtVRScopeEye;
 
@@ -298,6 +301,7 @@ void CVRMgr::Init()
 	g_vtVRGunHudSize.Init(g_pLTClient, "VRGunHudSize", NULL, 10.0f);
 	g_vtVRScope.Init(g_pLTClient, "VRScope", NULL, 1.0f);
 	g_vtVRScopeDist.Init(g_pLTClient, "VRScopeDist", NULL, 8.0f);
+	g_vtVRScopeHeight.Init(g_pLTClient, "VRScopeHeight", NULL, 8.0f);
 	g_vtVRScopeSize.Init(g_pLTClient, "VRScopeSize", NULL, 4.0f);
 	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 5.0f);
 
@@ -347,6 +351,7 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRGunHudSize",		10.0f },
 	{ "VRScope",			1.0f },
 	{ "VRScopeDist",		8.0f },
+	{ "VRScopeHeight",		8.0f },
 	{ "VRScopeSize",		4.0f },
 	{ "VRScopeEye",			5.0f },
 	{ "VRArms",				0.0f },
@@ -937,25 +942,32 @@ void CVRMgr::UpdateScope()
 
 		if (pMod && pMod->nZoomLevel > 0)
 		{
-			// An eye (whichever is nearer) on the gun's sight line, behind
-			// the gun, looking the way it points. (The aim line is the sight
-			// line: the adjust mode lines each gun's sights up with it.)
+			// An eye (whichever is nearer) on the scope's line, behind the
+			// gun, looking the way it points. The scope's line runs along the
+			// aim line (which the adjust mode lines the gun up with) but
+			// VRScopeHeight cm above it: the scope sits on top of the gun.
+			// (Measured on the crossbow: eye 7 - 10 cm off the aim line.)
 			const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
 			const LTVector vFwd = rAim.Forward();
-			float fBestOff = 1e9f, fBestBehind = 0.0f;
+			const float fHeight = g_vtVRScopeHeight.GetFloat(8.0f);
+			const LTVector vScopeFrom = vFrom + rAim.Up() * (fHeight * fUnitsPerCm);
+			float fBestOff = 1e9f, fBestBehind = 0.0f, fBestUp = 0.0f, fBestRight = 0.0f;
 			LTVector vBestOnLine;
 			for (int e = 0; e < 2; ++e)
 			{
 				LTVector vEye = vCamPos + rCamRot.Right() * ((e ? 3.2f : -3.2f) * fUnitsPerCm);
-				LTVector vRel = vEye - vFrom;
-				float t = vRel.Dot(vFwd);
-				LTVector vOnLine = vFrom + vFwd * t;
-				float fOff = (vEye - vOnLine).Mag() / fUnitsPerCm;
+				float t = (vEye - vScopeFrom).Dot(vFwd);
+				LTVector vOnLine = vScopeFrom + vFwd * t;
+				LTVector vOff = vEye - vOnLine;
+				float fOff = vOff.Mag() / fUnitsPerCm;
 				if (fOff < fBestOff)
 				{
 					fBestOff = fOff;
 					fBestBehind = -t / fUnitsPerCm;
 					vBestOnLine = vOnLine;
+					// (Where the eye is from the aim line, for the log.)
+					fBestUp = fHeight + vOff.Dot(rAim.Up()) / fUnitsPerCm;
+					fBestRight = vOff.Dot(rAim.Right()) / fUnitsPerCm;
 				}
 			}
 			float fFacing = vFwd.Dot(rCamRot.Forward());
@@ -977,8 +989,9 @@ void CVRMgr::UpdateScope()
 			if (!bOn && fFacing > 0.7f && fNow >= s_fNextLog)
 			{
 				s_fNextLog = fNow + 1.0f;
-				Log("Scope check: eye %.1f cm off the sight line (needs < %.1f), %.1f cm behind the hand, facing %.2f (needs > 0.85)",
-					fBestOff, fNear, fBestBehind, fFacing);
+				Log("Scope check: eye %.1f cm off the scope's line (needs < %.1f; eye is %.1f cm up, %.1f cm right of the aim line), "
+					"%.1f cm behind the hand, facing %.2f (needs > 0.85)",
+					fBestOff, fNear, fBestUp, fBestRight, fBestBehind, fFacing);
 			}
 		}
 	}
@@ -995,16 +1008,42 @@ void CVRMgr::UpdateScope()
 		return;
 	}
 
-	// The scope's view, from the lens out along the gun.
+	// The scope's view, from the lens toward where the shot lands (the
+	// first solid thing along the aim line, as for the crosshair), so the
+	// reticle is true at any range even though the scope sits above it.
+	LTRotation rView = rAim;
+	{
+		float fRange = 10000.0f;
+		IClientWeaponBase* pWeapon = g_pPlayerMgr->GetCurrentClientWeapon();
+		if (pWeapon && pWeapon->GetWeapon() && pWeapon->GetWeapon()->nRange > 0)
+			fRange = (float)pWeapon->GetWeapon()->nRange;
+		HOBJECT ahFilter[] = { g_pLTClient->GetClientObject(),
+			g_pPlayerMgr->GetMoveMgr() ? g_pPlayerMgr->GetMoveMgr()->GetObject() : LTNULL, LTNULL };
+		ClientIntersectQuery query;
+		ClientIntersectInfo info;
+		query.m_From = vFrom;
+		query.m_To = vFrom + rAim.Forward() * fRange;
+		query.m_Flags = INTERSECT_OBJECTS | IGNORE_NONSOLID;
+		query.m_FilterFn = ObjListFilterFn;
+		query.m_pUserData = ahFilter;
+		LTVector vTarget = query.m_To;
+		if (g_pLTClient->IntersectSegment(&query, &info))
+			vTarget = info.m_Point;
+		LTVector vDir = vTarget - vLens;
+		float fLen = vDir.Mag();
+		if (fLen > 1.0f && (vDir / fLen).Dot(rAim.Forward()) > 0.9f)
+			rView = LTRotation(vDir / fLen, rAim.Up());
+	}
 	float aPos[3] = { vLens.x, vLens.y, vLens.z };
-	float aRot[4] = { rAim.m_Quat[0], rAim.m_Quat[1], rAim.m_Quat[2], rAim.m_Quat[3] };
+	float aRot[4] = { rView.m_Quat[0], rView.m_Quat[1], rView.m_Quat[2], rView.m_Quat[3] };
 	m_pfnSetScopeView(1, aPos, aRot, kScopeFov[nLevel]);
+	float aLensRot[4] = { rAim.m_Quat[0], rAim.m_Quat[1], rAim.m_Quat[2], rAim.m_Quat[3] };
 
 	// The lens, at the eyepiece, facing back at you.
 	float fWidthCm = g_vtVRScopeSize.GetFloat(4.0f);
 	if (fWidthCm < 1.0f)	fWidthCm = 1.0f;
 	if (fWidthCm > 20.0f)	fWidthCm = 20.0f;
-	m_pfnSetLayerPose(LTVR_LAYER_SCOPE, 1, aPos, aRot, fWidthCm / 100.0f, 1.0f);
+	m_pfnSetLayerPose(LTVR_LAYER_SCOPE, 1, aPos, aLensRot, fWidthCm / 100.0f, 1.0f);
 }
 
 // Whether a bone's matrix has collapsed (the game shrinks bones to nothing

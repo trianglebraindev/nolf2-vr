@@ -118,7 +118,8 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRWristHudX/Y/Z`, `VRWristHudSize` | -3 / 0 / -9, 9 | where health sits on the left wrist (cm), its width (cm) |
 | `VRGunHudX/Y/Z`, `VRGunHudSize` | -6 / -2 / 6, 10 | where ammo floats by the gun (cm), its width (cm) |
 | `VRScope` | 1 | 0 = no looking through scopes |
-| `VRScopeEye` | 5 | how close (cm) an eye must be to the gun's sight line to look through the scope |
+| `VRScopeHeight` | 8 | how far (cm) above the aim line a scope's own line runs |
+| `VRScopeEye` | 5 | how close (cm) an eye must be to the scope's line to look through it |
 | `VRScopeDist` / `VRScopeSize` | 8 / 4 | how far in front of that eye the lens sits, and how wide it looks (cm) |
 
 Files the game writes in `run\`:
