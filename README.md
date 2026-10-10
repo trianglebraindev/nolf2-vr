@@ -24,8 +24,8 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   depth in your right hand, with a per-weapon fit you can adjust in the
   headset. Shots leave from your hand along the barrel.
 - **Hands**: forearms trimmed to gloved hands; the left hand follows your left
-  controller; grip the weapon with your left hand for a steadier two-handed
-  aim.
+  controller and opens and closes with the left grip; grip the weapon with
+  your left hand for a steadier two-handed aim.
 - **Crosshair on the target**: the game's own crosshair, accuracy spread
   included, placed on whatever the gun points at. Searching, picking up and
   using things work where the crosshair is.
