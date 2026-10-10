@@ -88,10 +88,11 @@
 //   Scopes (see UpdateScope):
 //   VRScope         1 = look through a scope by raising it to your eye
 //                   (default), 0 = off
-//   VRScopeX/Y/Z    where its eyepiece is, cm from your right hand (right,
-//                   up, forward along the gun)
-//   VRScopeSize     how wide the lens looks, cm
-//   VRScopeEye      how close to your eye it must come to look through, cm
+//   VRScopeEye      how close (cm) an eye must be to the gun's sight line
+//                   (the aim line, which the adjust mode lines the sights
+//                   up with) to look through the scope (default 5)
+//   VRScopeDist     how far in front of that eye the lens sits, cm (8)
+//   VRScopeSize     how wide the lens looks, cm (4)
 //
 // HANDS (see VRMgr.h): the left hand follows the left controller. Squeeze
 // the left grip with your left hand near where Cate's left hand sits on
@@ -146,9 +147,7 @@ static VarTrack g_vtVRGunHudY;
 static VarTrack g_vtVRGunHudZ;
 static VarTrack g_vtVRGunHudSize;
 static VarTrack g_vtVRScope;
-static VarTrack g_vtVRScopeX;
-static VarTrack g_vtVRScopeY;
-static VarTrack g_vtVRScopeZ;
+static VarTrack g_vtVRScopeDist;
 static VarTrack g_vtVRScopeSize;
 static VarTrack g_vtVRScopeEye;
 
@@ -298,11 +297,9 @@ void CVRMgr::Init()
 	g_vtVRGunHudZ.Init(g_pLTClient, "VRGunHudZ", NULL, 6.0f);
 	g_vtVRGunHudSize.Init(g_pLTClient, "VRGunHudSize", NULL, 10.0f);
 	g_vtVRScope.Init(g_pLTClient, "VRScope", NULL, 1.0f);
-	g_vtVRScopeX.Init(g_pLTClient, "VRScopeX", NULL, 0.0f);
-	g_vtVRScopeY.Init(g_pLTClient, "VRScopeY", NULL, 7.0f);
-	g_vtVRScopeZ.Init(g_pLTClient, "VRScopeZ", NULL, 2.0f);
+	g_vtVRScopeDist.Init(g_pLTClient, "VRScopeDist", NULL, 8.0f);
 	g_vtVRScopeSize.Init(g_pLTClient, "VRScopeSize", NULL, 4.0f);
-	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 12.0f);
+	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 5.0f);
 
 	LoadGunFits();
 	LoadSettings();
@@ -349,11 +346,9 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRGunHudZ",			6.0f },
 	{ "VRGunHudSize",		10.0f },
 	{ "VRScope",			1.0f },
-	{ "VRScopeX",			0.0f },
-	{ "VRScopeY",			7.0f },
-	{ "VRScopeZ",			2.0f },
+	{ "VRScopeDist",		8.0f },
 	{ "VRScopeSize",		4.0f },
-	{ "VRScopeEye",			12.0f },
+	{ "VRScopeEye",			5.0f },
 	{ "VRArms",				0.0f },
 	{ "VRWristBack",		7.0f },
 	{ "VRHandPalm",			3.5f },
@@ -919,32 +914,71 @@ void CVRMgr::UpdateScope()
 	m_bScoped = false;
 
 	int nLevel = 0;
-	LTVector vLens, vCamPos;
+	LTVector vLens, vFrom, vCamPos;
 	LTRotation rAim, rCamRot;
 	if (IsActive() && g_vtVRScope.GetFloat(1.0f) != 0.0f && g_pPlayerMgr && g_pPlayerStats && g_pWeaponMgr &&
 		g_pInterfaceMgr && g_pInterfaceMgr->GetGameState() == GS_PLAYING && !m_bAdjusting && !m_bRingOpen &&
 		g_pPlayerMgr->GetClientWeaponMgr() && g_pPlayerMgr->GetClientWeaponMgr()->WeaponsEnabled() &&
-		GetAimRay(vLens, rAim) && GetCamera(vCamPos, rCamRot))
+		GetAimRay(vFrom, rAim) && GetCamera(vCamPos, rCamRot))
 	{
 		uint8 nScopeId = g_pPlayerStats->GetScope();
 		MOD const* pMod = (nScopeId != WMGR_INVALID_ID) ? g_pWeaponMgr->GetMod(nScopeId) : NULL;
+
+		// (Once per weapon: whether it has a scope, for the log.)
+		static char s_szLogged[64] = "";
+		if (strcmp(s_szLogged, m_szCurrentGun) != 0)
+		{
+			SAFE_STRCPY(s_szLogged, m_szCurrentGun);
+			if (pMod)
+				Log("Scope: %s has %s, zoom level %d", m_szCurrentGun, pMod->szName ? pMod->szName : "?", pMod->nZoomLevel);
+			else
+				Log("Scope: %s has no scope", m_szCurrentGun);
+		}
+
 		if (pMod && pMod->nZoomLevel > 0)
 		{
-			// The eyepiece, on the gun.
+			// An eye (whichever is nearer) on the gun's sight line, behind
+			// the gun, looking the way it points. (The aim line is the sight
+			// line: the adjust mode lines each gun's sights up with it.)
 			const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
-			LTVector vOffset(g_vtVRScopeX.GetFloat(0.0f), g_vtVRScopeY.GetFloat(7.0f), g_vtVRScopeZ.GetFloat(2.0f));
-			vLens += VR_Rotate(rAim, vOffset * fUnitsPerCm);
-
-			// Up to your eye and pointing the way you look (a little further
-			// away to let go than to start, so it doesn't flicker).
-			float fDistCm = (vLens - vCamPos).Mag() / fUnitsPerCm;
-			float fNear = g_vtVRScopeEye.GetFloat(12.0f);
-			float fFacing = rAim.Forward().Dot(rCamRot.Forward());
-			if (fDistCm < (bWas ? fNear * 1.35f : fNear) && fFacing > (bWas ? 0.75f : 0.85f))
+			const LTVector vFwd = rAim.Forward();
+			float fBestOff = 1e9f, fBestBehind = 0.0f;
+			LTVector vBestOnLine;
+			for (int e = 0; e < 2; ++e)
+			{
+				LTVector vEye = vCamPos + rCamRot.Right() * ((e ? 3.2f : -3.2f) * fUnitsPerCm);
+				LTVector vRel = vEye - vFrom;
+				float t = vRel.Dot(vFwd);
+				LTVector vOnLine = vFrom + vFwd * t;
+				float fOff = (vEye - vOnLine).Mag() / fUnitsPerCm;
+				if (fOff < fBestOff)
+				{
+					fBestOff = fOff;
+					fBestBehind = -t / fUnitsPerCm;
+					vBestOnLine = vOnLine;
+				}
+			}
+			float fFacing = vFwd.Dot(rCamRot.Forward());
+			float fNear = g_vtVRScopeEye.GetFloat(5.0f);
+			bool bOn = fBestOff < (bWas ? fNear * 1.6f : fNear) && fBestBehind > 0.0f && fBestBehind < 80.0f &&
+				fFacing > (bWas ? 0.75f : 0.85f);
+			if (bOn)
 			{
 				nLevel = pMod->nZoomLevel;
 				if (nLevel > 3)
 					nLevel = 3;
+				// The lens: on the sight line, just in front of that eye.
+				vLens = vBestOnLine + vFwd * (g_vtVRScopeDist.GetFloat(8.0f) * fUnitsPerCm);
+			}
+
+			// (Raised but not through it: say why, now and then.)
+			static float s_fNextLog = 0.0f;
+			float fNow = g_pLTClient->GetTime();
+			if (!bOn && fFacing > 0.7f && fNow >= s_fNextLog)
+			{
+				s_fNextLog = fNow + 1.0f;
+				Log("Scope check: eye %.1f cm off the sight line (needs < %.1f), %.1f cm behind the hand, facing %.2f (needs > 0.85)",
+					fBestOff, fNear, fBestBehind, fFacing);
 			}
 		}
 	}

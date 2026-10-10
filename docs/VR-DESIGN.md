@@ -318,13 +318,20 @@ hang.
   and the magnified view shows only in the lens (the rest of your view
   stays normal).
 - Any weapon whose scope mod has a zoom level (and the camera gadget):
-  CVRMgr::UpdateScope, run each frame once the gun is placed, puts the
-  eyepiece at `VRScopeX/Y/Z` (0 / 7 / 2 cm from the right hand along the
-  gun). Within `VRScopeEye` cm (12) of your eye and pointing within about
-  30 degrees of where you look, it zooms (CPlayerMgr::VR_SetZoom: the zoom
-  level and its sounds only; the gun stays in your hand, the camera's FOV
-  isn't touched, no 2D scope or camera frame overlays); it lets go a
-  little further out (hysteresis).
+  CVRMgr::UpdateScope, run each frame once the gun is placed. The aim line
+  is the sight line (the adjust mode lines each gun's sights up with it),
+  so it zooms when an eye (either; each 3.2 cm from the head's centre) is
+  within `VRScopeEye` cm (5) of that line, behind the hand (up to 80 cm),
+  and the gun points within about 30 degrees of where you look
+  (CPlayerMgr::VR_SetZoom: the zoom level and its sounds only; the gun
+  stays in your hand, the camera's FOV isn't touched, no 2D scope or camera
+  frame overlays); it lets go a little further out (hysteresis). The lens
+  sits on the line `VRScopeDist` cm (8) in front of that eye. (First try
+  put the eyepiece at a fixed spot above the hand and needed it within
+  12 cm of the eye: with a crossbow at your face your hand is further than
+  that, so it never came on.) vr_game.log says once per weapon whether it
+  has a scope ("Scope: ...") and, while the gun is raised but not through
+  the scope, why ("Scope check: ...").
 - Engine (LTVR_SetScopeView): one more view of the world, from the
   eyepiece along the gun, the game's zoom FOV (20 / 7 / 2 degrees), drawn
   right after the eyes into LTVR_LAYER_SCOPE (512 x 512), leaving out
