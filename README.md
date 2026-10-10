@@ -48,6 +48,12 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   the scope, click the left stick while looking through it and move it
   with the left stick (saved per weapon).
 
+- **Reloading by hand** (default; Options > VR > Reloading: Manual / Game
+  original): when the gun's empty, A drops the magazine, reach over your
+  left shoulder and grip to take a new one, and push it into the gun.
+  Guns without a separate magazine in their model (shotgun, sniper rifle,
+  AK-47 so far) reload by bringing your left hand to the gun.
+
 - **Swords**: swing the katana or tulwar and it hits what the blade passes
   through (the trigger still does the game's own slash). How hard a swing
   has to be, or off: Options > VR > Sword swings.
@@ -97,8 +103,9 @@ install stays untouched.
 | Right stick up / down | jump / crouch toggle | navigate |
 | Right trigger | fire | select |
 | Right grip (hold) | weapon ring: reach for a weapon, let go | |
-| Right A / B | next ammo / holster | select / back |
-| Right stick click | reload | |
+| Right A / B | drop the magazine (manual reloading) or next ammo (game original) / holster | select / back |
+| Right stick click | next ammo (manual reloading) or reload (game original) | |
+| Left grip over your left shoulder | take a magazine (manual reloading, gun without one); push it into the gun to reload | |
 | Left trigger | use, search, pick up (at the crosshair) | select |
 | Left grip + left trigger | snapshot of what the headset shows (`run\Snapshots`) | |
 | Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
@@ -137,6 +144,7 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRScopeEye` | 5 | how close (cm) an eye must be to the scope's line to look through it |
 | `VRScopeDist` / `VRScopeSize` | 8 / 5.5 | how far in front of that eye the lens sits, and how wide it looks (cm) |
 | `VRScopeZoom` | 4 | magnification of a basic scope; stronger scopes are 2x and 4x that |
+| `VRReload` | 1 | 1 = reload by hand (A drops the magazine, one from over your left shoulder); 0 = the game's reload on the right stick click |
 | `VRSwing` / `VRSwingSpeed` | 1 / 2.5 | swinging a sword hits (0 = trigger only); how fast the blade's tip must move, m/s |
 | `VRVignette` / `VRVignetteWhen` | 0 / 3 | comfort vignette 0 off, 1 light, 2 medium, 3 strong; when: 1 moving, 2 turning, 3 both |
 | `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the game's flat camera |

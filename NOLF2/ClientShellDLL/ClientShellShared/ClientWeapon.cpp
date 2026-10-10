@@ -192,6 +192,19 @@ CClientWeapon::CClientWeapon() :
 	, m_vVRPrevTip( 0.0f, 0.0f, 0.0f )
 	, m_fVRSwingReady( 0.0f )
 	, m_nVRSwingLoggedId( -1 )
+	, m_eVRMag( VRMAG_IN )
+	, m_bVRReloadGun( false )
+	, m_hVRClipNode( INVALID_MODEL_NODE )
+	, m_hVRMagHand( LTNULL )
+	, m_hVRMagDrop( LTNULL )
+	, m_vVRMagDropPoint( 0.0f, 0.0f, 0.0f )
+	, m_vVRMagDropVel( 0.0f, 0.0f, 0.0f )
+	, m_rVRMagDropRot( 0.0f, 0.0f, 0.0f, 1.0f )
+	, m_fVRMagDropScale( 1.0f )
+	, m_fVRMagDropTime( 0.0f )
+	, m_bVRMagDropLanded( false )
+	, m_bVRDryLast( false )
+	, m_nVRReloadLoggedId( -1 )
 	, m_hLoopSound( LTNULL )
 	, m_nLoopSoundId( PSI_INVALID )
 	, m_bFirstSelection( true )
@@ -1011,6 +1024,9 @@ void CClientWeapon::Term()
 
 void CClientWeapon::RemoveWeaponModel()
 {
+	VR_RemoveMagObjects();
+	m_hVRClipNode = INVALID_MODEL_NODE;
+
 	if (m_hObject)
 	{
 		// get rid of the object
@@ -1050,6 +1066,33 @@ WeaponState CClientWeapon::Update( bool bFire, FireType eFireType /*=FT_NORMAL_F
 	if ( m_bDisabled || bPaused)
 	{
 		return W_IDLE;
+	}
+
+	// VR, reloading by hand: with no magazine in, or an empty one, the
+	// trigger just clicks (the first time, a hint says what to do).
+	{
+		bool bTrigger = bFire;
+		if ( VR_ReloadBlocksFire() )
+		{
+			if ( bTrigger && !m_bVRDryLast )
+			{
+				if ( m_pWeapon->szDryFireSound && m_pWeapon->szDryFireSound[0] )
+				{
+					g_pClientSoundMgr->PlaySoundLocal( m_pWeapon->szDryFireSound, SOUNDPRIORITY_PLAYER_HIGH,
+						0, SMGR_DEFAULT_VOLUME, 1.0f, WEAPONS_SOUND_CLASS );
+				}
+				static bool s_bHinted = false;
+				if ( !s_bHinted )
+				{
+					s_bHinted = true;
+					g_VRMgr.ShowHint( VRMAG_IN == m_eVRMag ?
+						"Empty: press A to drop the magazine, then reach over your left shoulder and grip for a new one." :
+						"No magazine: reach over your left shoulder and grip for one, then push it into the gun." );
+				}
+			}
+			bFire = false;
+		}
+		m_bVRDryLast = bTrigger;
 	}
 
 	// If the player is trying to fire and
@@ -1147,6 +1190,9 @@ WeaponState CClientWeapon::Update( bool bFire, FireType eFireType /*=FT_NORMAL_F
 
 	// VR: a real swing of a sword hits what the blade passes through.
 	VR_UpdateSwing();
+
+	// VR: reloading by hand.
+	VR_UpdateReload();
 
 	// Update the weapon's perturb value based on the player's movement.
 	UpdateMovementPerturb();
@@ -1421,7 +1467,8 @@ void CClientWeapon::DecrementAmmo()
 	}
 
 	// Check to see if we need to reload...
-	if ( 0 < nShotsPerClip )
+	// (VR, reloading by hand: the gun stays empty until you reload it.)
+	if ( 0 < nShotsPerClip && !VR_IsReloadGun() )
 	{
 		if ( 0 >= m_nAmmoInClip )
 		{
@@ -1481,6 +1528,7 @@ void CClientWeapon::ResetWeaponFilenames()
 	if ( W_INACTIVE != GetState() )
 	{
 		g_VRMgr.AttachHands( m_hObject );
+		VR_SetupReload();
 	}
 	VR_CheckModel();
 
@@ -2036,7 +2084,8 @@ void CClientWeapon::SetDisable( bool bDisable /*=true*/)
 
 		if (HasAmmo())
 		{
-			if (m_nAmmoInClip == 0)
+			// (VR, reloading by hand: an empty gun stays empty.)
+			if (m_nAmmoInClip == 0 && !VR_IsReloadGun())
 			{
 				ReloadClip(false);
 			}
@@ -2066,6 +2115,7 @@ void CClientWeapon::Select()
 	{
 		g_VRMgr.SetCurrentGun( m_pWeapon->szName, m_hObject );
 		g_VRMgr.AttachHands( m_hObject );
+		VR_SetupReload();
 	}
 
 	if ( W_INACTIVE == GetState() )
@@ -2360,6 +2410,7 @@ bool CClientWeapon::Activate()
 	// and its hands.
 	g_VRMgr.SetCurrentGun( m_pWeapon->szName, m_hObject );
 	g_VRMgr.AttachHands( m_hObject );
+	VR_SetupReload();
 	VR_CheckModel();
 
     return true;
@@ -2376,6 +2427,11 @@ bool CClientWeapon::Activate()
 
 void CClientWeapon::Deactivate()
 {
+	// VR: no magazines left in your hand or in the air.
+	VR_RemoveMagObjects();
+	if ( VRMAG_HAND == m_eVRMag )
+		m_eVRMag = VRMAG_OUT;
+
 	// set the state to inactave
 	SetState( W_INACTIVE );
 
@@ -6125,4 +6181,362 @@ void CClientWeapon::VR_SwingFire( LTVector const &vFrom, LTVector const &vDir )
 	::PlayWeaponSound( m_pWeapon, vPos, PSI_FIRE, LTTRUE );
 
 	SendFireMessage( true, 0.0f, vFrom, vDir, vObjectImpactPos, hObjectImpact );
+}
+
+// ----------------------------------------------------------------------- //
+//
+//	VR: reloading by hand
+//
+//	Tre's design (after Titanfall 2 VR): A drops the magazine (it falls
+//	away; its rounds go back to your reserve), a left grip with your hand
+//	over your left shoulder takes a fresh one, and pushing it into the
+//	gun's magazine well reloads (the game's instant reload, which tells
+//	the server). With no magazine, or an empty one, the trigger just
+//	clicks; the game's own reload-when-empty is held off. Guns with a
+//	"clip" bone show the magazine (on the gun, in your hand, falling);
+//	guns without one (shotgun, sniper, AK-47 so far) use the same gesture
+//	with nothing in your hand: bring your left hand to the gun.
+//	Options > VR > Reloading: Manual (default) / Game original.
+//
+// ----------------------------------------------------------------------- //
+
+// A gun that reloads by hand right now: the setting is on, it holds a
+// magazine of more than one round (not a gadget or a thrown weapon), and
+// its model has a magazine bone or a muzzle.
+bool CClientWeapon::VR_IsReloadGun() const
+{
+	return m_bVRReloadGun && m_pWeapon && m_pAmmo && ( GADGET != m_pAmmo->eType ) &&
+		( m_pWeapon->nShotsPerClip > 1 ) && g_VRMgr.IsManualReload();
+}
+
+bool CClientWeapon::VR_ReloadBlocksFire() const
+{
+	return m_bVRPlaced && VR_IsReloadGun() && ( VRMAG_IN != m_eVRMag || m_nAmmoInClip <= 0 );
+}
+
+// A new model (or weapon): find its magazine bone, start with the magazine in.
+void CClientWeapon::VR_SetupReload()
+{
+	VR_RemoveMagObjects();
+	m_eVRMag = VRMAG_IN;
+	m_hVRClipNode = INVALID_MODEL_NODE;
+	m_bVRReloadGun = false;
+	if ( !m_hObject || !m_pWeapon )
+		return;
+
+	HMODELNODE hClip;
+	if ( LT_OK == g_pModelLT->GetNode( m_hObject, "clip", hClip ) &&
+	     LT_OK == g_pModelLT->GetBindPoseNodeTransform( m_hObject, hClip, m_mVRClipBind ) )
+	{
+		m_hVRClipNode = hClip;
+		g_pModelLT->RemoveNodeControlFn( m_hObject, hClip, VR_ClipNodeControl, this );
+		g_pModelLT->AddNodeControlFn( m_hObject, hClip, VR_ClipNodeControl, this );
+	}
+	HMODELSOCKET hFlash;
+	bool bMuzzle = ( LT_OK == g_pModelLT->GetSocket( m_hObject, "Flash", hFlash ) ) ||
+		( LT_OK == g_pModelLT->GetSocket( m_hObject, "flash", hFlash ) );
+	m_bVRReloadGun = ( INVALID_MODEL_NODE != m_hVRClipNode ) || bMuzzle;
+
+	if ( g_VRMgr.IsActive() && m_nVRReloadLoggedId != m_nWeaponId )
+	{
+		m_nVRReloadLoggedId = m_nWeaponId;
+		bool bByHand = m_bVRReloadGun && m_pAmmo && ( GADGET != m_pAmmo->eType ) && ( m_pWeapon->nShotsPerClip > 1 );
+		CVRMgr::Log( "Reload: %s %s (%d rounds a load%s)", m_pWeapon->szName,
+			bByHand ? "reloads by hand" : "uses the game's reload", m_pWeapon->nShotsPerClip,
+			!bByHand ? "" : ( INVALID_MODEL_NODE != m_hVRClipNode ? ", magazine bone: shown" : ", no magazine bone: touch the gun" ) );
+	}
+}
+
+// The gun's magazine bone: shrunk to nothing while the magazine is out.
+void CClientWeapon::VR_ClipNodeControl( const NodeControlData &data, void *pUser )
+{
+	CClientWeapon *p = (CClientWeapon*)pUser;
+	if ( !p || !data.m_pNodeTransform || data.m_hModel != p->m_hObject || data.m_hNode != p->m_hVRClipNode )
+		return;
+	if ( VRMAG_IN == p->m_eVRMag )
+		return;
+	LTMatrix &m = *data.m_pNodeTransform;
+	for ( int r = 0; r < 3; ++r )
+		for ( int c = 0; c < 3; ++c )
+			m.m[r][c] *= 0.0001f;
+}
+
+// The magazine copies: every bone shrunk to nothing but the magazine's,
+// which sits at its rest pose (so the magazine is at a known spot in the
+// model, whatever its parents are doing).
+void CClientWeapon::VR_MagOnlyNodeControl( const NodeControlData &data, void *pUser )
+{
+	CClientWeapon *p = (CClientWeapon*)pUser;
+	if ( !p || !data.m_pNodeTransform )
+		return;
+	if ( data.m_hNode == p->m_hVRClipNode )
+	{
+		*data.m_pNodeTransform = p->m_mVRClipBind;
+		return;
+	}
+	LTMatrix &m = *data.m_pNodeTransform;
+	for ( int r = 0; r < 3; ++r )
+		for ( int c = 0; c < 3; ++c )
+			m.m[r][c] *= 0.0001f;
+}
+
+// A copy of the gun model showing only its magazine: in really-close space
+// (in your hand) or in the world (falling).
+HOBJECT CClientWeapon::VR_CreateMagObject( bool bReallyClose )
+{
+	if ( INVALID_MODEL_NODE == m_hVRClipNode || !m_pWeapon )
+		return LTNULL;
+	ObjectCreateStruct ocs;
+	INIT_OBJECTCREATESTRUCT( ocs );
+	PopulateCreateStruct( &ocs );
+	ocs.m_ObjectType = OT_MODEL;
+	ocs.m_Flags |= FLAG_VISIBLE | ( bReallyClose ? FLAG_REALLYCLOSE : 0 );
+	ocs.m_Flags2 |= FLAG2_DYNAMICDIRLIGHT;
+	HOBJECT hObj = g_pLTClient->CreateObject( &ocs );
+	if ( !hObj )
+		return LTNULL;
+	g_pModelLT->AddNodeControlFn( hObj, VR_MagOnlyNodeControl, this );
+	return hObj;
+}
+
+void CClientWeapon::VR_RemoveMagObjects()
+{
+	if ( m_hVRMagHand )
+	{
+		g_pLTClient->RemoveObject( m_hVRMagHand );
+		m_hVRMagHand = LTNULL;
+	}
+	if ( m_hVRMagDrop )
+	{
+		g_pLTClient->RemoveObject( m_hVRMagDrop );
+		m_hVRMagDrop = LTNULL;
+	}
+}
+
+// Where the gun's magazine bone is now, relative to the camera, in game
+// units and the camera's axes (as GetHandInCamera gives the hands).
+bool CClientWeapon::VR_GetClipPoint( LTVector &vCamRel ) const
+{
+	if ( INVALID_MODEL_NODE == m_hVRClipNode || !m_hObject )
+		return false;
+	LTransform t;
+	if ( LT_OK != g_pModelLT->GetNodeTransform( m_hObject, m_hVRClipNode, t, LTFALSE ) )
+		return false;
+	vCamRel = ( m_vVRObjPos + VR_Rotate( m_rVRObjRot, t.m_Pos ) ) * g_VRMgr.GetGunScale();
+	return true;
+}
+
+void CClientWeapon::VR_PlayReloadSound( int nIndex )
+{
+	if ( !m_pWeapon || nIndex < 0 || nIndex >= WMGR_MAX_RELOAD_SNDS )
+		return;
+	const char *psz = m_pWeapon->szReloadSounds[ nIndex ];
+	if ( ( !psz || !psz[0] ) && nIndex > 0 )
+		psz = m_pWeapon->szReloadSounds[ 0 ];
+	if ( psz && psz[0] )
+	{
+		g_pClientSoundMgr->PlaySoundLocal( psz, SOUNDPRIORITY_PLAYER_HIGH, 0, SMGR_DEFAULT_VOLUME, 1.0f,
+			WEAPONS_SOUND_CLASS );
+	}
+}
+
+// The dropped magazine: a world copy where it left the gun, falling.
+void CClientWeapon::VR_StartMagDrop()
+{
+	LTVector vClip;
+	if ( !VR_GetClipPoint( vClip ) )
+		return;
+	if ( m_hVRMagDrop )
+	{
+		g_pLTClient->RemoveObject( m_hVRMagDrop );
+		m_hVRMagDrop = LTNULL;
+	}
+	m_hVRMagDrop = VR_CreateMagObject( false );
+	if ( !m_hVRMagDrop )
+		return;
+	m_fVRMagDropScale = g_VRMgr.GetGunScale();
+	LTVector vScale( m_fVRMagDropScale, m_fVRMagDropScale, m_fVRMagDropScale );
+	g_pLTClient->SetObjectScale( m_hVRMagDrop, &vScale );
+	m_vVRMagDropPoint = m_vCamPos + VR_Rotate( m_rCamRot, vClip );
+	m_rVRMagDropRot = m_rCamRot * m_rVRObjRot;
+	m_vVRMagDropVel.Init( 0.0f, 0.0f, 0.0f );
+	m_fVRMagDropTime = 0.0f;
+	m_bVRMagDropLanded = false;
+	VR_PlaceMagDrop();
+}
+
+void CClientWeapon::VR_PlaceMagDrop()
+{
+	if ( !m_hVRMagDrop )
+		return;
+	LTVector vClipBind;
+	m_mVRClipBind.GetTranslation( vClipBind );
+	LTVector vPos = m_vVRMagDropPoint - VR_Rotate( m_rVRMagDropRot, vClipBind * m_fVRMagDropScale );
+	g_pLTClient->SetObjectPos( m_hVRMagDrop, &vPos );
+	g_pLTClient->SetObjectRotation( m_hVRMagDrop, &m_rVRMagDropRot );
+}
+
+// Falls (tumbling a little) until it hits the ground, lies there a moment,
+// then goes.
+void CClientWeapon::VR_UpdateMagDrop()
+{
+	if ( !m_hVRMagDrop )
+		return;
+	const float fFrameTime = g_pLTClient->GetFrameTime();
+	m_fVRMagDropTime += fFrameTime;
+	if ( m_fVRMagDropTime > 5.0f )
+	{
+		g_pLTClient->RemoveObject( m_hVRMagDrop );
+		m_hVRMagDrop = LTNULL;
+		return;
+	}
+	if ( !m_bVRMagDropLanded && fFrameTime > 0.0f )
+	{
+		const float fUnitsPerMeter = g_VRMgr.GetUnitsPerMeter() > 0.0f ? g_VRMgr.GetUnitsPerMeter() : 60.0f;
+		m_vVRMagDropVel.y -= 9.8f * fUnitsPerMeter * fFrameTime;
+		LTVector vNext = m_vVRMagDropPoint + m_vVRMagDropVel * fFrameTime;
+
+		IntersectQuery query;
+		IntersectInfo info;
+		query.m_From = m_vVRMagDropPoint;
+		query.m_To = vNext;
+		query.m_Flags = INTERSECT_HPOLY | IGNORE_NONSOLID;
+		if ( g_pLTClient->IntersectSegment( &query, &info ) )
+		{
+			m_vVRMagDropPoint = info.m_Point + info.m_Plane.m_Normal * 1.0f;
+			m_bVRMagDropLanded = true;
+		}
+		else
+		{
+			m_vVRMagDropPoint = vNext;
+			LTRotation rTumble( m_rVRMagDropRot.Right(), 3.0f * fFrameTime );
+			m_rVRMagDropRot = rTumble * m_rVRMagDropRot;
+		}
+	}
+	VR_PlaceMagDrop();
+}
+
+void CClientWeapon::VR_UpdateReload()
+{
+	VR_UpdateMagDrop();
+
+	// Not a gun that reloads by hand (now): any magazine business ends, and
+	// a gun left without one gets its magazine back.
+	if ( !VR_IsReloadGun() )
+	{
+		g_VRMgr.SetWantsMag( false );
+		if ( m_hVRMagHand )
+		{
+			g_pLTClient->RemoveObject( m_hVRMagHand );
+			m_hVRMagHand = LTNULL;
+		}
+		if ( VRMAG_IN != m_eVRMag )
+		{
+			m_eVRMag = VRMAG_IN;
+			if ( m_nAmmoInClip <= 0 && W_DESELECT != GetState() )
+				ReloadClip( false, -1, true, true );
+		}
+		return;
+	}
+	if ( !m_bVRPlaced )
+	{
+		g_VRMgr.SetWantsMag( false );
+		if ( m_hVRMagHand )
+		{
+			g_pLTClient->RemoveObject( m_hVRMagHand );
+			m_hVRMagHand = LTNULL;
+		}
+		if ( VRMAG_HAND == m_eVRMag )
+			m_eVRMag = VRMAG_OUT;
+		return;
+	}
+
+	const float fUnitsPerMeter = g_VRMgr.GetUnitsPerMeter() > 0.0f ? g_VRMgr.GetUnitsPerMeter() : 60.0f;
+
+	// Filled some other way (switching weapons, a keyboard reload): it's in.
+	if ( VRMAG_IN != m_eVRMag && m_nAmmoInClip > 0 )
+	{
+		if ( m_hVRMagHand )
+		{
+			g_pLTClient->RemoveObject( m_hVRMagHand );
+			m_hVRMagHand = LTNULL;
+		}
+		m_eVRMag = VRMAG_IN;
+	}
+
+	// A: drop the magazine. Its rounds stay in your reserve (the total is
+	// unchanged; only the gun's load goes to nothing).
+	if ( VRMAG_IN == m_eVRMag && W_IDLE == GetState() && g_VRMgr.GameButtonPressed( LTVR_RIGHT, LTVR_BTN_PRIMARY ) )
+	{
+		VR_StartMagDrop();
+		m_eVRMag = VRMAG_OUT;
+		m_nAmmoInClip = 0;
+		VR_PlayReloadSound( 0 );
+		CVRMgr::Log( "Reload: %s magazine dropped", m_pWeapon->szName );
+	}
+
+	// Left grip with the hand over your left shoulder: a fresh magazine (if
+	// you have rounds to fill it).
+	bool bInfinite = ( g_bInfiniteAmmo || m_pWeapon->bInfiniteAmmo );
+	int nAmmo = bInfinite ? INFINITE_AMMO_AMOUNT : g_pPlayerStats->GetAmmoCount( m_nAmmoId );
+	if ( VRMAG_OUT == m_eVRMag && nAmmo > 0 && g_VRMgr.GameButtonPressed( LTVR_LEFT, LTVR_BTN_GRIP ) &&
+	     g_VRMgr.IsLeftHandAtShoulder() )
+	{
+		m_eVRMag = VRMAG_HAND;
+		m_hVRMagHand = VR_CreateMagObject( true );
+		CVRMgr::Log( "Reload: %s took a magazine", m_pWeapon->szName );
+	}
+	g_VRMgr.SetWantsMag( VRMAG_OUT == m_eVRMag && nAmmo > 0 );
+
+	if ( VRMAG_HAND != m_eVRMag )
+		return;
+
+	// Holding it: in your left hand; let go and it's put away.
+	LTVector vLeft;
+	LTRotation rLeft;
+	if ( !g_VRMgr.ButtonHeld( LTVR_LEFT, LTVR_BTN_GRIP ) || !g_VRMgr.GetHandInCamera( LTVR_LEFT, vLeft, rLeft, false ) )
+	{
+		if ( m_hVRMagHand )
+		{
+			g_pLTClient->RemoveObject( m_hVRMagHand );
+			m_hVRMagHand = LTNULL;
+		}
+		m_eVRMag = VRMAG_OUT;
+		return;
+	}
+	if ( m_hVRMagHand )
+	{
+		// The magazine's bone at the hand, turned as the hand is (it hangs
+		// below your fist as it would in a gun held in that hand).
+		LTVector vClipBind;
+		m_mVRClipBind.GetTranslation( vClipBind );
+		LTVector vObj = vLeft / g_VRMgr.GetGunScale() - VR_Rotate( rLeft, vClipBind );
+		g_pLTClient->SetObjectPos( m_hVRMagHand, &vObj );
+		g_pLTClient->SetObjectRotation( m_hVRMagHand, &rLeft );
+	}
+
+	// Into the gun: the magazine to the gun's magazine well, or (no magazine
+	// bone) the left hand to the gun in your right hand.
+	LTVector vTarget;
+	float fNear = 0.10f;
+	if ( !VR_GetClipPoint( vTarget ) )
+	{
+		LTRotation rRight;
+		if ( !g_VRMgr.GetHandInCamera( LTVR_RIGHT, vTarget, rRight, false ) )
+			return;
+		fNear = 0.15f;
+	}
+	float fDist = ( vLeft - vTarget ).Mag() / fUnitsPerMeter;
+	if ( fDist < fNear )
+	{
+		if ( m_hVRMagHand )
+		{
+			g_pLTClient->RemoveObject( m_hVRMagHand );
+			m_hVRMagHand = LTNULL;
+		}
+		m_eVRMag = VRMAG_IN;
+		ReloadClip( false, -1, true, true );
+		VR_PlayReloadSound( 1 );
+		CVRMgr::Log( "Reload: %s reloaded (%d in the gun)", m_pWeapon->szName, m_nAmmoInClip );
+	}
 }

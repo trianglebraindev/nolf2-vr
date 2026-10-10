@@ -101,8 +101,9 @@ needs. Not ordered within a group yet.
 | Right stick up / down | jump / crouch toggle | navigate |
 | Right trigger | fire | select |
 | Right grip (hold) | weapon ring: move your hand to a weapon, let go to switch (let go in the middle to cancel) | |
-| Right A / B | next ammo / holster | select / back |
-| Right stick click | reload | |
+| Right A / B | drop the magazine (manual reloading) or next ammo (game original) / holster | select / back |
+| Right stick click | next ammo (manual reloading) or reload (game original) | |
+| Left grip over your left shoulder | take a magazine (manual reloading, gun without one); push it into the gun to reload | |
 | Left trigger | activate (use, talk, search) | select |
 | Left grip + left trigger | snapshot (the trigger doesn't activate while the grip is held) | |
 | Left X | mission objectives | |
@@ -313,6 +314,7 @@ Next, in a suggested order:
 9. Comfort vignette (done; Tre has VR legs, it's for others).
 10. Menus: the parked mouse cursor no longer steals the selection (see
     "Menus: the mouse steps aside").
+11. Reloading by hand (first pass, see "Manual reloading").
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
@@ -407,6 +409,48 @@ the shutdown hang.
   edge, because he sights with his right eye.
 - Cat eyes (angry kitty) on target after the effects fix (Tre); the
   sniper scope's measured offset "felt good, lines up" (Tre).
+
+## Manual reloading (first pass)
+
+- Tre's design (after Titanfall 2 VR), on by default with "Game original"
+  as the other choice (Options > VR > Reloading): A drops the magazine; a
+  left grip with the hand over the left shoulder takes a fresh one; pushed
+  into the gun it reloads. Leftover rounds in a dropped magazine go back
+  to the reserve. Guns without a separate magazine: the same gesture, no
+  magazine shown. In manual mode the right stick click is "next ammo"
+  (A's old job); in game original the buttons are as before.
+- Which guns (CClientWeapon::VR_IsReloadGun): more than one round a load,
+  not a gadget, and a "clip" bone or a muzzle ("Flash"/"flash" socket) in
+  the model. Logged once per weapon: "Reload: <weapon> reloads by hand /
+  uses the game's reload (...)". From vr_models.log the "clip" bone is in
+  the Beretta, Tommy gun, Sterling and silenced Sterling; the AK-47 and
+  sniper rifle have unnamed bones (joint1 / joint2) that might be theirs.
+- Game logic: the game fires on total ammo, not the magazine, and refills
+  the magazine itself the moment it empties (DecrementAmmo) or when a
+  weapon is re-enabled. In manual mode those refills are held off, and the
+  trigger is blocked (a click; a one-time hint) while the magazine is out
+  or empty. Dropping sets the gun's load to 0 (the total is unchanged, so
+  the rounds stay in reserve); inserting is the game's instant reload,
+  ReloadClip(no animation, forced, tell the server). The server refills
+  its own count when it empties, so nothing changes there. Switching
+  weapons still refills an empty gun (the game's own select).
+- Visuals (guns with a "clip" bone): the gun's clip bone is shrunk to
+  nothing while its magazine is out (a node control). The magazine in
+  your hand and the one falling away are copies of the gun model with
+  every bone shrunk to nothing except the clip bone, which is held at its
+  rest pose, so the magazine sits at a known spot in the model: placed so
+  that spot is at your left hand (turned as the hand: it hangs below the
+  fist as in a gun held in that hand), or in the world where it left the
+  gun (falling with gravity and a little tumble until it hits the ground,
+  gone after 5 s). Clip-out / clip-in sounds are the weapon's own reload
+  sounds 1 and 2.
+- Insert: the held magazine within 10 cm of the gun's clip bone; without a
+  clip bone, the left hand within 15 cm of the right.
+- The shoulder (CVRMgr::IsLeftHandAtShoulder): left of the head's middle,
+  no further forward than the face, from about chest height up, within
+  half a metre, in a frame turned by the head's heading only. While the
+  gun wants a magazine, a left grip there doesn't grab the gun or pick up
+  a body.
 
 ## Menus: the mouse steps aside
 

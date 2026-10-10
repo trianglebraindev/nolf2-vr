@@ -102,6 +102,12 @@
 //                   the sticks: 0 off (default), 1 light, 2 medium, 3 strong
 //   VRVignetteWhen  1 moving, 2 turning, 3 both (default)
 //
+//   Reloading (see CClientWeapon::VR_UpdateReload):
+//   VRReload        1 = by hand (default): A drops the magazine, left grip
+//                   over your left shoulder takes a fresh one, push it into
+//                   the gun; the right stick click is "next ammo". 0 = the
+//                   game's own: right stick click reloads, A is next ammo.
+//
 //   Melee (see CClientWeapon::VR_UpdateSwing):
 //   VRSwing         1 = swinging a sword hits what the blade passes
 //                   through (default), 0 = only the trigger slashes
@@ -168,6 +174,7 @@ static VarTrack g_vtVRScopeZoom;
 static VarTrack g_vtVRScopeSize;
 static VarTrack g_vtVRScopeEye;
 static VarTrack g_vtVRSwing;
+static VarTrack g_vtVRReload;
 static VarTrack g_vtVRVignette;
 static VarTrack g_vtVRVignetteWhen;
 static VarTrack g_vtVRSwingSpeed;
@@ -232,6 +239,7 @@ CVRMgr::CVRMgr()
 	m_fVignette			= 0.0f;
 	m_bSnapTriggerOff	= false;
 	m_bMouseInUse		= false;
+	m_bWantsMag			= false;
 	m_bMouseKnown		= false;
 	m_nLastMouseX		= 0;
 	m_nLastMouseY		= 0;
@@ -338,6 +346,7 @@ void CVRMgr::Init()
 	g_vtVRScopeZoom.Init(g_pLTClient, "VRScopeZoom", NULL, 4.0f);
 	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 5.0f);
 	g_vtVRSwing.Init(g_pLTClient, "VRSwing", NULL, 1.0f);
+	g_vtVRReload.Init(g_pLTClient, "VRReload", NULL, 1.0f);
 	g_vtVRVignette.Init(g_pLTClient, "VRVignette", NULL, 0.0f);
 	g_vtVRVignetteWhen.Init(g_pLTClient, "VRVignetteWhen", NULL, 3.0f);
 	g_vtVRSwingSpeed.Init(g_pLTClient, "VRSwingSpeed", NULL, 2.5f);
@@ -393,6 +402,7 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRScopeZoom",		4.0f },
 	{ "VRScopeEye",			5.0f },
 	{ "VRSwing",			1.0f },
+	{ "VRReload",			1.0f },
 	{ "VRVignette",			0.0f },
 	{ "VRVignetteWhen",		3.0f },
 	{ "VRSwingSpeed",		2.5f },
@@ -421,6 +431,43 @@ float CVRMgr::GetSettingDefault(const char* pszName)
 {
 	const VRSettingDef* pDef = VR_FindSetting(pszName);
 	return pDef ? pDef->fDefault : 0.0f;
+}
+
+bool CVRMgr::IsManualReload() const
+{
+	return IsActive() && g_vtVRReload.GetFloat(1.0f) != 0.0f;
+}
+
+bool CVRMgr::GameButtonPressed(int nHand, unsigned nButton) const
+{
+	if (!IsActive() || m_bAdjusting || IsDecisionOpen() || !g_pInterfaceMgr ||
+		g_pInterfaceMgr->GetGameState() != GS_PLAYING)
+		return false;
+	return Pressed(nHand, nButton);
+}
+
+bool CVRMgr::ButtonHeld(int nHand, unsigned nButton) const
+{
+	if (!IsActive() || nHand < 0 || nHand > 1)
+		return false;
+	return (m_State.hand[nHand].buttons & nButton) != 0;
+}
+
+// Over your left shoulder: the left hand left of the head's middle, no
+// further forward than your face, from about chest height up, within half
+// a metre. Measured in a frame that turns with your head's heading only,
+// so looking up or down doesn't move the spot.
+bool CVRMgr::IsLeftHandAtShoulder() const
+{
+	if (!IsActive())
+		return false;
+	const LTVR_HandState& left = m_State.hand[LTVR_LEFT];
+	if (!left.active || !left.grip.valid || m_State.unitsPerMeter <= 0.0f)
+		return false;
+	LTVector vGrip(left.grip.pos[0], left.grip.pos[1], left.grip.pos[2]);
+	LTRotation rYaw(LTVector(0.0f, 1.0f, 0.0f), GetHeadYaw());
+	LTVector v = VR_Unrotate(rYaw, vGrip - GetHeadOffset()) / m_State.unitsPerMeter;	// metres: right, up, forward
+	return v.x < 0.05f && v.x > -0.5f && v.y > -0.45f && v.y < 0.35f && v.z < 0.10f && v.z > -0.5f;
 }
 
 bool CVRMgr::IsSwingOn() const
@@ -491,9 +538,18 @@ void CVRMgr::SetDefaultBindings()
 	m_pfnSetBinding(LTVR_LEFT,  LTVR_BTN_PRIMARY,		COMMAND_ID_MISSION);
 
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_TRIGGER,		COMMAND_ID_FIRING);
-	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_PRIMARY,		COMMAND_ID_NEXT_AMMO);
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_SECONDARY,		COMMAND_ID_HOLSTER);
-	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK,			COMMAND_ID_RELOAD);
+	if (g_vtVRReload.GetFloat(1.0f) != 0.0f)
+	{
+		// Reloading by hand: A drops the magazine (the weapon does that, see
+		// CClientWeapon::VR_UpdateReload), the stick click is next ammo.
+		m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK,		COMMAND_ID_NEXT_AMMO);
+	}
+	else
+	{
+		m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_PRIMARY,	COMMAND_ID_NEXT_AMMO);
+		m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK,		COMMAND_ID_RELOAD);
+	}
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK_UP,		COMMAND_ID_JUMP);
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK_DOWN,	COMMAND_ID_DUCKLOCK);
 }
@@ -1294,7 +1350,8 @@ void CVRMgr::UpdateMoveBody()
 	if (!m_pfnSetBinding)
 		return;
 	bool bGrip = (m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) != 0;
-	if (Pressed(LTVR_LEFT, LTVR_BTN_GRIP) && !m_bTwoHand && !m_bAdjusting && !IsDecisionOpen())
+	if (Pressed(LTVR_LEFT, LTVR_BTN_GRIP) && !m_bTwoHand && !m_bAdjusting && !IsDecisionOpen() &&
+		!(m_bWantsMag && IsLeftHandAtShoulder()))
 	{
 		m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_GRIP, COMMAND_ID_MOVE_BODY);
 		m_bMoveBodyBound = true;
@@ -1314,6 +1371,8 @@ void CVRMgr::UpdateTwoHand()
 		m_bTwoHand = false;
 	if (m_bTwoHand || m_bAdjusting || !Pressed(LTVR_LEFT, LTVR_BTN_GRIP) || !m_bGunPlaced || !m_bLeftAnimValid)
 		return;
+	if (m_bWantsMag && IsLeftHandAtShoulder())
+		return;		// (taking a magazine, see CClientWeapon::VR_UpdateReload)
 
 	LTVector vLeft, vRight;
 	LTRotation rLeft, rAim, rGun;

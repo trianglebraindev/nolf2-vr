@@ -470,6 +470,38 @@ protected:
 	bool          VR_GetBlade( LTVector &vHilt, LTVector &vTip ) const;
 	void          VR_SwingFire( LTVector const &vFrom, LTVector const &vDir );
 
+	// VR: reloading by hand (see VR_UpdateReload). Where the magazine is,
+	// the magazine's bone in the gun model (and its rest pose), and the
+	// copies of it in your left hand and falling away.
+	enum VRMagState { VRMAG_IN, VRMAG_OUT, VRMAG_HAND };
+	VRMagState    m_eVRMag;
+	bool          m_bVRReloadGun;		// a gun that reloads by hand (magazine bone or muzzle)
+	HMODELNODE    m_hVRClipNode;		// the "clip" bone, or INVALID_MODEL_NODE
+	LTMatrix      m_mVRClipBind;
+	HOBJECT       m_hVRMagHand;
+	HOBJECT       m_hVRMagDrop;
+	LTVector      m_vVRMagDropPoint;	// world: where the magazine's bone is
+	LTVector      m_vVRMagDropVel;
+	LTRotation    m_rVRMagDropRot;
+	float         m_fVRMagDropScale;
+	float         m_fVRMagDropTime;
+	bool          m_bVRMagDropLanded;
+	bool          m_bVRDryLast;			// trigger held last update (for the empty click)
+	int           m_nVRReloadLoggedId;
+	void          VR_SetupReload();
+	void          VR_UpdateReload();
+	bool          VR_IsReloadGun() const;
+	bool          VR_ReloadBlocksFire() const;
+	HOBJECT       VR_CreateMagObject( bool bReallyClose );
+	void          VR_RemoveMagObjects();
+	void          VR_StartMagDrop();
+	void          VR_UpdateMagDrop();
+	void          VR_PlaceMagDrop();
+	bool          VR_GetClipPoint( LTVector &vCamRel ) const;
+	void          VR_PlayReloadSound( int nIndex );
+	static void   VR_ClipNodeControl( const NodeControlData &data, void *pUser );
+	static void   VR_MagOnlyNodeControl( const NodeControlData &data, void *pUser );
+
 	HLTSOUND      m_hLoopSound;
 	uint8         m_nLoopSoundId;
 

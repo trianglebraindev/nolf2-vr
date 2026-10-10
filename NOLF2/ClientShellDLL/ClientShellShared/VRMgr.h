@@ -138,6 +138,23 @@ public:
 	bool		NoteMouseMove(int x, int y);
 	bool		IsMouseInUse() const	{ return !IsActive() || m_bMouseInUse; }
 
+	// Manual reloading (see CClientWeapon::VR_UpdateReload): A drops the
+	// magazine, a fresh one comes from over your left shoulder (left grip
+	// there) and goes into the gun. VRReload 1 (default) = manual, 0 = the
+	// game's own reload on a button.
+	bool		IsManualReload() const;
+	// A button that went down this frame, for gameplay (not while adjusting
+	// the gun, choosing in a conversation or out of play); and one held now.
+	bool		GameButtonPressed(int nHand, unsigned nButton) const;
+	bool		ButtonHeld(int nHand, unsigned nButton) const;
+	// The left hand is over your left shoulder (where the magazines are).
+	bool		IsLeftHandAtShoulder() const;
+	// The gun is waiting for a magazine: a left grip over the shoulder is
+	// taking one, not grabbing the gun or picking up a body.
+	void		SetWantsMag(bool bWants)	{ m_bWantsMag = bWants; }
+	// A line of help text on the HUD.
+	void		ShowHint(const char* pszText)	{ Message(pszText); }
+
 	bool		IsSwingOn() const;
 	float		GetSwingSpeed() const;
 	float		GetUnitsPerMeter() const	{ return m_State.unitsPerMeter; }
@@ -231,6 +248,7 @@ private:
 	void		UpdateMoveBody();
 	bool		m_bMoveBodyBound;		// left grip is bound to "move body" while held
 	bool		m_bMouseInUse;
+	bool		m_bWantsMag;
 	bool		m_bMouseKnown;
 	int			m_nLastMouseX, m_nLastMouseY;
 	bool		m_bSnapTriggerOff;		// left trigger unbound (snapshot) while the left grip is held
