@@ -57,6 +57,12 @@
 //  the scope, narrow, into its own round layer at the eyepiece (no gun or
 //  hands in it), with a reticle and a darker rim baked into a mask.
 //
+//  THE COMFORT VIGNETTE
+//  While you move or turn with the sticks (the game says how much,
+//  LTVR_SetVignette) the edges of each eye's picture darken: a soft ring,
+//  centred on straight ahead for that eye, drawn over the world before the
+//  layers go on.
+//
 //  THE MONITOR AND SNAPSHOTS
 //  The layers above (scope, crosshair, watch, HUD) are put together by
 //  the headset, so the monitor (the game's own flat camera) and the
@@ -169,6 +175,14 @@ static IDirect3DSurface9*	g_pVRMirror			= NULL;		// the left eye's middle, layer
 static uint32				g_nVRMirrorWidth	= 0;
 static uint32				g_nVRMirrorHeight	= 0;
 static bool					g_bVRSnapshotWanted	= false;
+
+// The comfort vignette (LTVR_SetVignette): this frame's amount (0 = none)
+// and how far out from straight ahead the edge is fully dark (degrees), and
+// the soft ring texture it's drawn with.
+static float				g_fVRVignette		= 0.0f;
+static float				g_fVRVignetteDeg	= 50.0f;
+static IDirect3DTexture9*	g_pVRVignetteTex	= NULL;
+static const uint32			kVRVignetteSize		= 256;
 static int					g_nVRMirrorEye		= -1;		// this frame's eye (LTVR_SetMirrorEye), -1 = left
 
 // Where the game says the player's eyes are this frame, and the body's
@@ -263,6 +277,8 @@ static void VR_Destroy()
 	VR_ReleaseCanvas();
 	VR_ReleaseMirror();
 	g_bVRSnapshotWanted = false;
+	if (g_pVRVignetteTex)	{ g_pVRVignetteTex->Release();	g_pVRVignetteTex = NULL; }
+	g_fVRVignette = 0.0f;
 	if (g_pVRScopeMask)		{ g_pVRScopeMask->Release();	g_pVRScopeMask = NULL; }
 	g_bVRScopeSet = false;
 	g_bVRBodyUsedValid = false;
@@ -757,6 +773,7 @@ enum VRQuadBlend
 	VRBLEND_DARKEN,			// scales what's there by (1 - alpha), colour and alpha alike
 	VRBLEND_SETALPHA,		// writes only alpha (the colour's), no blending
 	VRBLEND_MASK,			// multiplies colour by the texture's colour, alpha by its alpha
+	VRBLEND_VIGNETTE,		// the colour (no texture colour) over what's there, by texture alpha x colour alpha
 };
 
 struct VRQuadVert
@@ -810,7 +827,8 @@ static void VR_DrawQuadVerts(IDirect3DTexture9* pTex, const VRQuadVert aVerts[4]
 	pDevice->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, eBlend == VRBLEND_MASK ? TRUE : FALSE);
 	pDevice->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
 	pDevice->SetRenderState(D3DRS_SRCBLEND,
-		eBlend == VRBLEND_ALPHA ? D3DBLEND_SRCALPHA : eBlend == VRBLEND_PREMULTIPLIED ? D3DBLEND_ONE : D3DBLEND_ZERO);
+		(eBlend == VRBLEND_ALPHA || eBlend == VRBLEND_VIGNETTE) ? D3DBLEND_SRCALPHA :
+		eBlend == VRBLEND_PREMULTIPLIED ? D3DBLEND_ONE : D3DBLEND_ZERO);
 	pDevice->SetRenderState(D3DRS_DESTBLEND, eBlend == VRBLEND_MASK ? D3DBLEND_SRCCOLOR : D3DBLEND_INVSRCALPHA);
 	if (eBlend == VRBLEND_MASK)
 	{
@@ -825,6 +843,12 @@ static void VR_DrawQuadVerts(IDirect3DTexture9* pTex, const VRQuadVert aVerts[4]
 	pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, dwArg);
 	pDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
 	pDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, dwArg);
+	if (eBlend == VRBLEND_VIGNETTE && pTex)
+	{
+		pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+		pDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+		pDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+	}
 	pDevice->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX, 0);
 	pDevice->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
 	pDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
@@ -1052,6 +1076,120 @@ static void VR_FadeEyes()
 	g_Device.InvalidateViewport();
 	if (pOldRT)		pOldRT->Release();
 	if (pOldDepth)	pOldDepth->Release();
+}
+
+// The comfort vignette's ring: black, clear in the middle, fading to fully
+// dark at the square's edge (and beyond it: the texture is clamped, so the
+// edge's darkness carries on past it).
+static void VR_EnsureVignetteTex(IDirect3DDevice9* pDevice)
+{
+	if (g_pVRVignetteTex)
+		return;
+	const uint32 n = kVRVignetteSize;
+	if (FAILED(pDevice->CreateTexture(n, n, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+		&g_pVRVignetteTex, NULL)) || !g_pVRVignetteTex)
+	{
+		g_pVRVignetteTex = NULL;
+		return;
+	}
+	D3DLOCKED_RECT lr;
+	if (FAILED(g_pVRVignetteTex->LockRect(0, &lr, NULL, D3DLOCK_DISCARD)))
+	{
+		g_pVRVignetteTex->Release();
+		g_pVRVignetteTex = NULL;
+		return;
+	}
+	const float c = (float)(n - 1) * 0.5f;
+	const float fRadius = (float)n * 0.5f;
+	for (uint32 y = 0; y < n; ++y)
+	{
+		uint32* pRow = (uint32*)((uint8*)lr.pBits + y * lr.Pitch);
+		for (uint32 x = 0; x < n; ++x)
+		{
+			float dx = (float)x - c, dy = (float)y - c;
+			float r = (float)sqrt(dx * dx + dy * dy) / fRadius;
+			// Clear to half way out, then a smooth fall to dark at the edge.
+			float t = (r - 0.5f) / 0.5f;
+			t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+			float a = t * t * (3.0f - 2.0f * t);
+			pRow[x] = ((uint32)(a * 255.0f + 0.5f)) << 24;
+		}
+	}
+	g_pVRVignetteTex->UnlockRect(0);
+}
+
+// Darkens the edges of each eye's picture, centred on straight ahead for
+// that eye (before the layers go on, so the HUD and crosshair stay clear).
+static void VR_VignetteEyes()
+{
+	if (g_fVRVignette < 0.01f || !PD3DDEVICE || !g_pVRBridge)
+		return;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	VR_EnsureVignetteTex(pDevice);
+	if (!g_pVRVignetteTex)
+		return;
+
+	float fDeg = g_fVRVignetteDeg;
+	if (fDeg < 15.0f) fDeg = 15.0f;
+	if (fDeg > 85.0f) fDeg = 85.0f;
+	const float fTanEdge = (float)tan(fDeg * 3.14159265f / 180.0f);
+	float fAmount = g_fVRVignette > 1.0f ? 1.0f : g_fVRVignette;
+	const D3DCOLOR color = D3DCOLOR_ARGB((int)(fAmount * 255.0f + 0.5f), 0, 0, 0);
+
+	IDirect3DSurface9* pOldRT = NULL;
+	IDirect3DSurface9* pOldDepth = NULL;
+	pDevice->GetRenderTarget(0, &pOldRT);
+	pDevice->GetDepthStencilSurface(&pOldDepth);
+	pDevice->SetDepthStencilSurface(NULL);
+
+	const uint32 nW = g_pVRBridge->GetEyeWidth();
+	const uint32 nH = g_pVRBridge->GetEyeHeight();
+	for (int e = 0; e < 2; ++e)
+	{
+		if (!g_pVREyeSurf[e])
+			continue;
+		const xrb::EyeView& view = g_pVRBridge->GetEyeView((xrb::Eye)e);
+		float tl = (float)tan(view.fov.angleLeft), tr = (float)tan(view.fov.angleRight);
+		float tu = (float)tan(view.fov.angleUp), td = (float)tan(view.fov.angleDown);
+		if (tr - tl < 1e-3f || tu - td < 1e-3f)
+			continue;
+		// Straight ahead, and the dark edge's radius, in this eye's pixels.
+		float cx = -tl / (tr - tl) * (float)nW;
+		float cy = tu / (tu - td) * (float)nH;
+		float rx = fTanEdge * (float)nW / (tr - tl);
+		float ry = fTanEdge * (float)nH / (tu - td);
+
+		const float fR = (float)nW - 0.5f, fB = (float)nH - 0.5f;
+		const float ax[4] = { -0.5f, fR, -0.5f, fR };
+		const float ay[4] = { -0.5f, -0.5f, fB, fB };
+		VRQuadVert aVerts[4];
+		for (int i = 0; i < 4; ++i)
+		{
+			aVerts[i].x = ax[i];
+			aVerts[i].y = ay[i];
+			aVerts[i].z = 0.0f;
+			aVerts[i].rhw = 1.0f;
+			aVerts[i].color = color;
+			aVerts[i].u = 0.5f + (ax[i] + 0.5f - cx) / (2.0f * rx);
+			aVerts[i].v = 0.5f + (ay[i] + 0.5f - cy) / (2.0f * ry);
+		}
+		pDevice->SetRenderTarget(0, g_pVREyeSurf[e]);
+		VR_DrawQuadVerts(g_pVRVignetteTex, aVerts, nW, nH, VRBLEND_VIGNETTE);
+	}
+
+	pDevice->SetRenderTarget(0, pOldRT);
+	pDevice->SetDepthStencilSurface(pOldDepth);
+	g_Device.InvalidateViewport();
+	if (pOldRT)		pOldRT->Release();
+	if (pOldDepth)	pOldDepth->Release();
+}
+
+// The game says how much vignette this frame (0..1) and how far out from
+// straight ahead (degrees) the edge is fully dark. Call every frame it applies.
+extern "C" __declspec(dllexport) void LTVR_SetVignette(float fAmount, float fEdgeDegrees)
+{
+	g_fVRVignette = fAmount < 0.0f ? 0.0f : fAmount;
+	g_fVRVignetteDeg = fEdgeDegrees;
 }
 
 static float VR_WidthForAngle(float fDistance, float fAngleDegrees)
@@ -1788,6 +1926,7 @@ void d3d_VR_OnSwapBuffers()
 		{
 			bool bHud = g_bVRHudActive;
 			VR_EndHud();	// back on the monitor's back buffer
+			VR_VignetteEyes();
 			VR_FadeEyes();
 			VR_ApplySpotOpacity();
 
@@ -1905,6 +2044,7 @@ void d3d_VR_OnSwapBuffers()
 	g_bVRSpotFromCanvas = false;
 	g_bVRScopeSet = false;		// the game sets it again each frame you look through one
 	g_nVRMirrorEye = -1;		// (so is the mirror's eye)
+	g_fVRVignette = 0.0f;		// (and the vignette)
 	g_bVRBodyUsedValid = false;
 
 	// The game sets the origin again each frame it draws the world.

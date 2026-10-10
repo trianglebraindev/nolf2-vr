@@ -362,6 +362,10 @@ private:
 	LTVR_SetScopeViewFn		m_pfnSetScopeView;
 	LTVR_TakeSnapshotFn		m_pfnTakeSnapshot;
 	LTVR_SetMirrorEyeFn		m_pfnSetMirrorEye;
+	LTVR_SetVignetteFn		m_pfnSetVignette;
+	float					m_fVignette;		// smoothed amount, 0..1
+	void					UpdateVignette(float fFrameTime, bool bPlaying);
+	float					GetSmoothTurnAmount() const;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

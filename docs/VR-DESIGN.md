@@ -309,9 +309,10 @@ Next, in a suggested order:
    scope off its tube (per-weapon scope adjust), laser dots / kitty eyes
    adrift (see "Effects on the gun"). (No binoculars in NOLF2: OVM_BINOC is
    defined but never used.)
-8. Melee swinging (first pass, see "Melee").
-Later: comfort vignette, height calibration and real crouch, vehicles,
-cutscene options, the shutdown hang.
+8. Melee swinging (done: "feels great", Tre).
+9. Comfort vignette (first pass, see "Comfort vignette").
+Later: height calibration and real crouch, vehicles, cutscene options,
+the shutdown hang.
 
 ## VR settings page (first pass)
 
@@ -404,6 +405,24 @@ cutscene options, the shutdown hang.
   edge, because he sights with his right eye.
 - Cat eyes (angry kitty) on target after the effects fix (Tre); the
   sniper scope's measured offset "felt good, lines up" (Tre).
+
+## Comfort vignette (first pass)
+
+- Tre's picks: off by default; Options > VR > Comfort vignette Off / Light
+  / Medium / Strong, and Vignette when: moving, turning, or both.
+- Game (CVRMgr::UpdateVignette): the amount is the walk stick's push
+  (GetMoveVector) and/or how hard you smooth turn (GetSmoothTurnAmount,
+  the right stick as turning reads it), whichever is more; eased in over
+  about 0.15 s and out over 0.4 s. Moving your real body and snap turns
+  never bring it on; nor does the adjust mode or the weapon ring.
+- Engine (LTVR_SetVignette, LTVR_VERSION 9; VR_VignetteEyes): a soft black
+  ring drawn over each eye's world before the layers (HUD, crosshair, scope
+  stay clear), centred on that eye's straight ahead, fully dark at 60 / 45
+  / 32 degrees out (light / medium / strong) and clear to about half that.
+  The monitor mirror shows it too.
+- The VR settings page is now 16 rows and these menus don't scroll: after
+  building, if the rows run past the page's bottom they're closed up evenly
+  to fit (logged: "VR settings page: ...").
 
 ## Melee (first pass)
 

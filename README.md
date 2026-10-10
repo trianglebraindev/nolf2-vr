@@ -55,8 +55,13 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
 - **Snapshots**: left grip + left trigger saves what the headset shows to
   `run\Snapshots`; the monitor shows the same picture.
 
-Still to come (see `docs/VR-DESIGN.md`): comfort options, height and real
-crouch, vehicles, cutscene options.
+- **Comfort vignette** (off by default): the edges of the view darken
+  while you move or turn with the sticks. Options > VR > Comfort vignette
+  (Off / Light / Medium / Strong) and Vignette when (moving, turning or
+  both).
+
+Still to come (see `docs/VR-DESIGN.md`): height and real crouch, vehicles,
+cutscene options.
 
 ## Requirements
 
@@ -133,6 +138,7 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRScopeDist` / `VRScopeSize` | 8 / 5.5 | how far in front of that eye the lens sits, and how wide it looks (cm) |
 | `VRScopeZoom` | 4 | magnification of a basic scope; stronger scopes are 2x and 4x that |
 | `VRSwing` / `VRSwingSpeed` | 1 / 2.5 | swinging a sword hits (0 = trigger only); how fast the blade's tip must move, m/s |
+| `VRVignette` / `VRVignetteWhen` | 0 / 3 | comfort vignette 0 off, 1 light, 2 medium, 3 strong; when: 1 moving, 2 turning, 3 both |
 | `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the game's flat camera |
 
 Files the game writes in `run\`:

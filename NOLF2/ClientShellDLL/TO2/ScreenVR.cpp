@@ -46,6 +46,8 @@ namespace
 		kHelpTurnSpeed,
 		kHelpSnapAngle,
 		kHelpMoveDir,
+		kHelpVignette,
+		kHelpVignetteWhen,
 		kHelpWorldSize,
 		kHelpHudDistance,
 		kHelpHudSize,
@@ -65,6 +67,8 @@ namespace
 		"How fast smooth turning turns you, in degrees per second.",
 		"How far each snap turn turns you, in degrees.",
 		"Walk where your head faces, or where your left controller points.",
+		"Darken the edges of your view while you move or turn with the sticks, for comfort. Stronger narrows the view more.",
+		"What brings the comfort vignette on: moving with the stick, smooth turning, or both.",
 		"How big the world feels. Higher makes everything larger around you.",
 		"How far away the HUD and subtitles float, in metres.",
 		"How large the HUD and subtitles look.",
@@ -108,6 +112,8 @@ CScreenVR::CScreenVR()
 	m_bGunHud = LTTRUE;
 	m_nArms = 0;
 	m_nSwing = 2;
+	m_nVignette = 0;
+	m_nVignetteWhen = 2;
 }
 
 CScreenVR::~CScreenVR()
@@ -165,6 +171,17 @@ LTBOOL CScreenVR::Build()
 	pCycle->AddString("Head");
 	pCycle->AddString("Left hand");
 
+	pCycle = AddCycle((char*)"Comfort vignette", kHelpVignette, kGap, &m_nVignette);
+	pCycle->AddString("Off");
+	pCycle->AddString("Light");
+	pCycle->AddString("Medium");
+	pCycle->AddString("Strong");
+
+	pCycle = AddCycle((char*)"Vignette when", kHelpVignetteWhen, kGap, &m_nVignetteWhen);
+	pCycle->AddString("Moving");
+	pCycle->AddString("Turning");
+	pCycle->AddString("Moving and turning");
+
 	pSlider = AddSlider((char*)"World size", kHelpWorldSize, kGap, kWidth, -1, &m_nWorldSize);
 	pSlider->SetSliderRange(70, 130);
 	pSlider->SetSliderIncrement(5);
@@ -213,6 +230,28 @@ LTBOOL CScreenVR::Build()
 	AddTextItem((char*)"Reset to defaults", CMD_VR_RESET, kHelpReset);
 	AddTextItem((char*)"Testing: all weapons and gear", CMD_VR_GIVEALL, kHelpGiveAll);
 
+	// These menus don't scroll: if the rows run past the bottom of the page,
+	// close them up evenly to fit (every control but the frame, control 0).
+	{
+		const int nTop = GetPageTop();
+		const int nBottom = GetPageBottom();
+		const int nEnd = m_nextPos.y;
+		CVRMgr::Log("VR settings page: %d controls, rows from y %d to %d, page %d to %d", (int)m_controlArray.size(),
+			nTop, nEnd, nTop, nBottom);
+		if (nEnd > nBottom && nEnd > nTop)
+		{
+			const float fSqueeze = (float)(nBottom - nTop) / (float)(nEnd - nTop);
+			for (unsigned i = 1; i < m_controlArray.size(); ++i)
+			{
+				LTIntPt ptRow = m_controlArray[i]->GetBasePos();
+				ptRow.y = nTop + (int)((float)(ptRow.y - nTop) * fSqueeze);
+				m_controlArray[i]->SetBasePos(ptRow);
+			}
+			m_nextPos.y = nBottom;
+			CVRMgr::Log("VR settings page: rows closed up to %.0f%% to fit", fSqueeze * 100.0f);
+		}
+	}
+
 	// Taller frame if the list runs past it.
 	int nNeeded = m_nextPos.y - frameRect.top + 8;
 	if (nNeeded > nHt + 8)
@@ -233,7 +272,8 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 		{
 			const char* const aNames[] = { "VRSnapTurn", "VRTurnSpeed", "VRSnapAngle", "VRMoveWithHand",
 				"VRUnitsPerMeter", "VRHudDistance", "VRHudAngle", "VRHudFollow", "VRWristHud",
-				"VRWristHudWatch", "VRGunHud", "VRArms", "VRSwing", "VRSwingSpeed" };
+				"VRWristHudWatch", "VRGunHud", "VRArms", "VRSwing", "VRSwingSpeed", "VRVignette",
+				"VRVignetteWhen" };
 			for (int i = 0; i < (int)(sizeof(aNames) / sizeof(aNames[0])); ++i)
 				CVRMgr::SetSetting(aNames[i], CVRMgr::GetSettingDefault(aNames[i]));
 			ReadSettings();
@@ -354,6 +394,10 @@ void CScreenVR::ReadSettings()
 
 	m_bGunHud		= CVRMgr::GetSetting("VRGunHud") != 0.0f;
 	m_nArms			= CVRMgr::GetSetting("VRArms") != 0.0f ? 1 : 0;
+	int nVignette = (int)(CVRMgr::GetSetting("VRVignette") + 0.5f);
+	m_nVignette = (uint8)((nVignette < 0) ? 0 : (nVignette > 3 ? 3 : nVignette));
+	int nWhen = (int)(CVRMgr::GetSetting("VRVignetteWhen") + 0.5f);
+	m_nVignetteWhen = (uint8)((nWhen == 1) ? 0 : (nWhen == 2 ? 1 : 2));
 	if (CVRMgr::GetSetting("VRSwing") == 0.0f)
 		m_nSwing = 0;
 	else
@@ -379,6 +423,8 @@ void CScreenVR::WriteSettings()
 		CVRMgr::SetSetting("VRWristHudWatch", m_nWristMode == 1 ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRGunHud",			m_bGunHud ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRArms",			m_nArms ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRVignette",		(float)m_nVignette);
+	CVRMgr::SetSetting("VRVignetteWhen",	(float)(m_nVignetteWhen + 1));
 	CVRMgr::SetSetting("VRSwing",			m_nSwing ? 1.0f : 0.0f);
 	if (m_nSwing > 0 && m_nSwing <= kNumSwingSpeeds)
 		CVRMgr::SetSetting("VRSwingSpeed",	kSwingSpeeds[m_nSwing - 1]);

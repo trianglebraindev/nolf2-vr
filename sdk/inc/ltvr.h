@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	8
+#define LTVR_VERSION	9
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -190,6 +190,13 @@ typedef void (*LTVR_TakeSnapshotFn)(void);
 // 1 right, -1 the usual (left). Call every frame it applies, e.g. the eye
 // at the scope while looking through one.
 typedef void (*LTVR_SetMirrorEyeFn)(int eye);
+
+// --- Comfort vignette (version 9) ---
+//
+// How much to darken the edges of the view this frame (0 none .. 1 full)
+// and how far out from straight ahead the edge is fully dark (degrees; it
+// is clear to about half that). Call every frame it applies.
+typedef void (*LTVR_SetVignetteFn)(float fAmount, float fEdgeDegrees);
 
 // Writes a model's pieces, skeleton and sockets to vr_models.log (for
 // working out how the first-person gun models are built).

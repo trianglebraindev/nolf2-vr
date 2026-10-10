@@ -97,6 +97,11 @@
 //   VRScopeZoom     magnification of a level-1 scope (4); stronger scopes
 //                   are 2x and 4x that
 //
+//   Comfort (see UpdateVignette):
+//   VRVignette      darken the edges of the view while you move or turn with
+//                   the sticks: 0 off (default), 1 light, 2 medium, 3 strong
+//   VRVignetteWhen  1 moving, 2 turning, 3 both (default)
+//
 //   Melee (see CClientWeapon::VR_UpdateSwing):
 //   VRSwing         1 = swinging a sword hits what the blade passes
 //                   through (default), 0 = only the trigger slashes
@@ -163,6 +168,8 @@ static VarTrack g_vtVRScopeZoom;
 static VarTrack g_vtVRScopeSize;
 static VarTrack g_vtVRScopeEye;
 static VarTrack g_vtVRSwing;
+static VarTrack g_vtVRVignette;
+static VarTrack g_vtVRVignetteWhen;
 static VarTrack g_vtVRSwingSpeed;
 
 static const float kGrabDistanceMeters = 0.2f;	// how close the left hand must be to grab the gun
@@ -221,6 +228,8 @@ CVRMgr::CVRMgr()
 	m_pfnSetScopeView	= NULL;
 	m_pfnTakeSnapshot	= NULL;
 	m_pfnSetMirrorEye	= NULL;
+	m_pfnSetVignette	= NULL;
+	m_fVignette			= 0.0f;
 	m_bSnapTriggerOff	= false;
 	m_nSnapMsgFrames	= 0;
 	m_bScoped			= false;
@@ -293,6 +302,7 @@ void CVRMgr::Init()
 	m_pfnSetScopeView	= (LTVR_SetScopeViewFn)GetProcAddress(hEngine, "LTVR_SetScopeView");
 	m_pfnTakeSnapshot	= (LTVR_TakeSnapshotFn)GetProcAddress(hEngine, "LTVR_TakeSnapshot");
 	m_pfnSetMirrorEye	= (LTVR_SetMirrorEyeFn)GetProcAddress(hEngine, "LTVR_SetMirrorEye");
+	m_pfnSetVignette	= (LTVR_SetVignetteFn)GetProcAddress(hEngine, "LTVR_SetVignette");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
 	g_vtVRTurnSpeed.Init(g_pLTClient, "VRTurnSpeed", NULL, 150.0f);
@@ -324,6 +334,8 @@ void CVRMgr::Init()
 	g_vtVRScopeZoom.Init(g_pLTClient, "VRScopeZoom", NULL, 4.0f);
 	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 5.0f);
 	g_vtVRSwing.Init(g_pLTClient, "VRSwing", NULL, 1.0f);
+	g_vtVRVignette.Init(g_pLTClient, "VRVignette", NULL, 0.0f);
+	g_vtVRVignetteWhen.Init(g_pLTClient, "VRVignetteWhen", NULL, 3.0f);
 	g_vtVRSwingSpeed.Init(g_pLTClient, "VRSwingSpeed", NULL, 2.5f);
 
 	LoadGunFits();
@@ -377,6 +389,8 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRScopeZoom",		4.0f },
 	{ "VRScopeEye",			5.0f },
 	{ "VRSwing",			1.0f },
+	{ "VRVignette",			0.0f },
+	{ "VRVignetteWhen",		3.0f },
 	{ "VRSwingSpeed",		2.5f },
 	{ "VRArms",				0.0f },
 	{ "VRWristBack",		7.0f },
@@ -572,8 +586,67 @@ void CVRMgr::Update(float fFrameTime)
 			CloseWeaponRing(false);
 	}
 
+	UpdateVignette(fFrameTime, bPlaying);
+
 	if (m_pfnSetCloseScale)
 		m_pfnSetCloseScale(GetGunScale());
+}
+
+// The comfort vignette: how much you're moving (walk stick) and smooth
+// turning (right stick sideways), whichever is more of the kinds chosen,
+// eased in quickly and out more slowly. Moving your real body and snap
+// turns never count.
+void CVRMgr::UpdateVignette(float fFrameTime, bool bPlaying)
+{
+	// Fully dark this far out from straight ahead (degrees): light, medium, strong.
+	static const float kEdgeDegrees[4] = { 0.0f, 60.0f, 45.0f, 32.0f };
+	int nStrength = (int)(g_vtVRVignette.GetFloat(0.0f) + 0.5f);
+	if (nStrength < 0) nStrength = 0;
+	if (nStrength > 3) nStrength = 3;
+
+	float fWant = 0.0f;
+	if (bPlaying && nStrength > 0 && !m_bAdjusting && !m_bRingOpen)
+	{
+		int nWhen = (int)(g_vtVRVignetteWhen.GetFloat(3.0f) + 0.5f);
+		if (nWhen & 1)
+		{
+			float fMove = GetMoveVector(0.0f).Mag();
+			if (fMove > fWant)
+				fWant = fMove;
+		}
+		if (nWhen & 2)
+		{
+			float fTurn = GetSmoothTurnAmount();
+			if (fTurn > fWant)
+				fWant = fTurn;
+		}
+		if (fWant > 1.0f)
+			fWant = 1.0f;
+	}
+
+	// In over about 0.15 s, out over about 0.4 s.
+	float fRate = (fWant > m_fVignette) ? 1.0f / 0.15f : 1.0f / 0.4f;
+	float fStep = fRate * fFrameTime;
+	if (fWant > m_fVignette)
+		m_fVignette = (m_fVignette + fStep > fWant) ? fWant : m_fVignette + fStep;
+	else
+		m_fVignette = (m_fVignette - fStep < fWant) ? fWant : m_fVignette - fStep;
+
+	if (m_pfnSetVignette && m_fVignette > 0.0f && nStrength > 0)
+		m_pfnSetVignette(m_fVignette, kEdgeDegrees[nStrength]);
+}
+
+// How hard you're smooth turning (0..1, as GetTurnDelta reads the stick);
+// 0 with snap turning.
+float CVRMgr::GetSmoothTurnAmount() const
+{
+	if (!IsActive() || m_bAdjusting || g_vtVRSnapTurn.GetFloat() > 0.5f)
+		return 0.0f;
+	float fX = (float)fabs(m_State.hand[LTVR_RIGHT].stick[0]);
+	if (fX < kStickDeadZone)
+		return 0.0f;
+	float fAmount = (fX - kStickDeadZone) / (1.0f - kStickDeadZone);
+	return (fAmount > 1.0f) ? 1.0f : fAmount;
 }
 
 // Left grip held + left trigger: save what the headset shows (the engine
