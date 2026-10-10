@@ -171,6 +171,11 @@ public:
 	// (not VR, not one of those items, or that hand isn't tracked).
 	bool		RenderHudItem(CHUDItem* pItem);
 
+	// A weapon animation asks to hide a piece of the first-person model:
+	// true = don't (in VR, Cate's arms stay, so the free left hand shows
+	// with one-handed items). Every request is logged once to vr_game.log.
+	bool		KeepPieceVisible(const char* pszPiece);
+
 	// --- Settings ---
 	//
 	// The VR settings (console variables, see the top of VRMgr.cpp) are kept
@@ -224,14 +229,15 @@ private:
 	// The free left hand's fingers (see CurlFinger): each joint, which
 	// finger and which joint along it, and the way its bone points in its
 	// own frame (from the model's resting pose).
-	enum { kNumFingers = 5, kMaxFingerJoints = 20 };
+	enum { kNumFingers = 5, kMaxFingerJoints = 32 };
 	struct FingerJoint
 	{
 		HMODELNODE	hNode;
 		int			nFinger;		// 0 thumb, 1 pointer, 2 middle, 3 ring, 4 pinky
-		int			nSeg;			// 1 = base (not bent), 2.. = joints that bend
+		int			nSeg;			// 0 = other bone on the wrist (kept at rest), 1 = finger
+									// base (kept at rest), 2.. = joints that bend
 		LTVector	vDirLocal;
-		LTMatrix	mBind;			// resting pose (model space)
+		LTMatrix	mFromParent;	// resting pose relative to its parent bone
 	};
 	FingerJoint	m_aFingerJoints[kMaxFingerJoints];
 	int			m_nFingerJoints;
@@ -254,7 +260,7 @@ private:
 	LTMatrix	m_mFreeHand;		// resting pose -> on the controller, this evaluation
 	void		FindHandRest(HOBJECT hModel);
 	bool		GetFreeHandTransform(LTMatrix& mT, LTVector& vPalm) const;
-	void		CurlFinger(const FingerJoint& joint, LTMatrix& mNode);
+	void		CurlFinger(const FingerJoint& joint, LTMatrix& mNode, const LTMatrix* pParent);
 	LTMatrix*	m_pArmLMatrix;			// this evaluation's arm bones (shrunk once the wrists are known)
 	LTMatrix*	m_pArmRMatrix;
 	bool		m_bGunPlaced;

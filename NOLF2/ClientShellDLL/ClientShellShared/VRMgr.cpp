@@ -944,7 +944,7 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 	{
 		if (p->m_aFingerJoints[i].hNode == hNode)
 		{
-			p->CurlFinger(p->m_aFingerJoints[i], *data.m_pNodeTransform);
+			p->CurlFinger(p->m_aFingerJoints[i], *data.m_pNodeTransform, data.m_pParentTransform);
 			return;
 		}
 	}
@@ -1052,7 +1052,7 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 // How far each joint bends, degrees, open (grip let go) and closed (fist).
 // Index = joint along the finger (2 = first joint that bends).
 static const float kFingerOpen[5]	= { 0.0f, 0.0f, 8.0f, 12.0f, 8.0f };
-static const float kFingerClosed[5]	= { 0.0f, 0.0f, 80.0f, 95.0f, 65.0f };
+static const float kFingerClosed[5]	= { 0.0f, 0.0f, 75.0f, 90.0f, 55.0f };
 static const float kThumbOpen[5]	= { 0.0f, 0.0f, 5.0f, 5.0f, 0.0f };
 static const float kThumbClosed[5]	= { 0.0f, 0.0f, 30.0f, 45.0f, 0.0f };
 
@@ -1110,6 +1110,7 @@ void CVRMgr::FindHandRest(HOBJECT hModel)
 		return;
 
 	LTVector vMid, vPointer, vPinky;
+	m_hNodeWristL = hWrist;	// (needed by FindFingers; AttachHands sets it again)
 	m_mBindWristL.GetTranslation(m_vBindWrist);
 	mMid.GetTranslation(vMid);
 	mPointer.GetTranslation(vPointer);
@@ -1194,6 +1195,8 @@ bool CVRMgr::GetFreeHandTransform(LTMatrix& mT, LTVector& vPalm) const
 void CVRMgr::FindFingers(HOBJECT hModel)
 {
 	m_nFingerJoints = 0;
+	if (!m_bHandRest)
+		return;		// (needs the wrist's resting pose)
 	static const char* const aszFinger[kNumFingers] = { "thumb", "pointer", "middle", "ring", "pinky" };
 
 	for (int f = 0; f < kNumFingers; ++f)
@@ -1222,6 +1225,9 @@ void CVRMgr::FindFingers(HOBJECT hModel)
 		if (!bAll)
 			continue;	// not this finger in this model
 
+		// (The joint before the first is the wrist.)
+		amBind[0] = m_mBindWristL;
+		avBind[0] = m_vBindWrist;
 		for (int n = 1; n <= nSegs && m_nFingerJoints < kMaxFingerJoints; ++n)
 		{
 			// The way this joint's bone points: toward the next joint (the
@@ -1230,29 +1236,62 @@ void CVRMgr::FindFingers(HOBJECT hModel)
 			LTVector vLocal = amBind[n].MakeInverse() * vToward;
 			float fLen = vLocal.Mag();
 			if (fLen < 1e-5f)
-				continue;
+				vLocal.Init(1.0f, 0.0f, 0.0f);
+			else
+				vLocal /= fLen;
 
 			FingerJoint& j = m_aFingerJoints[m_nFingerJoints++];
 			j.hNode = ahNode[n];
 			j.nFinger = f;
 			j.nSeg = n;
-			j.vDirLocal = vLocal / fLen;
-			j.mBind = amBind[n];
+			j.vDirLocal = vLocal;
+			j.mFromParent = amBind[n - 1].MakeInverse() * amBind[n];
 
 			g_pModelLT->RemoveNodeControlFn(hModel, ahNode[n], HandsNodeControl, this);
 			g_pModelLT->AddNodeControlFn(hModel, ahNode[n], HandsNodeControl, this);
 		}
 	}
+
+	// Any other bones hanging off the wrist (helpers that shape the skin
+	// around it): kept at rest too, so the wrist doesn't pinch.
+	uint32 nChildren = 0;
+	if (LT_OK == g_pModelLT->GetNumChildren(hModel, m_hNodeWristL, nChildren))
+	{
+		for (uint32 c = 0; c < nChildren && m_nFingerJoints < kMaxFingerJoints; ++c)
+		{
+			HMODELNODE hChild = INVALID_MODEL_NODE;
+			LTMatrix mBind;
+			if (LT_OK != g_pModelLT->GetChild(hModel, m_hNodeWristL, c, hChild) ||
+				LT_OK != g_pModelLT->GetBindPoseNodeTransform(hModel, hChild, mBind))
+				continue;
+			bool bKnown = false;
+			for (int i = 0; i < m_nFingerJoints; ++i)
+				bKnown = bKnown || (m_aFingerJoints[i].hNode == hChild);
+			if (bKnown)
+				continue;
+			FingerJoint& j = m_aFingerJoints[m_nFingerJoints++];
+			j.hNode = hChild;
+			j.nFinger = -1;
+			j.nSeg = 0;
+			j.vDirLocal.Init(1.0f, 0.0f, 0.0f);
+			j.mFromParent = m_mBindWristL.MakeInverse() * mBind;
+			g_pModelLT->RemoveNodeControlFn(hModel, hChild, HandsNodeControl, this);
+			g_pModelLT->AddNodeControlFn(hModel, hChild, HandsNodeControl, this);
+		}
+	}
 }
 
-void CVRMgr::CurlFinger(const FingerJoint& joint, LTMatrix& mNode)
+void CVRMgr::CurlFinger(const FingerJoint& joint, LTMatrix& mNode, const LTMatrix* pParent)
 {
-	if (!m_bLeftFree)
+	if (!m_bLeftFree || !pParent)
 		return;
 
-	// Start from the hand's resting shape (not the weapon's animation),
-	// then bend the joints.
-	mNode = m_mFreeHand * joint.mBind;
+	// Hang the bone off its parent as at rest (the parent has been placed
+	// already: the wrist on the controller, or the joint before this one,
+	// already bent), so the chain stays joined up.
+	mNode = (*pParent) * joint.mFromParent;
+	if (joint.nSeg == 0)
+		return;
 
 	// Where this bone points now.
 	LTVector vDir = VR_MatDir(mNode, joint.vDirLocal);
@@ -1264,8 +1303,8 @@ void CVRMgr::CurlFinger(const FingerJoint& joint, LTMatrix& mNode)
 	const int f = joint.nFinger;
 	if (joint.nSeg == 1)
 	{
-		// The base bone: left at rest; remember its direction and the axis
-		// across the knuckles the finger curls about (base x palm).
+		// The base bone: kept at rest; remember its direction and the hinge
+		// across the knuckles the finger bends about (base x palm).
 		LTVector vAxis = VR_Cross(vDir, m_vPalmNormal);
 		float fAxisLen = vAxis.Mag();
 		m_abFingerBase[f] = (fAxisLen > 0.05f);
@@ -1286,28 +1325,23 @@ void CVRMgr::CurlFinger(const FingerJoint& joint, LTMatrix& mNode)
 	if (fGrip > 1.0f) fGrip = 1.0f;
 	const float* pOpen = (f == 0) ? kThumbOpen : kFingerOpen;
 	const float* pClosed = (f == 0) ? kThumbClosed : kFingerClosed;
-	float fAngle = 0.0f;
+	float fWant = 0.0f;
 	for (int n = 2; n <= joint.nSeg; ++n)
-		fAngle += pOpen[n] + (pClosed[n] - pOpen[n]) * fGrip;
+		fWant += pOpen[n] + (pClosed[n] - pOpen[n]) * fGrip;
+	fWant = DEG2RAD(fWant);
+
+	// Its angle now, about the hinge (it already carries the bend of the
+	// joints before it), then turn it about the hinge only, so the finger
+	// bends like a hinge and never twists.
+	const LTVector& k = m_avFingerAxis[f];
+	const LTVector& b = m_avFingerBase[f];
+	LTVector vFlat = vDir - k * vDir.Dot(k);
+	if (vFlat.Mag() < 1e-4f)
+		return;
+	float fNow = (float)atan2(k.Dot(VR_Cross(b, vFlat)), b.Dot(vFlat));
 
 	float r[3][3];
-	VR_AxisAngleMatrix(m_avFingerAxis[f], DEG2RAD(fAngle), r);
-	LTVector vWant = VR_Mul3(r, m_avFingerBase[f]);
-
-	// Turn the bone from where it points to where it should (the smallest
-	// turn, about the joint, keeping its twist).
-	LTVector vAxis = VR_Cross(vDir, vWant);
-	float fSin = vAxis.Mag();
-	float fCos = vDir.Dot(vWant);
-	if (fSin < 1e-5f && fCos > 0.0f)
-		return;		// already there
-	if (fSin < 1e-5f)
-		vAxis = m_avFingerAxis[f];	// exactly backwards: turn about the knuckle axis
-	else
-		vAxis /= fSin;
-	float fTurn = (float)atan2(fSin, fCos);
-	VR_AxisAngleMatrix(vAxis, fTurn, r);
-
+	VR_AxisAngleMatrix(k, fWant - fNow, r);
 	LTMatrix mOld = mNode;
 	for (int i = 0; i < 3; ++i)
 	{
@@ -1913,6 +1947,30 @@ bool CVRMgr::GetGunHudPos(LTVector& vPos) const
 	LTVector vOffset(g_vtVRGunHudX.GetFloat(-6.0f), g_vtVRGunHudY.GetFloat(-2.0f), g_vtVRGunHudZ.GetFloat(6.0f));
 	vPos = vCamPos + VR_Rotate(rCamRot, vHand + VR_Rotate(rGun, vOffset * fUnitsPerCm));
 	return true;
+}
+
+bool CVRMgr::KeepPieceVisible(const char* pszPiece)
+{
+	if (!pszPiece)
+		return false;
+
+	// Log each weapon + piece once (to see what each item hides, and when).
+	static char s_aszSeen[64][96];
+	static int s_nSeen = 0;
+	char szKey[96];
+	LTSNPrintF(szKey, sizeof(szKey), "%s / %s", m_szCurrentGun, pszPiece);
+	bool bSeen = false;
+	for (int i = 0; i < s_nSeen && !bSeen; ++i)
+		bSeen = (strcmp(s_aszSeen[i], szKey) == 0);
+	if (!bSeen && s_nSeen < 64)
+	{
+		strcpy(s_aszSeen[s_nSeen++], szKey);
+		Log("Animation hides piece: %s", szKey);
+	}
+
+	// The two pieces every first-person model shares are Cate's arms (see
+	// vr_models.log).
+	return IsActive() && (stricmp(pszPiece, "polySurface7") == 0 || stricmp(pszPiece, "polySurface10") == 0);
 }
 
 bool CVRMgr::RenderHudItem(CHUDItem* pItem)

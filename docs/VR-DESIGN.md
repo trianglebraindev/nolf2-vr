@@ -170,12 +170,20 @@ code rather than by editing models where possible.
   knuckles = -Forward, palm = +Right), the wrist `VRWristBack` cm (7)
   behind the middle of the handle and `VRHandPalm` cm (3.5) toward the back
   of the hand. The forearm comes along rigidly (then trimmed to a cuff).
-  This also gives a left hand with one-handed items (grenades, shuriken),
-  whose animation hides it. The fingers then follow the left grip
-  (CurlFinger): a slight relaxed curl let go, a fist squeezed; each finger
-  bends toward the palm about an axis across its knuckles, each joint at
-  an angle from the finger's base bone (pointer..pinky: knuckle 8..80,
-  middle joint 12..95, end joint 8..65 degrees; thumb 5..30, 5..45).
+  Every finger bone (and the helper bones on the wrist) hangs off its
+  parent as at rest, so the chain stays joined (an early version placed
+  each joint at its own resting spot, which tore the fingers apart once a
+  knuckle bent). The fingers then follow the left grip (CurlFinger): a
+  slight relaxed curl let go, a fist squeezed; each finger bends about a
+  hinge across its knuckles (base bone x palm), each joint set to an angle
+  from the base bone (pointer..pinky: knuckle 8..75, middle joint 12..90,
+  end joint 8..55 degrees; thumb 5..30, 5..45), turning about the hinge
+  only so fingers never twist.
+- One-handed items hide the left arm with animation keys ("hide model
+  piece"); in VR the arm pieces (polySurface7 / polySurface10, shared by
+  every first-person model) are kept visible (CVRMgr::KeepPieceVisible),
+  and every hide request is logged to vr_game.log as "Animation hides
+  piece: weapon / piece".
   Holding the gun with both hands, the hand and fingers are the game's own.
   (The old learnt hand offset, vr_lefthand.txt, is no longer used.)
 - Two-hand grip: left grip with the left hand within 20 cm of where Cate's

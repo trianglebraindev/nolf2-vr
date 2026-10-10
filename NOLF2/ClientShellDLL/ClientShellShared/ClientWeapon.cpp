@@ -542,7 +542,10 @@ bool CClientWeapon::OnModelKey( HLOCALOBJ hObj, ArgList* pArgList )
 			hPiece = 0;
 
 			// if we find the model's piece...
-			if( LT_OK == pModelLT->GetPiece( m_hObject, pArgList->argv[ i ], hPiece ) )
+			// (In VR, not Cate's arms: the free left hand stays visible
+			// with one-handed items. See CVRMgr::KeepPieceVisible.)
+			if( !g_VRMgr.KeepPieceVisible( pArgList->argv[ i ] ) &&
+				LT_OK == pModelLT->GetPiece( m_hObject, pArgList->argv[ i ], hPiece ) )
 			{
 				// hide it
 				LTRESULT ltResult;
