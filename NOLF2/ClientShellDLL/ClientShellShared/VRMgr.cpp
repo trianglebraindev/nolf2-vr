@@ -93,7 +93,9 @@
 //   VRScopeEye      how close (cm) an eye must be to the scope's line to
 //                   look through it (default 5)
 //   VRScopeDist     how far in front of that eye the lens sits, cm (8)
-//   VRScopeSize     how wide the lens looks, cm (4)
+//   VRScopeSize     how wide the lens looks, cm (5.5)
+//   VRScopeZoom     magnification of a level-1 scope (4); stronger scopes
+//                   are 2x and 4x that
 //
 // HANDS (see VRMgr.h): the left hand follows the left controller. Squeeze
 // the left grip with your left hand near where Cate's left hand sits on
@@ -151,6 +153,7 @@ static VarTrack g_vtVRGunHudSize;
 static VarTrack g_vtVRScope;
 static VarTrack g_vtVRScopeDist;
 static VarTrack g_vtVRScopeHeight;
+static VarTrack g_vtVRScopeZoom;
 static VarTrack g_vtVRScopeSize;
 static VarTrack g_vtVRScopeEye;
 
@@ -302,7 +305,8 @@ void CVRMgr::Init()
 	g_vtVRScope.Init(g_pLTClient, "VRScope", NULL, 1.0f);
 	g_vtVRScopeDist.Init(g_pLTClient, "VRScopeDist", NULL, 8.0f);
 	g_vtVRScopeHeight.Init(g_pLTClient, "VRScopeHeight", NULL, 8.0f);
-	g_vtVRScopeSize.Init(g_pLTClient, "VRScopeSize", NULL, 4.0f);
+	g_vtVRScopeSize.Init(g_pLTClient, "VRScopeSize", NULL, 5.5f);
+	g_vtVRScopeZoom.Init(g_pLTClient, "VRScopeZoom", NULL, 4.0f);
 	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 5.0f);
 
 	LoadGunFits();
@@ -352,7 +356,8 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRScope",			1.0f },
 	{ "VRScopeDist",		8.0f },
 	{ "VRScopeHeight",		8.0f },
-	{ "VRScopeSize",		4.0f },
+	{ "VRScopeSize",		5.5f },
+	{ "VRScopeZoom",		4.0f },
 	{ "VRScopeEye",			5.0f },
 	{ "VRArms",				0.0f },
 	{ "VRWristBack",		7.0f },
@@ -907,11 +912,12 @@ void CVRMgr::SetGunModelTransform(const LTVector& vPos, const LTRotation& rRot)
 //
 // ----------------------------------------------------------------------- //
 
-// How wide the scope's view is at each of the game's zoom levels, degrees
-// (the game's own: FOVX_ZOOMED.. in PlayerMgr.cpp). The lens itself takes
-// up about 28 degrees of your view at its default size and distance, so
-// level 1 magnifies about 1.4x, level 2 about 4x, level 3 about 14x.
-static const float kScopeFov[4] = { 0.0f, 20.0f, 7.0f, 2.0f };
+// How much each of the game's zoom levels magnifies, times VRScopeZoom
+// (4 by default: 4x, 8x, 16x). The scope's view is then the angle the lens
+// takes up in your view divided by that, so things through it look that
+// many times bigger than they do around it. (The game's own zoom angles,
+// 20 / 7 / 2 degrees, only came to about 1.4x on the lens.)
+static const float kScopeMag[4] = { 0.0f, 1.0f, 2.0f, 4.0f };
 
 void CVRMgr::UpdateScope()
 {
@@ -1036,13 +1042,18 @@ void CVRMgr::UpdateScope()
 	}
 	float aPos[3] = { vLens.x, vLens.y, vLens.z };
 	float aRot[4] = { rView.m_Quat[0], rView.m_Quat[1], rView.m_Quat[2], rView.m_Quat[3] };
-	m_pfnSetScopeView(1, aPos, aRot, kScopeFov[nLevel]);
+	float fWidthCm = g_vtVRScopeSize.GetFloat(5.5f);
+	if (fWidthCm < 1.0f)	fWidthCm = 1.0f;
+	if (fWidthCm > 20.0f)	fWidthCm = 20.0f;
+	float fDistCm = g_vtVRScopeDist.GetFloat(8.0f);
+	if (fDistCm < 2.0f)		fDistCm = 2.0f;
+	float fLensDeg = 2.0f * RAD2DEG((float)atan(fWidthCm * 0.5f / fDistCm));
+	float fMag = g_vtVRScopeZoom.GetFloat(4.0f) * kScopeMag[nLevel];
+	if (fMag < 1.0f)		fMag = 1.0f;
+	m_pfnSetScopeView(1, aPos, aRot, fLensDeg / fMag);
 	float aLensRot[4] = { rAim.m_Quat[0], rAim.m_Quat[1], rAim.m_Quat[2], rAim.m_Quat[3] };
 
 	// The lens, at the eyepiece, facing back at you.
-	float fWidthCm = g_vtVRScopeSize.GetFloat(4.0f);
-	if (fWidthCm < 1.0f)	fWidthCm = 1.0f;
-	if (fWidthCm > 20.0f)	fWidthCm = 20.0f;
 	m_pfnSetLayerPose(LTVR_LAYER_SCOPE, 1, aPos, aLensRot, fWidthCm / 100.0f, 1.0f);
 }
 

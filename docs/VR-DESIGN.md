@@ -337,16 +337,22 @@ hang.
   that, so it never came on.) vr_game.log says once per weapon whether it
   has a scope ("Scope: ...") and, while the gun is raised but not through
   the scope, why ("Scope check: ...").
+- Magnification: the scope's view is the angle the lens takes up in your
+  view (from `VRScopeSize` and `VRScopeDist`) divided by `VRScopeZoom` (4)
+  times 1 / 2 / 4 for the game's zoom levels 1 / 2 / 3, so a level-1 scope
+  (the crossbow's) is 4x. (First try used the game's own zoom angles,
+  20 / 7 / 2 degrees: only about 1.4x on the lens, "the same view I
+  already have".)
 - Engine (LTVR_SetScopeView): one more view of the world, from the
-  eyepiece along the gun, the game's zoom FOV (20 / 7 / 2 degrees), drawn
+  eyepiece along the gun, at that angle, drawn
   right after the eyes into LTVR_LAYER_SCOPE (512 x 512), leaving out
   really-close objects (gun, hands, overlays: g_bVRSkipReallyClose in
   tagnodes.cpp). Then the layer's alpha is set solid and a 256 x 256 mask
   (made once) multiplies it: alpha = round lens with a soft edge, colour =
   fine cross hairs with thicker posts toward the rim and a darker rim. The
   layer is placed at the eyepiece, turned with the gun, `VRScopeSize` cm
-  (4) wide: about 28 degrees of your view, so level 1 is about 1.4x and
-  level 2 about 4x.
+  (5.5) wide. (Quest screenshots don't show it: the lens is a separate
+  layer the headset adds on top.)
 - While scoped the world crosshair is hidden (the reticle replaces it) and
   the flat game's scope sway (which would turn your whole body) is off.
 

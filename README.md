@@ -120,7 +120,8 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRScope` | 1 | 0 = no looking through scopes |
 | `VRScopeHeight` | 8 | how far (cm) above the aim line a scope's own line runs |
 | `VRScopeEye` | 5 | how close (cm) an eye must be to the scope's line to look through it |
-| `VRScopeDist` / `VRScopeSize` | 8 / 4 | how far in front of that eye the lens sits, and how wide it looks (cm) |
+| `VRScopeDist` / `VRScopeSize` | 8 / 5.5 | how far in front of that eye the lens sits, and how wide it looks (cm) |
+| `VRScopeZoom` | 4 | magnification of a basic scope; stronger scopes are 2x and 4x that |
 
 Files the game writes in `run\`:
 
