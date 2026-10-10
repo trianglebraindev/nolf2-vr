@@ -302,7 +302,10 @@ hang.
   speed, snap step, walk toward (head / left hand), world size (percent;
   100% = 60 game units per metre), HUD distance, HUD size, HUD stays put,
   health on wrist (off / like a watch / always), ammo on gun, arms (hands
-  only / full arms), reset to defaults. Changes apply at once.
+  only / full arms), reset to defaults, and "Testing: all weapons and
+  gear" (runs the game's own "guns", "gear" and "ammo" cheats; single
+  player, in a mission; the cheats' usual T-key message box is awkward in
+  the headset). Changes apply at once.
 - Kept in `run\vr_settings.txt` (every VR setting, including the ones not
   on the page, so they can be edited by hand); read at start-up by
   CVRMgr::LoadSettings, written by CVRMgr::SaveSettings when you leave the

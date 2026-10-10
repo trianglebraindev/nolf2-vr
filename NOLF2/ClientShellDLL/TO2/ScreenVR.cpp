@@ -20,6 +20,7 @@
 #include "GameClientShell.h"	// (brings the interface, layout and string ids)
 #include "InterfaceMgr.h"
 #include "LayoutMgr.h"
+#include "CheatMgr.h"
 
 namespace
 {
@@ -50,6 +51,7 @@ namespace
 		kHelpGunHud,
 		kHelpArms,
 		kHelpReset,
+		kHelpGiveAll,
 		kHelpEnd
 	};
 
@@ -67,6 +69,7 @@ namespace
 		"Show your ammo on the gun instead of on the HUD.",
 		"Show just Cate's hands, or her full arms.",
 		"Put every setting on this page back to how it started.",
+		"For testing: every weapon, gadget and piece of gear, with full ammo (single player, in a mission).",
 	};
 
 	// The index of the closest value in a list.
@@ -195,6 +198,7 @@ LTBOOL CScreenVR::Build()
 	pCycle->AddString("Full arms");
 
 	AddTextItem((char*)"Reset to defaults", CMD_VR_RESET, kHelpReset);
+	AddTextItem((char*)"Testing: all weapons and gear", CMD_VR_GIVEALL, kHelpGiveAll);
 
 	// Taller frame if the list runs past it.
 	int nNeeded = m_nextPos.y - frameRect.top + 8;
@@ -221,6 +225,19 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 				CVRMgr::SetSetting(aNames[i], CVRMgr::GetSettingDefault(aNames[i]));
 			ReadSettings();
 			UpdateData(LTFALSE);
+			break;
+		}
+	case CMD_VR_GIVEALL:
+		{
+			// The game's own cheats ("guns", "gear", "ammo"), so testing
+			// doesn't need the keyboard. Single player, in a mission only.
+			if (g_pCheatMgr && g_pLTClient->IsConnected() && !IsMultiplayerGame())
+			{
+				g_pCheatMgr->Check("guns");
+				g_pCheatMgr->Check("gear");
+				g_pCheatMgr->Check("ammo");
+				g_pClientSoundMgr->PlayInterfaceSound((char*)g_pInterfaceResMgr->GetSoundSelect());
+			}
 			break;
 		}
 	default:

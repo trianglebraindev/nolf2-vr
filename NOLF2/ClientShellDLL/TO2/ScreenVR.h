@@ -20,7 +20,8 @@
 enum
 {
 	CMD_VR_OPTIONS = CMD_CUSTOM + 300,
-	CMD_VR_RESET
+	CMD_VR_RESET,
+	CMD_VR_GIVEALL
 };
 
 class CScreenVR : public CBaseScreen
