@@ -179,11 +179,21 @@ code rather than by editing models where possible.
   from the base bone (pointer..pinky: knuckle 8..75, middle joint 12..90,
   end joint 8..55 degrees; thumb 5..30, 5..45), turning about the hinge
   only so fingers never twist.
+- The resting hand used is the Katana's for every weapon (Tre's pick: the
+  nicest open hand). CVRMgr::LoadReferenceHand loads the Katana's
+  first-person model once as an invisible object, reads its skeleton's
+  resting pose by bone name, and removes it; GetRestPose then answers with
+  those for every model (falling back to the model's own). The skin of
+  every weapon's arm is the same mesh, so the same bone poses give the same
+  hand.
+- The thumb folds across the palm toward the little finger (and a little
+  into the palm), its base swinging over too (0..25 degrees), instead of
+  bending straight into the palm.
 - One-handed items hide the left arm with animation keys ("hide model
-  piece"); in VR the arm pieces (polySurface7 / polySurface10, shared by
-  every first-person model) are kept visible (CVRMgr::KeepPieceVisible),
-  and every hide request is logged to vr_game.log as "Animation hides
-  piece: weapon / piece".
+  piece"): measured, StunGrenade and Compact Codebreaker hide
+  polySurface10 (left arm), Crossbow hides polySurface7. In VR both arm
+  pieces are kept visible (CVRMgr::KeepPieceVisible); every hide request
+  is logged to vr_game.log as "Animation hides piece: weapon / piece".
   Holding the gun with both hands, the hand and fingers are the game's own.
   (The old learnt hand offset, vr_lefthand.txt, is no longer used.)
 - Two-hand grip: left grip with the left hand within 20 cm of where Cate's
@@ -245,6 +255,9 @@ code rather than by editing models where possible.
 - Engine side: LTVR_SetLayerPose places a spot layer turned as the game
   says (instead of facing you) and partly see-through; the fade is done by
   scaling the layer's colour and coverage just before it's handed over.
+- The watch shows once its face is within about 50 degrees of facing you
+  and hides past about 60 (no fade: a partly faded layer came out as a
+  black box).
 - Settings: `VRWristHud` 1, `VRWristHudWatch` 1 (0 = always shown, facing
   you), `VRWristHudX/Y/Z` -3 / 0 / -9 cm from the left grip (right, up,
   forward along the controller; -X is the back of the hand),

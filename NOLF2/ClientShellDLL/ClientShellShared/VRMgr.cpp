@@ -220,6 +220,10 @@ CVRMgr::CVRMgr()
 	m_vTwoHandDir.Init(0.0f, 0.0f, 1.0f);
 	m_bHandRest			= false;
 	m_mFreeHand.Identity();
+	m_vThumbCurl.Init(0.0f, 0.0f, 1.0f);
+	m_nRefBones			= 0;
+	m_bRefHandTried		= false;
+	m_bWatchShown		= false;
 	memset(&m_State, 0, sizeof(m_State));
 	m_aPrevButtons[0] = m_aPrevButtons[1] = 0;
 	m_bSnapLatched		= false;
@@ -835,6 +839,7 @@ void CVRMgr::AttachHands(HOBJECT hGunModel)
 	if (!hGunModel)
 		return;
 
+	LoadReferenceHand();
 	FindHandRest(hGunModel);
 	FindFingers(hGunModel);
 
@@ -869,6 +874,8 @@ void CVRMgr::SetGunModelTransform(const LTVector& vPos, const LTRotation& rRot)
 // Whether a bone's matrix has collapsed (the game shrinks bones to nothing
 // to hide them, e.g. the arms while holstered). Undoing such a matrix
 // blows up, so collapsed bones are left alone.
+static LTVector VR_MatDir(const LTMatrix& m, const LTVector& v);	// (below)
+
 static bool VR_IsCollapsed(const LTMatrix& m)
 {
 	float fDet =
@@ -985,6 +992,13 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 		{
 			p->m_mFreeHand = mT;
 			p->m_vPalmNormal = vPalm;
+			// The thumb folds across the palm toward the little finger, a
+			// little into the palm (across the knuckles = mT's S axis).
+			LTVector vAcross = VR_MatDir(mT, p->m_vBindS);
+			LTVector vThumb = vAcross + vPalm * 0.6f;
+			float fThumbLen = vThumb.Mag();
+			if (fThumbLen > 1e-4f)
+				p->m_vThumbCurl = vThumb / fThumbLen;
 			p->m_bLeftFree = true;
 			*data.m_pNodeTransform = mT * p->m_mBindWristL;
 			if (*ppArm)
@@ -1053,8 +1067,9 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 // Index = joint along the finger (2 = first joint that bends).
 static const float kFingerOpen[5]	= { 0.0f, 0.0f, 8.0f, 12.0f, 8.0f };
 static const float kFingerClosed[5]	= { 0.0f, 0.0f, 75.0f, 90.0f, 55.0f };
+// (The thumb: index 1 is its base swinging over the palm.)
 static const float kThumbOpen[5]	= { 0.0f, 0.0f, 5.0f, 5.0f, 0.0f };
-static const float kThumbClosed[5]	= { 0.0f, 0.0f, 30.0f, 45.0f, 0.0f };
+static const float kThumbClosed[5]	= { 0.0f, 25.0f, 25.0f, 35.0f, 0.0f };
 
 // Rotation by fAngle radians about a unit axis (written out, so it doesn't
 // depend on which way round LithTech's own helpers turn): R * v turns v
@@ -1102,11 +1117,11 @@ void CVRMgr::FindHandRest(HOBJECT hModel)
 		return;
 
 	LTMatrix mMid, mPointer, mPinky;
-	if (LT_OK != g_pModelLT->GetBindPoseNodeTransform(hModel, hArm, m_mBindArmL) ||
-		LT_OK != g_pModelLT->GetBindPoseNodeTransform(hModel, hWrist, m_mBindWristL) ||
-		LT_OK != g_pModelLT->GetBindPoseNodeTransform(hModel, hMid, mMid) ||
-		LT_OK != g_pModelLT->GetBindPoseNodeTransform(hModel, hPointer, mPointer) ||
-		LT_OK != g_pModelLT->GetBindPoseNodeTransform(hModel, hPinky, mPinky))
+	if (!GetRestPose(hModel, hArm, m_mBindArmL) ||
+		!GetRestPose(hModel, hWrist, m_mBindWristL) ||
+		!GetRestPose(hModel, hMid, mMid) ||
+		!GetRestPose(hModel, hPointer, mPointer) ||
+		!GetRestPose(hModel, hPinky, mPinky))
 		return;
 
 	LTVector vMid, vPointer, vPinky;
@@ -1192,6 +1207,65 @@ bool CVRMgr::GetFreeHandTransform(LTMatrix& mT, LTVector& vPalm) const
 	return true;
 }
 
+void CVRMgr::LoadReferenceHand()
+{
+	if (m_bRefHandTried)
+		return;
+	m_bRefHandTried = true;
+
+	WEAPON const* pKatana = g_pWeaponMgr ? g_pWeaponMgr->GetWeapon("Katana") : NULL;
+	if (!pKatana || !pKatana->szPVModel || !pKatana->szPVModel[0])
+	{
+		Log("Reference hand: no Katana in the weapon list; each weapon uses its own hand");
+		return;
+	}
+
+	// Load its first-person model as an invisible object just long enough
+	// to read its skeleton's resting pose.
+	ObjectCreateStruct ocs;
+	ocs.Clear();
+	ocs.m_ObjectType = OT_MODEL;
+	ocs.m_Flags = 0;
+	SAFE_STRCPY(ocs.m_Filename, pKatana->szPVModel);
+	HOBJECT hObj = g_pLTClient->CreateObject(&ocs);
+	if (!hObj)
+	{
+		Log("Reference hand: could not load %s", pKatana->szPVModel);
+		return;
+	}
+
+	uint32 nNodes = 0;
+	g_pModelLT->GetNumNodes(hObj, nNodes);
+	for (uint32 i = 0; i < nNodes && m_nRefBones < kMaxRefBones; ++i)
+	{
+		RefBone& bone = m_aRefBones[m_nRefBones];
+		if (LT_OK == g_pModelLT->GetNodeName(hObj, (HMODELNODE)i, bone.szName, sizeof(bone.szName)) &&
+			LT_OK == g_pModelLT->GetBindPoseNodeTransform(hObj, (HMODELNODE)i, bone.mBind))
+			++m_nRefBones;
+	}
+	g_pLTClient->RemoveObject(hObj);
+	Log("Reference hand: %d bones from %s", m_nRefBones, pKatana->szPVModel);
+}
+
+// A bone's resting pose: the reference hand's, if it has a bone of that
+// name, else this model's own.
+bool CVRMgr::GetRestPose(HOBJECT hModel, HMODELNODE hNode, LTMatrix& mBind) const
+{
+	char szName[32];
+	if (m_nRefBones && LT_OK == g_pModelLT->GetNodeName(hModel, hNode, szName, sizeof(szName)))
+	{
+		for (int i = 0; i < m_nRefBones; ++i)
+		{
+			if (stricmp(m_aRefBones[i].szName, szName) == 0)
+			{
+				mBind = m_aRefBones[i].mBind;
+				return true;
+			}
+		}
+	}
+	return LT_OK == g_pModelLT->GetBindPoseNodeTransform(hModel, hNode, mBind);
+}
+
 void CVRMgr::FindFingers(HOBJECT hModel)
 {
 	m_nFingerJoints = 0;
@@ -1217,7 +1291,7 @@ void CVRMgr::FindFingers(HOBJECT hModel)
 				if (LT_OK != g_pModelLT->GetNode(hModel, szName, ahNode[n]))
 					bAll = false;
 			}
-			if (bAll && LT_OK != g_pModelLT->GetBindPoseNodeTransform(hModel, ahNode[n], amBind[n]))
+			if (bAll && !GetRestPose(hModel, ahNode[n], amBind[n]))
 				bAll = false;
 			if (bAll)
 				amBind[n].GetTranslation(avBind[n]);
@@ -1262,7 +1336,7 @@ void CVRMgr::FindFingers(HOBJECT hModel)
 			HMODELNODE hChild = INVALID_MODEL_NODE;
 			LTMatrix mBind;
 			if (LT_OK != g_pModelLT->GetChild(hModel, m_hNodeWristL, c, hChild) ||
-				LT_OK != g_pModelLT->GetBindPoseNodeTransform(hModel, hChild, mBind))
+				!GetRestPose(hModel, hChild, mBind))
 				continue;
 			bool bKnown = false;
 			for (int i = 0; i < m_nFingerJoints; ++i)
@@ -1303,9 +1377,10 @@ void CVRMgr::CurlFinger(const FingerJoint& joint, LTMatrix& mNode, const LTMatri
 	const int f = joint.nFinger;
 	if (joint.nSeg == 1)
 	{
-		// The base bone: kept at rest; remember its direction and the hinge
-		// across the knuckles the finger bends about (base x palm).
-		LTVector vAxis = VR_Cross(vDir, m_vPalmNormal);
+		// The base bone: remember its resting direction and the hinge the
+		// finger bends about (base x palm; the thumb folds across the palm
+		// instead).
+		LTVector vAxis = VR_Cross(vDir, (f == 0) ? m_vThumbCurl : m_vPalmNormal);
 		float fAxisLen = vAxis.Mag();
 		m_abFingerBase[f] = (fAxisLen > 0.05f);
 		if (m_abFingerBase[f])
@@ -1313,7 +1388,9 @@ void CVRMgr::CurlFinger(const FingerJoint& joint, LTMatrix& mNode, const LTMatri
 			m_avFingerBase[f] = vDir;
 			m_avFingerAxis[f] = vAxis / fAxisLen;
 		}
-		return;
+		if (f != 0 || !m_abFingerBase[f])
+			return;
+		// (The thumb's base turns too, swinging it over the palm.)
 	}
 	if (!m_abFingerBase[f] || joint.nSeg > 4)
 		return;
@@ -1326,7 +1403,7 @@ void CVRMgr::CurlFinger(const FingerJoint& joint, LTMatrix& mNode, const LTMatri
 	const float* pOpen = (f == 0) ? kThumbOpen : kFingerOpen;
 	const float* pClosed = (f == 0) ? kThumbClosed : kFingerClosed;
 	float fWant = 0.0f;
-	for (int n = 2; n <= joint.nSeg; ++n)
+	for (int n = 1; n <= joint.nSeg; ++n)
 		fWant += pOpen[n] + (pClosed[n] - pOpen[n]) * fGrip;
 	fWant = DEG2RAD(fWant);
 
@@ -1924,16 +2001,19 @@ bool CVRMgr::GetWristHudPose(LTVector& vPos, LTRotation& rRot, float& fOpacity) 
 	LTRotation rFace(LTVector(1.0f, 0.0f, 0.0f), LTVector(0.0f, -1.0f, 0.0f));
 	rRot = rCamRot * rLeft * rFace;
 
-	// Fades in as you turn it toward you: fully shown within about 35
-	// degrees of facing you, gone past about 60.
+	// Shows once you turn it toward you (within about 50 degrees of facing
+	// you) and stays until you turn it well away (past about 60), so it
+	// doesn't flicker at the edge.
 	LTVector vToHead = vCamPos - vPos;
 	float fDist = vToHead.Mag();
 	if (fDist < 0.001f)
 		return false;
 	float fFacing = -rRot.Forward().Dot(vToHead / fDist);
-	fOpacity = (fFacing - 0.5f) / (0.82f - 0.5f);
-	if (fOpacity < 0.0f) fOpacity = 0.0f;
-	if (fOpacity > 1.0f) fOpacity = 1.0f;
+	if (fFacing > 0.65f)
+		m_bWatchShown = true;
+	else if (fFacing < 0.5f)
+		m_bWatchShown = false;
+	fOpacity = m_bWatchShown ? 1.0f : 0.0f;
 	return true;
 }
 

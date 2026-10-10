@@ -260,6 +260,24 @@ private:
 	LTMatrix	m_mFreeHand;		// resting pose -> on the controller, this evaluation
 	void		FindHandRest(HOBJECT hModel);
 	bool		GetFreeHandTransform(LTMatrix& mT, LTVector& vPalm) const;
+	LTVector	m_vThumbCurl;		// the way the thumb folds (across the palm)
+
+	// The reference hand: the Katana model's resting left hand (the
+	// nicest one), loaded once and used for every weapon's free hand. Each
+	// model's own resting pose is the fallback. See GetRestPose.
+	enum { kMaxRefBones = 64 };
+	struct RefBone
+	{
+		char		szName[32];
+		LTMatrix	mBind;
+	};
+	RefBone		m_aRefBones[kMaxRefBones];
+	int			m_nRefBones;
+	bool		m_bRefHandTried;
+	void		LoadReferenceHand();
+	bool		GetRestPose(HOBJECT hModel, HMODELNODE hNode, LTMatrix& mBind) const;
+
+	mutable bool m_bWatchShown;		// the wrist HUD is turned toward you (with some give)
 	void		CurlFinger(const FingerJoint& joint, LTMatrix& mNode, const LTMatrix* pParent);
 	LTMatrix*	m_pArmLMatrix;			// this evaluation's arm bones (shrunk once the wrists are known)
 	LTMatrix*	m_pArmRMatrix;
