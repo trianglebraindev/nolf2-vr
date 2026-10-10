@@ -1609,7 +1609,9 @@ void CPlayerMgr::UpdateCamera()
 	{
 		// Update the sway...
 
-		if (IsZoomed())
+		// (Not in VR: the sway would turn your whole body; the scope
+		// follows your hand.)
+		if (IsZoomed() && !g_VRMgr.IsActive())
 		{
 			UpdateCameraSway();
 		}
@@ -2622,6 +2624,28 @@ void CPlayerMgr::EndZoom()
 //	PURPOSE:	Handle a potential zoom change
 //
 // ----------------------------------------------------------------------- //
+
+void CPlayerMgr::VR_SetZoom(int nLevel)
+{
+	if (nLevel < 0)
+		nLevel = 0;
+	if (nLevel == m_nZoomView || m_bZooming)
+		return;
+
+	m_bZoomingIn = (nLevel > m_nZoomView);
+	m_nZoomView = nLevel;
+
+	// Using the camera gadget (it photographs from further away zoomed in).
+	m_bCamera = LTFALSE;
+	if (nLevel > 0)
+	{
+		uint8 nAmmoId = g_pPlayerStats->GetCurrentAmmo();
+		AMMO const *pAmmo = (nAmmoId != WMGR_INVALID_ID) ? g_pWeaponMgr->GetAmmo(nAmmoId) : LTNULL;
+		m_bCamera = (pAmmo && pAmmo->eInstDamageType == DT_GADGET_CAMERA);
+	}
+
+	HandleZoomChange();		// (the zoom in / out sound)
+}
 
 void CPlayerMgr::HandleZoomChange(LTBOOL bReset)
 {

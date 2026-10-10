@@ -176,6 +176,19 @@ public:
 	// with one-handed items). Every request is logged once to vr_game.log.
 	bool		KeepPieceVisible(const char* pszPiece);
 
+	// --- Scopes ---
+	//
+	// With a scoped weapon (or the camera gadget), bring the scope up to
+	// your eye: the game zooms in, and the scope's lens shows the magnified
+	// view (drawn by the engine into LTVR_LAYER_SCOPE). Lower it to stop.
+	// Called each frame once the gun is placed.
+	void		UpdateScope();
+	bool		IsScoped() const	{ return m_bScoped; }
+
+private:
+	bool		m_bScoped;
+public:
+
 	// --- Settings ---
 	//
 	// The VR settings (console variables, see the top of VRMgr.cpp) are kept
@@ -334,6 +347,7 @@ private:
 	LTVR_SetLayerFn			m_pfnSetLayer;
 	LTVR_BeginLayerFromScreenFn	m_pfnBeginLayerFromScreen;
 	LTVR_SetLayerPoseFn		m_pfnSetLayerPose;
+	LTVR_SetScopeViewFn		m_pfnSetScopeView;
 
 	LTVR_State		m_State;
 	unsigned		m_aPrevButtons[2];

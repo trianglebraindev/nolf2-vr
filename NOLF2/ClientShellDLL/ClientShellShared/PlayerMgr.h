@@ -102,6 +102,12 @@ public:
 
     LTBOOL		IsPlayerMovementAllowed()       { return m_bAllowPlayerMovement;}
     LTBOOL      IsZoomed()          const       { return (m_nZoomView > 0 || m_bZooming); }
+	int			GetZoomView()		const		{ return m_nZoomView; }
+	// VR: look through the scope (nLevel > 0) or stop (0). Only the zoom
+	// level and its sounds: the gun stays in your hand, the camera's view
+	// isn't narrowed and no 2D scope is drawn (the scope's lens shows the
+	// magnified view instead, see CVRMgr::UpdateScope).
+	void	VR_SetZoom(int nLevel);
 	LTBOOL		IsZooming()			const		{ return m_bZooming; }
     LTBOOL      IsUnderwater()      const       { return IsLiquid(m_eCurContainerCode); }
     bool		UsingSpyVision()    const       { return m_bSpyVision; }

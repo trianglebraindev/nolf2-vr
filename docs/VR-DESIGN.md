@@ -289,7 +289,9 @@ Next, in a suggested order:
 5. ~~Recentre on a controller button~~ (not needed: holding the Meta
    button recentres through the headset); open/close left hand (first
    pass done: follows the left grip).
-6. Scopes / zoom / binoculars in VR; tool animations (lock pick etc.).
+6. Scopes / zoom in VR (first pass done, see "Scopes"); tool animations
+   (lock pick etc.) still to do. (No binoculars in NOLF2: OVM_BINOC is
+   defined but never used.)
 Later: melee swinging (Tre wants it), comfort vignette, height
 calibration and real crouch, vehicles, cutscene options, the shutdown
 hang.
@@ -309,6 +311,32 @@ hang.
   Game options page's layout entries (frame, fonts, positions, background)
   without needing new entries in the game's layout file. Help lines are
   the page's own text (GetHelpString override).
+
+## Scopes (first pass)
+
+- Tre's picks: raise the scope to your eye to look through it (no button),
+  and the magnified view shows only in the lens (the rest of your view
+  stays normal).
+- Any weapon whose scope mod has a zoom level (and the camera gadget):
+  CVRMgr::UpdateScope, run each frame once the gun is placed, puts the
+  eyepiece at `VRScopeX/Y/Z` (0 / 7 / 2 cm from the right hand along the
+  gun). Within `VRScopeEye` cm (12) of your eye and pointing within about
+  30 degrees of where you look, it zooms (CPlayerMgr::VR_SetZoom: the zoom
+  level and its sounds only; the gun stays in your hand, the camera's FOV
+  isn't touched, no 2D scope or camera frame overlays); it lets go a
+  little further out (hysteresis).
+- Engine (LTVR_SetScopeView): one more view of the world, from the
+  eyepiece along the gun, the game's zoom FOV (20 / 7 / 2 degrees), drawn
+  right after the eyes into LTVR_LAYER_SCOPE (512 x 512), leaving out
+  really-close objects (gun, hands, overlays: g_bVRSkipReallyClose in
+  tagnodes.cpp). Then the layer's alpha is set solid and a 256 x 256 mask
+  (made once) multiplies it: alpha = round lens with a soft edge, colour =
+  fine cross hairs with thicker posts toward the rim and a darker rim. The
+  layer is placed at the eyepiece, turned with the gun, `VRScopeSize` cm
+  (4) wide: about 28 degrees of your view, so level 1 is about 1.4x and
+  level 2 about 4x.
+- While scoped the world crosshair is hidden (the reticle replaces it) and
+  the flat game's scope sway (which would turn your whole body) is off.
 
 ## Weapon ring (first pass)
 

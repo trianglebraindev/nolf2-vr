@@ -318,7 +318,9 @@ void CHUDCrosshair::Update()
 	{
 		bUsingCamera = true;
 	}
-	if (!bUsingCamera || !g_pPlayerMgr->IsZoomed())
+	// (In VR the camera's frame overlays would sit in front of your face;
+	// you look through its lens instead.)
+	if (!bUsingCamera || !g_pPlayerMgr->IsZoomed() || g_VRMgr.IsActive())
 	{
 		g_pInterfaceMgr->RemoveOverlay(OVM_CAMERA);
 		g_pInterfaceMgr->RemoveOverlay(OVM_CAMERA_TARGET);
@@ -567,6 +569,10 @@ void CHUDCrosshair::SetStyle(uint8 style)
 // the engine shows at that spot.
 void CHUDCrosshair::RenderVR()
 {
+	// Looking through a scope: its reticle is the crosshair.
+	if (g_VRMgr.IsScoped())
+		return;
+
 	LTVector vFrom;
 	LTRotation rAim;
 	if (!g_VRMgr.GetAimRay(vFrom, rAim))

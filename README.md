@@ -43,8 +43,11 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
 - **VR settings in the game**: Options > VR (turning, walking direction,
   world size, HUD distance and size, wrist and gun read-outs, hands or arms).
 
-Still to come (see `docs/VR-DESIGN.md`): scopes and zoom in
-VR, melee swinging, comfort options.
+- **Scopes**: raise a scoped weapon (or the camera gadget) to your eye and
+  the lens shows the magnified view.
+
+Still to come (see `docs/VR-DESIGN.md`): tool animations, melee swinging,
+comfort options.
 
 ## Requirements
 
@@ -114,6 +117,9 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRWristHudWatch` | 1 | 1 = health shows as you turn your wrist toward you; 0 = always shown, facing you |
 | `VRWristHudX/Y/Z`, `VRWristHudSize` | -3 / 0 / -9, 9 | where health sits on the left wrist (cm), its width (cm) |
 | `VRGunHudX/Y/Z`, `VRGunHudSize` | -6 / -2 / 6, 10 | where ammo floats by the gun (cm), its width (cm) |
+| `VRScope` | 1 | 0 = no looking through scopes |
+| `VRScopeX/Y/Z`, `VRScopeSize` | 0 / 7 / 2, 4 | where a scope's eyepiece is, cm from your right hand along the gun; how wide the lens looks (cm) |
+| `VRScopeEye` | 12 | how close (cm) the eyepiece must come to your eye to look through it |
 
 Files the game writes in `run\`:
 

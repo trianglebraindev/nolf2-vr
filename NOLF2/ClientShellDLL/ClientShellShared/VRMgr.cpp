@@ -85,6 +85,14 @@
 //                   forward along the gun)
 //   VRGunHudSize    its width, cm
 //
+//   Scopes (see UpdateScope):
+//   VRScope         1 = look through a scope by raising it to your eye
+//                   (default), 0 = off
+//   VRScopeX/Y/Z    where its eyepiece is, cm from your right hand (right,
+//                   up, forward along the gun)
+//   VRScopeSize     how wide the lens looks, cm
+//   VRScopeEye      how close to your eye it must come to look through, cm
+//
 // HANDS (see VRMgr.h): the left hand follows the left controller. Squeeze
 // the left grip with your left hand near where Cate's left hand sits on
 // the weapon to hold it with both hands (steadier aim); let go to free it.
@@ -137,6 +145,12 @@ static VarTrack g_vtVRGunHudX;
 static VarTrack g_vtVRGunHudY;
 static VarTrack g_vtVRGunHudZ;
 static VarTrack g_vtVRGunHudSize;
+static VarTrack g_vtVRScope;
+static VarTrack g_vtVRScopeX;
+static VarTrack g_vtVRScopeY;
+static VarTrack g_vtVRScopeZ;
+static VarTrack g_vtVRScopeSize;
+static VarTrack g_vtVRScopeEye;
 
 static const float kGrabDistanceMeters = 0.2f;	// how close the left hand must be to grab the gun
 static const float kRingWidthMeters = 0.36f;	// the weapon ring's size
@@ -191,6 +205,8 @@ CVRMgr::CVRMgr()
 	m_pfnSetLayer		= NULL;
 	m_pfnBeginLayerFromScreen = NULL;
 	m_pfnSetLayerPose	= NULL;
+	m_pfnSetScopeView	= NULL;
+	m_bScoped			= false;
 	m_bRingOpen			= false;
 	m_bMoveBodyBound	= false;
 	m_vRingOffset.Init(0.0f, 0.0f, 0.0f);
@@ -256,6 +272,7 @@ void CVRMgr::Init()
 	m_pfnSetLayer		= (LTVR_SetLayerFn)GetProcAddress(hEngine, "LTVR_SetLayer");
 	m_pfnBeginLayerFromScreen = (LTVR_BeginLayerFromScreenFn)GetProcAddress(hEngine, "LTVR_BeginLayerFromScreen");
 	m_pfnSetLayerPose	= (LTVR_SetLayerPoseFn)GetProcAddress(hEngine, "LTVR_SetLayerPose");
+	m_pfnSetScopeView	= (LTVR_SetScopeViewFn)GetProcAddress(hEngine, "LTVR_SetScopeView");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
 	g_vtVRTurnSpeed.Init(g_pLTClient, "VRTurnSpeed", NULL, 150.0f);
@@ -280,6 +297,12 @@ void CVRMgr::Init()
 	g_vtVRGunHudY.Init(g_pLTClient, "VRGunHudY", NULL, -2.0f);
 	g_vtVRGunHudZ.Init(g_pLTClient, "VRGunHudZ", NULL, 6.0f);
 	g_vtVRGunHudSize.Init(g_pLTClient, "VRGunHudSize", NULL, 10.0f);
+	g_vtVRScope.Init(g_pLTClient, "VRScope", NULL, 1.0f);
+	g_vtVRScopeX.Init(g_pLTClient, "VRScopeX", NULL, 0.0f);
+	g_vtVRScopeY.Init(g_pLTClient, "VRScopeY", NULL, 7.0f);
+	g_vtVRScopeZ.Init(g_pLTClient, "VRScopeZ", NULL, 2.0f);
+	g_vtVRScopeSize.Init(g_pLTClient, "VRScopeSize", NULL, 4.0f);
+	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 12.0f);
 
 	LoadGunFits();
 	LoadSettings();
@@ -325,6 +348,12 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRGunHudY",			-2.0f },
 	{ "VRGunHudZ",			6.0f },
 	{ "VRGunHudSize",		10.0f },
+	{ "VRScope",			1.0f },
+	{ "VRScopeX",			0.0f },
+	{ "VRScopeY",			7.0f },
+	{ "VRScopeZ",			2.0f },
+	{ "VRScopeSize",		4.0f },
+	{ "VRScopeEye",			12.0f },
 	{ "VRArms",				0.0f },
 	{ "VRWristBack",		7.0f },
 	{ "VRHandPalm",			3.5f },
@@ -869,6 +898,79 @@ void CVRMgr::SetGunModelTransform(const LTVector& vPos, const LTRotation& rRot)
 	m_vGunObjPos = vPos;
 	m_rGunObjRot = rRot;
 	m_bGunPlaced = true;
+	UpdateScope();
+}
+
+// ----------------------------------------------------------------------- //
+//
+//	Scopes
+//
+// ----------------------------------------------------------------------- //
+
+// How wide the scope's view is at each of the game's zoom levels, degrees
+// (the game's own: FOVX_ZOOMED.. in PlayerMgr.cpp). The lens itself takes
+// up about 28 degrees of your view at its default size and distance, so
+// level 1 magnifies about 1.4x, level 2 about 4x, level 3 about 14x.
+static const float kScopeFov[4] = { 0.0f, 20.0f, 7.0f, 2.0f };
+
+void CVRMgr::UpdateScope()
+{
+	bool bWas = m_bScoped;
+	m_bScoped = false;
+
+	int nLevel = 0;
+	LTVector vLens, vCamPos;
+	LTRotation rAim, rCamRot;
+	if (IsActive() && g_vtVRScope.GetFloat(1.0f) != 0.0f && g_pPlayerMgr && g_pPlayerStats && g_pWeaponMgr &&
+		g_pInterfaceMgr && g_pInterfaceMgr->GetGameState() == GS_PLAYING && !m_bAdjusting && !m_bRingOpen &&
+		g_pPlayerMgr->GetClientWeaponMgr() && g_pPlayerMgr->GetClientWeaponMgr()->WeaponsEnabled() &&
+		GetAimRay(vLens, rAim) && GetCamera(vCamPos, rCamRot))
+	{
+		uint8 nScopeId = g_pPlayerStats->GetScope();
+		MOD const* pMod = (nScopeId != WMGR_INVALID_ID) ? g_pWeaponMgr->GetMod(nScopeId) : NULL;
+		if (pMod && pMod->nZoomLevel > 0)
+		{
+			// The eyepiece, on the gun.
+			const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
+			LTVector vOffset(g_vtVRScopeX.GetFloat(0.0f), g_vtVRScopeY.GetFloat(7.0f), g_vtVRScopeZ.GetFloat(2.0f));
+			vLens += VR_Rotate(rAim, vOffset * fUnitsPerCm);
+
+			// Up to your eye and pointing the way you look (a little further
+			// away to let go than to start, so it doesn't flicker).
+			float fDistCm = (vLens - vCamPos).Mag() / fUnitsPerCm;
+			float fNear = g_vtVRScopeEye.GetFloat(12.0f);
+			float fFacing = rAim.Forward().Dot(rCamRot.Forward());
+			if (fDistCm < (bWas ? fNear * 1.35f : fNear) && fFacing > (bWas ? 0.75f : 0.85f))
+			{
+				nLevel = pMod->nZoomLevel;
+				if (nLevel > 3)
+					nLevel = 3;
+			}
+		}
+	}
+
+	if (!IsActive() || !g_pPlayerMgr)
+		return;		// (zoom is the flat game's own then)
+	g_pPlayerMgr->VR_SetZoom(nLevel);
+	m_bScoped = (nLevel > 0);
+
+	if (!m_bScoped || !m_pfnSetScopeView || !m_pfnSetLayerPose)
+	{
+		if (m_pfnSetScopeView)
+			m_pfnSetScopeView(0, NULL, NULL, 0.0f);
+		return;
+	}
+
+	// The scope's view, from the lens out along the gun.
+	float aPos[3] = { vLens.x, vLens.y, vLens.z };
+	float aRot[4] = { rAim.m_Quat[0], rAim.m_Quat[1], rAim.m_Quat[2], rAim.m_Quat[3] };
+	m_pfnSetScopeView(1, aPos, aRot, kScopeFov[nLevel]);
+
+	// The lens, at the eyepiece, facing back at you.
+	float fWidthCm = g_vtVRScopeSize.GetFloat(4.0f);
+	if (fWidthCm < 1.0f)	fWidthCm = 1.0f;
+	if (fWidthCm > 20.0f)	fWidthCm = 20.0f;
+	m_pfnSetLayerPose(LTVR_LAYER_SCOPE, 1, aPos, aRot, fWidthCm / 100.0f, 1.0f);
 }
 
 // Whether a bone's matrix has collapsed (the game shrinks bones to nothing

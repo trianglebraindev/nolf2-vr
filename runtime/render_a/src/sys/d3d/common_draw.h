@@ -57,6 +57,10 @@ extern const ViewBoxDef* g_pVRViewBoxOverride;
 // true size and depth. NULL outside the eye passes.
 extern const D3DMATRIX* g_pVRReallyCloseToWorld;
 
+// VR: true while drawing the scope's view (d3d_vr.cpp): objects in
+// "really close" space (the gun, hands, screen overlays) are left out.
+extern bool g_bVRSkipReallyClose;
+
 // Init the view box.
 void d3d_InitViewBox(ViewBoxDef *pDef,
 	float nearZ, float  farZ, float xFov, float yFov);

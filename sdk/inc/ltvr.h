@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	5
+#define LTVR_VERSION	6
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -146,7 +146,8 @@ typedef void (*LTVR_SetCrosshairFn)(int bVisible, const float pos[3]);
 #define LTVR_LAYER_HAND			1	// 512 x 512, the weapon ring
 #define LTVR_LAYER_WRIST		2	// 512 x 256, health and armour (version 5)
 #define LTVR_LAYER_GUN			3	// 512 x 256, ammo (version 5)
-#define LTVR_NUM_LAYERS			4
+#define LTVR_LAYER_SCOPE		4	// 512 x 512, the scope's lens (version 6)
+#define LTVR_NUM_LAYERS			5
 
 typedef int  (*LTVR_BeginLayerFn)(int layer);
 typedef void (*LTVR_EndLayerFn)(void);
@@ -167,6 +168,16 @@ typedef int  (*LTVR_BeginLayerFromScreenFn)(int layer, const float rect[4]);
 // the picture's up. fOpacity 0..1 (0 = not shown).
 typedef void (*LTVR_SetLayerPoseFn)(int layer, int bVisible, const float pos[3], const float rot[4],
 									float fWidthMeters, float fOpacity);
+
+// --- The scope (version 6) ---
+//
+// While you look through a scope: call every frame, before the world is
+// drawn, with where the scope is and which way it looks (world position,
+// rotation x, y, z, w) and how wide its view is (degrees). The engine then
+// draws that view into LTVR_LAYER_SCOPE, round, with a reticle; place the
+// layer at the eyepiece with SetLayerPose (Forward = the way the scope
+// looks). bOn 0 = not this frame.
+typedef void (*LTVR_SetScopeViewFn)(int bOn, const float pos[3], const float rot[4], float fFovDegrees);
 
 // Writes a model's pieces, skeleton and sockets to vr_models.log (for
 // working out how the first-person gun models are built).

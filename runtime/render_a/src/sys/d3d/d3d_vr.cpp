@@ -51,6 +51,12 @@
 //  spare screen-sized canvas, and the engine copies that part of the
 //  canvas into the layer (LTVR_BeginLayerFromScreen).
 //
+//  THE SCOPE
+//  While you look through a scope (the game says where it is and how far
+//  it zooms, LTVR_SetScopeView), one more view of the world is drawn from
+//  the scope, narrow, into its own round layer at the eyepiece (no gun or
+//  hands in it), with a reticle and a darker rim baked into a mask.
+//
 //  COORDINATES
 //  OpenXR:   metres, right-handed, +X right, +Y up, -Z forward.
 //  LithTech: game units, left-handed, +X right, +Y up, +Z forward.
@@ -112,8 +118,8 @@ static LTRotation			g_rVRBodyUsed;
 static bool					g_bVRBodyUsedValid	= false;
 
 // Spot layers (see the top of this file). Index = LTVR_LAYER_*.
-static const uint32			kVRSpotWidth[LTVR_NUM_LAYERS]	= { 1024, 512, 512, 512 };
-static const uint32			kVRSpotHeight[LTVR_NUM_LAYERS]	= { 1024, 512, 256, 256 };
+static const uint32			kVRSpotWidth[LTVR_NUM_LAYERS]	= { 1024, 512, 512, 512, 512 };
+static const uint32			kVRSpotHeight[LTVR_NUM_LAYERS]	= { 1024, 512, 256, 256, 512 };
 struct VRSpot
 {
 	int					nLayer;			// bridge layer, -1 = none
@@ -136,6 +142,17 @@ static uint32				g_nVRCanvasWidth	= 0;
 static uint32				g_nVRCanvasHeight	= 0;
 static bool					g_bVRSpotFromCanvas	= false;
 static RECT					g_rcVRCanvasSrc;
+
+// The scope (see the top of this file): this frame's view, and the round
+// mask with the reticle (colour = what to keep of the picture, alpha =
+// the lens).
+static bool					g_bVRScopeSet		= false;
+static LTVector				g_vVRScopePos;
+static LTRotation			g_rVRScopeRot;
+static float				g_fVRScopeFov		= 0.35f;	// radians across
+static IDirect3DTexture9*	g_pVRScopeMask		= NULL;
+static const uint32			kVRScopeMaskSize	= 256;
+static void VR_RenderScopeView(IDirect3DDevice9* pDevice, const SceneDesc* pDesc);
 
 // Where the game says the player's eyes are this frame, and the body's
 // heading (see LTVR_SetOrigin). Falls back to the camera if not set.
@@ -217,6 +234,8 @@ static void VR_Destroy()
 	}
 	g_nVRSpotDrawing = -1;
 	VR_ReleaseCanvas();
+	if (g_pVRScopeMask)		{ g_pVRScopeMask->Release();	g_pVRScopeMask = NULL; }
+	g_bVRScopeSet = false;
 	g_bVRBodyUsedValid = false;
 	if (g_pVRBridge)
 	{
@@ -683,6 +702,10 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 		g_pVRViewBoxOverride = NULL;
 	}
 
+	// The scope's view, if you're looking through one.
+	if (g_bVRScopeSet)
+		VR_RenderScopeView(pDevice, pDesc);
+
 	// Back to the game's own targets for the monitor pass.
 	pDevice->SetRenderTarget(0, pOldRT);
 	pDevice->SetDepthStencilSurface(pOldDepth);
@@ -703,6 +726,8 @@ enum VRQuadBlend
 	VRBLEND_ALPHA,			// ordinary see-through colour
 	VRBLEND_PREMULTIPLIED,	// a premultiplied picture (the interface layer)
 	VRBLEND_DARKEN,			// scales what's there by (1 - alpha), colour and alpha alike
+	VRBLEND_SETALPHA,		// writes only alpha (the colour's), no blending
+	VRBLEND_MASK,			// multiplies colour by the texture's colour, alpha by its alpha
 };
 
 struct VRQuadVert
@@ -746,14 +771,20 @@ static void VR_DrawFullQuad(IDirect3DTexture9* pTex, D3DCOLOR color, uint32 nWid
 	pDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
 	pDevice->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
 	pDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-	pDevice->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0F);
+	pDevice->SetRenderState(D3DRS_COLORWRITEENABLE, eBlend == VRBLEND_SETALPHA ? D3DCOLORWRITEENABLE_ALPHA : 0x0F);
 	pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
-	pDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-	pDevice->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+	pDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, eBlend == VRBLEND_SETALPHA ? FALSE : TRUE);
+	pDevice->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, eBlend == VRBLEND_MASK ? TRUE : FALSE);
 	pDevice->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
 	pDevice->SetRenderState(D3DRS_SRCBLEND,
 		eBlend == VRBLEND_ALPHA ? D3DBLEND_SRCALPHA : eBlend == VRBLEND_PREMULTIPLIED ? D3DBLEND_ONE : D3DBLEND_ZERO);
-	pDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+	pDevice->SetRenderState(D3DRS_DESTBLEND, eBlend == VRBLEND_MASK ? D3DBLEND_SRCCOLOR : D3DBLEND_INVSRCALPHA);
+	if (eBlend == VRBLEND_MASK)
+	{
+		pDevice->SetRenderState(D3DRS_SRCBLENDALPHA, D3DBLEND_ZERO);
+		pDevice->SetRenderState(D3DRS_DESTBLENDALPHA, D3DBLEND_SRCALPHA);
+		pDevice->SetRenderState(D3DRS_BLENDOPALPHA, D3DBLENDOP_ADD);
+	}
 
 	const DWORD dwArg = pTex ? D3DTA_TEXTURE : D3DTA_DIFFUSE;
 	pDevice->SetTexture(0, pTex);
@@ -840,6 +871,112 @@ static void VR_EndHud()
 		g_pVRHudSavedRT = NULL;
 	}
 	g_Device.InvalidateViewport();
+}
+
+// The scope's round mask (see the top of this file), made once: alpha is
+// the lens (soft edge), colour is how much of the picture to keep (black
+// reticle lines, a darker rim), already multiplied by the lens.
+static void VR_EnsureScopeMask(IDirect3DDevice9* pDevice)
+{
+	if (g_pVRScopeMask)
+		return;
+	const uint32 n = kVRScopeMaskSize;
+	if (FAILED(pDevice->CreateTexture(n, n, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+		&g_pVRScopeMask, NULL)) || !g_pVRScopeMask)
+	{
+		g_pVRScopeMask = NULL;
+		return;
+	}
+	D3DLOCKED_RECT lr;
+	if (FAILED(g_pVRScopeMask->LockRect(0, &lr, NULL, D3DLOCK_DISCARD)))
+	{
+		g_pVRScopeMask->Release();
+		g_pVRScopeMask = NULL;
+		return;
+	}
+	const float c = (float)(n - 1) * 0.5f;
+	const float fRadius = (float)n * 0.5f;
+	for (uint32 y = 0; y < n; ++y)
+	{
+		uint32* pRow = (uint32*)((uint8*)lr.pBits + y * lr.Pitch);
+		for (uint32 x = 0; x < n; ++x)
+		{
+			float dx = (float)x - c, dy = (float)y - c;
+			float r = (float)sqrt(dx * dx + dy * dy) / fRadius;
+
+			// The lens, with a soft edge.
+			float a = (r < 0.94f) ? 1.0f : (r > 1.0f ? 0.0f : (1.0f - r) / 0.06f);
+
+			// Darker toward the rim.
+			float t = (r - 0.70f) / 0.24f;
+			t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+			float fKeep = 1.0f - 0.5f * t * t * (3.0f - 2.0f * t);
+
+			// Reticle: fine cross hairs, thicker posts toward the rim.
+			float ax = (float)fabs(dx), ay = (float)fabs(dy);
+			float fLine = (r > 0.45f) ? 2.5f : 0.75f;
+			if (ax < fLine || ay < fLine)
+				fKeep = 0.0f;
+
+			uint32 nA = (uint32)(a * 255.0f + 0.5f);
+			uint32 nC = (uint32)(a * fKeep * 255.0f + 0.5f);
+			pRow[x] = (nA << 24) | (nC << 16) | (nC << 8) | nC;
+		}
+	}
+	g_pVRScopeMask->UnlockRect(0);
+}
+
+// Draws the world as the scope sees it into the scope's layer, then
+// shapes it into the round lens.
+static void VR_RenderScopeView(IDirect3DDevice9* pDevice, const SceneDesc* pDesc)
+{
+	VRSpot& spot = g_aVRSpots[LTVR_LAYER_SCOPE];
+	if (!spot.pSurf || !g_pVREyeDepth)
+		return;
+	const uint32 nSize = kVRSpotWidth[LTVR_LAYER_SCOPE];
+
+	SceneDesc desc = *pDesc;
+	desc.m_Rect.left	= 0;
+	desc.m_Rect.top		= 0;
+	desc.m_Rect.right	= (int)nSize;
+	desc.m_Rect.bottom	= (int)nSize;
+	desc.m_Pos			= g_vVRScopePos;
+	desc.m_Rotation		= g_rVRScopeRot;
+	desc.m_xFov			= g_fVRScopeFov;
+	desc.m_yFov			= g_fVRScopeFov;
+	desc.m_FrameTime	= 0.0f;
+
+	pDevice->SetRenderTarget(0, spot.pSurf);
+	pDevice->SetDepthStencilSurface(g_pVREyeDepth);	// (bigger than this target: fine)
+	g_Device.InvalidateViewport();
+	pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+	g_pVRViewBoxOverride = NULL;
+	g_bVRSkipReallyClose = true;
+	if (d3d_InitFrame(&g_ViewParams, &desc))
+		d3d_FullDrawScene(g_ViewParams, &desc);
+	g_bVRSkipReallyClose = false;
+
+	// The lens: solid everywhere, then cut round with the reticle in.
+	VR_EnsureScopeMask(pDevice);
+	VR_DrawFullQuad(NULL, D3DCOLOR_ARGB(255, 0, 0, 0), nSize, nSize, VRBLEND_SETALPHA);
+	if (g_pVRScopeMask)
+		VR_DrawFullQuad(g_pVRScopeMask, D3DCOLOR_ARGB(255, 255, 255, 255), nSize, nSize, VRBLEND_MASK);
+	spot.bDrawn = true;
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetScopeView(int bOn, const float pos[3], const float rot[4], float fFovDegrees)
+{
+	g_bVRScopeSet = false;
+	if (!bOn || !pos || !rot)
+		return;
+	float fLen = (float)sqrt(rot[0] * rot[0] + rot[1] * rot[1] + rot[2] * rot[2] + rot[3] * rot[3]);
+	if (!(fLen > 0.5f && fLen < 2.0f) || !(fFovDegrees > 0.5f && fFovDegrees < 120.0f))
+		return;
+	g_vVRScopePos.Init(pos[0], pos[1], pos[2]);
+	g_rVRScopeRot = LTRotation(rot[0] / fLen, rot[1] / fLen, rot[2] / fLen, rot[3] / fLen);
+	g_fVRScopeFov = fFovDegrees * 3.14159265f / 180.0f;
+	g_bVRScopeSet = true;
 }
 
 void d3d_VR_AfterRenderScene()
@@ -1452,6 +1589,7 @@ void d3d_VR_OnSwapBuffers()
 	}
 	g_nVRSpotDrawing = -1;
 	g_bVRSpotFromCanvas = false;
+	g_bVRScopeSet = false;		// the game sets it again each frame you look through one
 	g_bVRBodyUsedValid = false;
 
 	// The game sets the origin again each frame it draws the world.

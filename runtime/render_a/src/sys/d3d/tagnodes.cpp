@@ -43,7 +43,9 @@ static inline bool d3d_ShouldProcessObject(LTObject *pObject)
 			//make sure it is visible
 			(pObject->m_Flags & FLAG_VISIBLE) &&
 			//and not in the sky
-			!(pObject->m_Flags2 & FLAG2_SKYOBJECT);
+			!(pObject->m_Flags2 & FLAG2_SKYOBJECT) &&
+			//VR: not the gun or hands when drawing the scope's view
+			!(g_bVRSkipReallyClose && (pObject->m_Flags & FLAG_REALLYCLOSE));
 }
 
 
