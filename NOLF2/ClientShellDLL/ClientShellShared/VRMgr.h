@@ -126,6 +126,7 @@ public:
 	// "Adjust gun" mode (click the left stick while playing): the sticks
 	// slide, tilt and resize the gun in your hand; saved to vr_guns.txt.
 	bool		IsAdjustingGun() const	{ return m_bAdjusting; }
+	float		GetHandScale() const;
 
 	// --- Hands ---
 	//

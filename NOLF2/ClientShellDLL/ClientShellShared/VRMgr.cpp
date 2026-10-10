@@ -564,6 +564,19 @@ bool CVRMgr::GetHandInCamera(int nHand, LTVector& vPos, LTRotation& rRot, bool b
 	return true;
 }
 
+// How much to grow the hands so they're the same size whatever a gun's
+// size: the hands are part of each gun's model, so a gun made smaller (the
+// Sterlings, or A / B in the adjust mode) would shrink them with it. They
+// look right at VRGunScale.
+float CVRMgr::GetHandScale() const
+{
+	float fBase = g_vtVRGunScale.GetFloat(12.0f);
+	if (fBase < 0.05f)
+		fBase = 12.0f;
+	float fScale = GetGunScale();
+	return (fScale > 0.05f) ? fBase / fScale : 1.0f;
+}
+
 float CVRMgr::GetGunScale() const
 {
 	const GunFit* pFit = GetCurrentFit();
@@ -682,6 +695,11 @@ static const struct { const char* pszName; float x, y, z, yaw, pitch, scale, sco
 	{ "Crossbow",			0.10f, 0.00f, 0.25f,	5.62f, 1.39f,	12.0f,	0.0f, 0.0f },
 	{ "Sterling",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f },
 	{ "SilencedSterling",	0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f },
+	// The sniper's scope is part of its model. Measured from vr_game.log:
+	// sighting down its tube, the eye was 14.4 cm up (+-1) and 3 - 6 cm left
+	// of the aim line (15 samples, two sessions), against 8 / 0 for the
+	// crossbow's scope.
+	{ "Sniper Rifle",		0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	12.0f,	6.4f, -4.1f },
 };
 
 // vr_guns.txt: one line per weapon:  "Name" x y z yaw pitch scale [scopeUp scopeRight]
@@ -1253,6 +1271,21 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 	else
 	{
 		return;
+	}
+
+	// Same-size hands whatever the gun's size: grow the hand about its
+	// wrist (in the wrist's own axes). The fingers are worked out from the
+	// wrist after this, so they come with it.
+	if (p->IsActive())
+	{
+		const float fHand = p->GetHandScale();
+		if (fHand > 0.01f && (fHand < 0.999f || fHand > 1.001f))
+		{
+			LTMatrix mGrow;
+			mGrow.Identity();
+			mGrow.m[0][0] = mGrow.m[1][1] = mGrow.m[2][2] = fHand;
+			*data.m_pNodeTransform = (*data.m_pNodeTransform) * mGrow;
+		}
 	}
 
 	// Hands only: shorten the forearm to a cuff at the wrist. Only its

@@ -151,7 +151,11 @@ positive = barrel down).
   decide how big they look. The Sterling and silenced Sterling are
   modelled about as long breech-to-muzzle as the AK-47 (a much bigger
   gun) and looked "cannon-like" (Tre), so their built-in fit starts at
-  size 8.5 instead of 12.
+  size 8.5 instead of 12. The hands are part of each gun's model, so that
+  shrank them too ("a little silly", Tre): the wrist bones are now grown
+  by VRGunScale / the gun's size (CVRMgr::GetHandScale, in the hands'
+  node control; the fingers hang off the wrist so they follow), keeping
+  the hands one size whatever any gun's size.
 - The engine's console key is compiled out in this ("final") build, so
   settings go on the launch line (`+Name value`) or through the in-game
   adjust mode.
@@ -374,7 +378,14 @@ hang.
   socket or bone, vr_models.log), so nothing in the game data says where
   its tube is. Each weapon's fit has a scope offset, set by eye with the
   scope adjust mode (left stick click while looking through it). While
-  adjusting, the scope stays up wherever your eye is.
+  adjusting, the scope stays up wherever your eye is. The sniper's
+  built-in offset is measured: sighting down its tube (the "Scope check"
+  log lines while it wouldn't engage), the eye sat 14.4 cm up (+-1) and
+  3 - 6 cm left of the aim line over 15 samples in two sessions, so it's
+  6.4 cm up and 4.1 cm left of the crossbow's line.
+- Not on the monitor or in Quest captures: the monitor window shows the
+  game's own flat camera with the HUD, and the headset-only layers (scope
+  lens, watch, ammo, crosshair) are added by the headset.
 
 ## Effects on the gun
 
