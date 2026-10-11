@@ -781,8 +781,9 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
 - The opening credits (after the cold open) are drawn by a far-off,
   very zoomed-in camera: in 3D they came out tiny and distant. Tre: the
   intro only goes on the flat screen (other cutscenes as chosen).
-  IsIntroCredits: the first mission's first level, and a camera narrower
-  than 30 degrees across. Every cutscene camera is logged ("Cutscene
+  IsIntroCredits: chapter 2's last level or chapter 3's first (Tre: the
+  credits play at the end of chapter 2, before chapter 3), and a camera
+  narrower than 30 degrees across. Every cutscene camera is logged ("Cutscene
   camera:" world, type, field of view, position) to check those numbers.
 - Music guard, measured working: 12 of 12 samples at dmusic+18BFE before
   any music, at dmusic+18CA7 after; held for every load and unload.
