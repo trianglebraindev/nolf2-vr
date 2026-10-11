@@ -835,8 +835,10 @@ void CClientWeapon::GetShellEjectPos( LTVector *vOriginalPos )
 	// VR: relative to the gun in your hand, at its true size.
 	if ( m_bVRPlaced )
 	{
-		LTRotation rGun = m_rCamRot * m_rVRObjRot;
-		*vOriginalPos = m_vFlashPos + VR_Rotate( rGun, vBreachOffset * g_VRMgr.GetGunScale() );
+		// (Left-handed: the gun is drawn mirrored, see CVRMgr::IsLeftHanded.)
+		LTVector vBreach = VR_Rotate( m_rVRObjRot, vBreachOffset * g_VRMgr.GetGunScale() );
+		g_VRMgr.CloseToReal( vBreach );
+		*vOriginalPos = m_vFlashPos + VR_Rotate( m_rCamRot, vBreach );
 		return;
 	}
 
@@ -4595,7 +4597,9 @@ void CClientWeapon::UpdateMuzzleFlash( WeaponState eState, LTVector const &vOffs
 	if ( m_bVRPlaced )
 	{
 		m_vFlashOffset = m_vVRObjPos + VR_Rotate( m_rVRObjRot, vMuzzleOffset );
-		m_vFlashPos = m_vCamPos + VR_Rotate( m_rCamRot, m_vFlashOffset * g_VRMgr.GetGunScale() );
+		LTVector vFlash = m_vFlashOffset * g_VRMgr.GetGunScale();
+		g_VRMgr.CloseToReal( vFlash );		// (left-handed: mirrored)
+		m_vFlashPos = m_vCamPos + VR_Rotate( m_rCamRot, vFlash );
 	}
 	
 	
@@ -6135,8 +6139,12 @@ bool CClientWeapon::VR_GetBlade( LTVector &vHilt, LTVector &vTip ) const
 	const float fScale = g_VRMgr.GetGunScale();
 	LTVector vHiltClose = m_vVRObjPos + VR_Rotate( m_rVRObjRot, tHilt.m_Pos );
 	LTVector vTipClose = m_vVRObjPos + VR_Rotate( m_rVRObjRot, tTip.m_Pos );
-	vHilt = m_vCamPos + VR_Rotate( m_rCamRot, vHiltClose * fScale );
-	vTip = m_vCamPos + VR_Rotate( m_rCamRot, vTipClose * fScale );
+	vHiltClose *= fScale;
+	vTipClose *= fScale;
+	g_VRMgr.CloseToReal( vHiltClose );		// (left-handed: mirrored)
+	g_VRMgr.CloseToReal( vTipClose );
+	vHilt = m_vCamPos + VR_Rotate( m_rCamRot, vHiltClose );
+	vTip = m_vCamPos + VR_Rotate( m_rCamRot, vTipClose );
 	return true;
 }
 
@@ -6232,10 +6240,11 @@ bool CClientWeapon::VR_UpdateThrow( bool bTrigger )
 		return bTrigger;
 	}
 
-	// The hand's path (tracking space: the body turning doesn't move it).
+	// The hand's path (tracking space: the body turning doesn't move it;
+	// where it really is, left-handed too).
 	const float fNow = g_pLTClient->GetTime();
 	LTVector vTrack;
-	if ( g_VRMgr.GetHandTracking( LTVR_RIGHT, vTrack ) )
+	if ( g_VRMgr.GetHandTrackingReal( LTVR_RIGHT, vTrack ) )
 	{
 		m_avVRThrowPos[m_iVRThrowHist] = vTrack;
 		m_afVRThrowTime[m_iVRThrowHist] = fNow;
@@ -6719,8 +6728,9 @@ void CClientWeapon::VR_StartMagDrop()
 	if ( !m_hVRMagDrop )
 		return;
 	m_fVRMagDropScale = g_VRMgr.GetGunScale();
+	g_VRMgr.CloseToReal( vClip );		// (left-handed: mirrored)
 	m_vVRMagDropPoint = m_vCamPos + VR_Rotate( m_rCamRot, vClip );
-	m_rVRMagDropRot = m_rCamRot * m_rVRObjRot;
+	m_rVRMagDropRot = m_rCamRot * g_VRMgr.CloseToReal( m_rVRObjRot );
 	m_vVRMagDropVel.Init( 0.0f, 0.0f, 0.0f );
 	m_fVRMagDropTime = 0.0f;
 	m_bVRMagDropLanded = false;
@@ -7318,7 +7328,9 @@ void CClientWeapon::VR_UpdateCock( float fUnitsPerMeter )
 	if ( !m_bVRCocking )
 	{
 		float fPulse = 1.0f + 0.25f * (float)sin( g_pLTClient->GetTime() * 6.0f );
-		g_VRMgr.ShowMarker( m_vCamPos + VR_Rotate( m_rCamRot, vPoint ), 0.035f * fPulse );
+		LTVector vMark = vPoint;
+		g_VRMgr.CloseToReal( vMark );		// (left-handed: mirrored)
+		g_VRMgr.ShowMarker( m_vCamPos + VR_Rotate( m_rCamRot, vMark ), 0.035f * fPulse );
 	}
 
 	LTVector vLeft;

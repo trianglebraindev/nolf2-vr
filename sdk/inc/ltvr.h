@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	13
+#define LTVR_VERSION	14
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -95,6 +95,14 @@ typedef void (*LTVR_SetOriginRotFn)(const float pos[3], const float rot[4]);
 // as menus are) instead of in 3D around you. Set it again every frame you
 // want it; the screen is placed where you're looking when it starts.
 typedef void (*LTVR_SetFlatViewFn)(int bFlat);
+
+// Left-handed play: this frame, everything in the game's "really close"
+// space (the gun, the hands, what they hold) is drawn mirrored across the
+// middle of your head (the camera's right axis flipped), so the game's
+// right-handed models become left-handed. The game works with the hands
+// mirrored the same way (see CVRMgr's handedness), so they land where your
+// real hands are. Set it again every frame.
+typedef void (*LTVR_SetCloseMirrorFn)(int bMirror);
 
 // Binds a controller button (hand + one LTVR_BTN_* bit) to an engine
 // command ID: while the button is held, the command reads as on, exactly

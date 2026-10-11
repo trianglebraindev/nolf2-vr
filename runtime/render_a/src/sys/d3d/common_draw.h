@@ -61,6 +61,17 @@ extern const D3DMATRIX* g_pVRReallyCloseToWorld;
 // "really close" space (the gun, hands, screen overlays) are left out.
 extern bool g_bVRSkipReallyClose;
 
+// VR, left-handed play: the really-close space is drawn mirrored (its
+// "right" axis flipped, see g_pVRReallyCloseToWorld in d3d_vr.cpp), so the
+// right-handed gun and hands become left ones. Mirroring turns every
+// triangle's winding round, so while really-close things are drawn
+// (g_bVRFlipCull) the cull mode is flipped too. g_nVRStyleCullMode is the
+// one the render style last asked for (unflipped).
+extern bool g_bVRCloseMirror;
+extern bool g_bVRFlipCull;
+extern uint32 g_nVRStyleCullMode;
+uint32 VR_FlipCull(uint32 nCullMode);
+
 // Init the view box.
 void d3d_InitViewBox(ViewBoxDef *pDef,
 	float nearZ, float  farZ, float xFov, float yFov);

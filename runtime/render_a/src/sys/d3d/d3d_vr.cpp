@@ -126,6 +126,7 @@ static LARGE_INTEGER		g_VRLastSwapTime;
 // Really close space (the gun).
 static float				g_fVRCloseScale		= 1.0f;		// really-close units -> world units
 static D3DMATRIX			g_mVRCloseToWorld;
+static bool					g_bVRCloseMirrorWanted = false;	// (LTVR_SetCloseMirror, this frame)
 
 // The body transform the eyes were drawn with this frame (for placing
 // things given in world coordinates, like the crosshair).
@@ -624,6 +625,11 @@ extern "C" __declspec(dllexport) void LTVR_SetOriginRot(const float pos[3], cons
 	g_bVROriginRot = true;
 }
 
+extern "C" __declspec(dllexport) void LTVR_SetCloseMirror(int bMirror)
+{
+	g_bVRCloseMirrorWanted = (bMirror != 0);
+}
+
 extern "C" __declspec(dllexport) void LTVR_SetFlatView(int bFlat)
 {
 	g_bVRFlatView = (bFlat != 0);
@@ -732,8 +738,10 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 	// Really close space sits around the game's camera, scaled to world
 	// size (D3D row-vector form: rows are the scaled axes, then position).
 	{
+		// (Left-handed play: mirrored across the head's middle, the
+		// camera's right axis flipped; see g_bVRCloseMirror.)
 		const float s = g_fVRCloseScale;
-		const LTVector vR = pDesc->m_Rotation.Right() * s;
+		const LTVector vR = pDesc->m_Rotation.Right() * (g_bVRCloseMirrorWanted ? -s : s);
 		const LTVector vU = pDesc->m_Rotation.Up() * s;
 		const LTVector vF = pDesc->m_Rotation.Forward() * s;
 		D3DMATRIX& m = g_mVRCloseToWorld;
@@ -777,8 +785,10 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 		if (d3d_InitFrame(&g_ViewParams, &eyeDesc))
 		{
 			g_pVRReallyCloseToWorld = &g_mVRCloseToWorld;
+			g_bVRCloseMirror = g_bVRCloseMirrorWanted;
 			d3d_FullDrawScene(g_ViewParams, &eyeDesc);
 			g_pVRReallyCloseToWorld = NULL;
+			g_bVRCloseMirror = false;
 		}
 		g_pVRViewBoxOverride = NULL;
 	}
@@ -2163,6 +2173,7 @@ void d3d_VR_OnSwapBuffers()
 	g_bVROriginRot = false;
 	g_bVRFlatWas = g_bVRFlatView;	// (and the flat screen)
 	g_bVRFlatView = false;
+	g_bVRCloseMirrorWanted = false;	// (and left-handed mirroring)
 
 	VR_UpdateCursorClip();
 

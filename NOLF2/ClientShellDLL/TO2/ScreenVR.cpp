@@ -46,6 +46,8 @@ namespace
 		kHelpTurnSpeed,
 		kHelpSnapAngle,
 		kHelpMoveDir,
+		kHelpMainHand,
+		kHelpWalkStick,
 		kHelpSeated,
 		kHelpSetHeight,
 		kHelpVignette,
@@ -72,7 +74,9 @@ namespace
 		"Turn smoothly with the right stick, or in steps.",
 		"How fast smooth turning turns you, in degrees per second.",
 		"How far each snap turn turns you, in degrees.",
-		"Walk where your head faces, or where your left controller points.",
+		"Walk where your head faces, or where the hand with the walking stick points.",
+		"The hand that holds the gun. Left: the gun, your free hand and every button swap sides (fire on the left trigger, magazines from over your right shoulder, health on your right wrist).",
+		"The stick you walk with; the other turns. Your choice, whichever hand holds the gun.",
 		"Standing: crouch for real and Cate crouches (the right stick still crouches too). Seated: the right stick crouches. Then set your height.",
 		"Sit or stand as you'll play and look ahead: your head becomes Cate standing up. In play: hold both stick clicks for a second.",
 		"Darken the edges of your view while you move or turn with the sticks, for comfort. Stronger narrows the view more.",
@@ -129,6 +133,8 @@ CScreenVR::CScreenVR()
 	m_nSeated = 0;
 	m_nVehicleTilt = 0;
 	m_nCutscenes = 0;
+	m_nMainHand = 0;
+	m_nWalkStick = 0;
 	m_nVignette = 0;
 	m_nVignetteWhen = 2;
 }
@@ -186,7 +192,15 @@ LTBOOL CScreenVR::Build()
 
 	pCycle = AddCycle((char*)"Walk toward", kHelpMoveDir, kGap, &m_nMoveDir);
 	pCycle->AddString("Head");
-	pCycle->AddString("Left hand");
+	pCycle->AddString("Hand");
+
+	pCycle = AddCycle((char*)"Gun hand", kHelpMainHand, kGap, &m_nMainHand);
+	pCycle->AddString("Right");
+	pCycle->AddString("Left");
+
+	pCycle = AddCycle((char*)"Walk with", kHelpWalkStick, kGap, &m_nWalkStick);
+	pCycle->AddString("Left stick");
+	pCycle->AddString("Right stick");
 
 	pCycle = AddCycle((char*)"Play position", kHelpSeated, kGap, &m_nSeated);
 	pCycle->AddString("Standing");
@@ -312,7 +326,7 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 			const char* const aNames[] = { "VRSnapTurn", "VRTurnSpeed", "VRSnapAngle", "VRMoveWithHand",
 				"VRUnitsPerMeter", "VRHudDistance", "VRHudAngle", "VRHudFollow", "VRWristHud",
 				"VRWristHudWatch", "VRGunHud", "VRArms", "VRSwing", "VRSwingSpeed", "VRVignette",
-				"VRVignetteWhen", "VRReload", "VRThrow", "VRSeated", "VRVehicleTilt", "VRCutsceneFlat" };
+				"VRVignetteWhen", "VRReload", "VRThrow", "VRSeated", "VRVehicleTilt", "VRCutsceneFlat", "VRLeftHanded", "VRWalkStick" };
 			for (int i = 0; i < (int)(sizeof(aNames) / sizeof(aNames[0])); ++i)
 				CVRMgr::SetSetting(aNames[i], CVRMgr::GetSettingDefault(aNames[i]));
 			ReadSettings();
@@ -451,6 +465,8 @@ void CScreenVR::ReadSettings()
 	m_nSeated = (CVRMgr::GetSetting("VRSeated") != 0.0f) ? 1 : 0;
 	m_nVehicleTilt = (CVRMgr::GetSetting("VRVehicleTilt") != 0.0f) ? 1 : 0;
 	m_nCutscenes = (CVRMgr::GetSetting("VRCutsceneFlat") != 0.0f) ? 1 : 0;
+	m_nMainHand = (CVRMgr::GetSetting("VRLeftHanded") != 0.0f) ? 1 : 0;
+	m_nWalkStick = (CVRMgr::GetSetting("VRWalkStick") != 0.0f) ? 1 : 0;
 	if (CVRMgr::GetSetting("VRSwing") == 0.0f)
 		m_nSwing = 0;
 	else
@@ -483,6 +499,8 @@ void CScreenVR::WriteSettings()
 	CVRMgr::SetSetting("VRSeated",			m_nSeated ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRVehicleTilt",		m_nVehicleTilt ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRCutsceneFlat",	m_nCutscenes ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRLeftHanded",		m_nMainHand ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRWalkStick",		m_nWalkStick ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRSwing",			m_nSwing ? 1.0f : 0.0f);
 	if (m_nSwing > 0 && m_nSwing <= kNumSwingSpeeds)
 		CVRMgr::SetSetting("VRSwingSpeed",	kSwingSpeeds[m_nSwing - 1]);

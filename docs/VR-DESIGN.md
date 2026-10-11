@@ -324,6 +324,7 @@ Next, in a suggested order:
 16. Finger sensing on the free hand (see "Finger sensing").
 17. Cutscenes in 3D or on a flat screen (see "Cutscenes").
 18. The crash on exit and the occasional crash loading (see "Crashes").
+19. Left-handed play (see "Left-handed play").
 Later: the Tommy gun's rare tracer
 streaks; from the backlog: left-handed play, grip hold vs toggle, the
 quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
@@ -796,6 +797,47 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
   skips the cutscene.
 - The letterbox bars are kept in flat mode (they frame the shot on a
   screen; in 3D they'd float in front of the scene, so they stay off).
+
+## Left-handed play
+
+Tre: an accessibility option that matters. Picks: the gun and hand
+mirrored to make a true left hand; the walking stick its own setting;
+every button and body spot swaps with the hands.
+
+- The models (and all the code placing them) are right-handed, so the game
+  is shown a mirror image rather than taught about a left hand. In
+  CVRMgr::ApplyHandedness, each frame: the controllers swap (LTVR_RIGHT is
+  your left one) and both poses are mirrored across the plane through the
+  head, square to its right axis (the head is unchanged by that). As if a
+  right-handed player stood in a mirror: fits, reloading, the shoulder
+  pouch (now over your right shoulder), the wrist HUD (right wrist), two
+  hands on the gun, cocking, the weapon ring all work as before.
+- Mirroring a pose: position reflected; rotation S R M (reflect in the
+  world, then flip its own right axis), a proper rotation, as quaternions
+  q' = (n, 0) * q * (1, 0, 0, 0).
+- The engine draws the really-close space mirrored back across the same
+  plane (LTVR_SetCloseMirror, LTVR_VERSION 14: the camera's right axis
+  negated in g_mVRCloseToWorld). That puts the gun and hands where your
+  hands are and makes them left-handed. Mirroring reverses triangle
+  winding, so while really-close things draw the cull mode is flipped
+  (g_bVRFlipCull, d3d_SetReallyClose and the render style's cull).
+- What leaves the hands for the world is mirrored back (CloseToReal, in
+  camera space: x negated, rotations as above): the aim ray (shots, the
+  crosshair, use / pick up, scope, weapon ring), the muzzle (tracers,
+  flashes), shell casings, sword blade sweeps, the dropped magazine, the
+  cocking marker, the wrist and gun HUD. Throws use the hand's real path
+  (GetHandTrackingReal). The scope's side offset is negated (the gun's
+  right is your left). The snowmobile: its cockpit is given as its mirror
+  image (the engine mirrors it back onto the world model), the handlebar
+  turn read from the mirrored hands is negated, and so is the bars' roll
+  in the mirrored model.
+- Buttons follow the hands (bindings made on the real controller, Bind);
+  the left controller's menu button stays the pause button. VRWalkStick:
+  the sticks (and their up / down / left / right) swap back between the
+  hands if the walking stick isn't the one in the off hand; walking
+  toward the hand follows the controller holding that stick.
+- Not yet mirrored: the adjust mode's help lines still name the
+  right-handed buttons.
 
 ## Scripted rides (the lure)
 

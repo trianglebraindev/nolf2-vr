@@ -2080,6 +2080,11 @@ void CVehicleMgr::VR_PlaceOnRiddenVehicle(LTVector &vClosePos, LTRotation &rClos
 
 	LTVector vCm;
 	float fYaw, fPitch, fSize;
+	// (Left-handed play: the really-close space is drawn mirrored, see
+	// CVRMgr::IsLeftHanded; where it's drawn now, really.)
+	vClosePos.x = g_VRMgr.IsLeftHanded() ? -vClosePos.x : vClosePos.x;
+	rCloseRot = g_VRMgr.CloseToReal(rCloseRot);
+
 	if (!g_VRMgr.GetVehicleFit(vCm, fYaw, fPitch, fSize))
 	{
 		// The first ride: start from where it's drawn now.
@@ -2109,6 +2114,11 @@ void CVehicleMgr::VR_PlaceOnRiddenVehicle(LTVector &vClosePos, LTRotation &rClos
 	vClosePos.Init(vRel.Dot(rCam.Right()), vRel.Dot(rCam.Up()), vRel.Dot(rCam.Forward()));
 	vClosePos /= s;
 	rCloseRot = (~rCam) * rOn;
+
+	// (Left-handed: given as its mirror image, which the engine mirrors
+	// back onto the snowmobile; the hands on its bars are mirrored too.)
+	g_VRMgr.CloseToReal(vClosePos);
+	rCloseRot = g_VRMgr.CloseToReal(rCloseRot);
 	LTVector vScale(fSize / s, fSize / s, fSize / s);
 	g_pLTClient->SetObjectScale(m_hVehicleModel, &vScale);
 
@@ -4121,6 +4131,10 @@ void CVehicleMgr::AdjustCameraRoll(LTFLOAT & fRoll)
 		if (g_VRMgr.IsActive() && g_VRMgr.IsRiding())
 		{
 			m_fHandlebarRoll = DEG2RAD(CVRMgr::kBarLockDeg) * fPercent;
+			// (Left-handed, the cockpit is drawn mirrored: its bars turn
+			// the other way in the model to turn your way.)
+			if (g_VRMgr.IsLeftHanded())
+				m_fHandlebarRoll = -m_fHandlebarRoll;
 		}
 
 

@@ -55,8 +55,40 @@ public:
 	// are only meaningful while IsActive().
 	bool		IsActive() const	{ return m_State.active != 0; }
 
-	// The raw state, LithTech coordinates, relative to the tracking origin.
+	// The state, LithTech coordinates, relative to the tracking origin.
+	// Left-handed (see below), the hands in it are the game's view of them:
+	// swapped and mirrored.
 	const LTVR_State&	GetState() const	{ return m_State; }
+
+	// --- Left-handed play (VRLeftHanded 1) ---
+	//
+	// The game's guns and hands are right-handed, and so is all the code
+	// that places them, so rather than teach every part of it about a left
+	// hand, the game is shown a mirror image: the controllers swap
+	// (LTVR_RIGHT is your left one: the gun hand), and both are mirrored
+	// across the middle of your head, as if a right-handed player stood in
+	// a mirror. Everything that works hand to hand, hand to head or hand to
+	// gun (the fits, reloading, the shoulder pouch, the wrist, two hands on
+	// the gun) works unchanged. Then the engine draws the really-close space
+	// (gun, hands, what they hold) mirrored back (LTVR_SetCloseMirror), which
+	// puts each where your real hand is and makes them left-handed; and
+	// whatever leaves the hands for the world (the aim and shots, throws,
+	// sword swings, the muzzle, shell casings, a dropped magazine, the HUD
+	// on your wrist and gun, markers) is mirrored back by the
+	// CloseToReal functions. Every button follows its hand (fire on the left
+	// trigger, and so on). Which stick walks is its own choice
+	// (VRWalkStick: 0 left, 1 right), whichever hand the gun is in.
+	bool		IsLeftHanded() const	{ return m_bLeftHanded; }
+	// A point or direction in the camera's really-close space, as the game
+	// computes it, to where it really is (x mirrored when left-handed).
+	void		CloseToReal(LTVector& v) const		{ if (m_bLeftHanded) v.x = -v.x; }
+	// A rotation in that space, the same (turned as the mirror image is,
+	// still a proper rotation: its right axis is the mirror of the game's
+	// left).
+	LTRotation	CloseToReal(const LTRotation& r) const;
+	// A controller's grip in tracking space where it really is (for its
+	// path through the air: throwing). nHand as the game sees it.
+	bool		GetHandTrackingReal(int nHand, LTVector& vPos) const;
 
 	// Head, relative to the tracking origin (not rotated by the body).
 	LTVector	GetHeadOffset() const;			// game units
@@ -321,6 +353,14 @@ private:
 	float		m_fBarSteer;
 	LTVR_SetOriginRotFn		m_pfnSetOriginRot;
 	LTVR_SetFlatViewFn		m_pfnSetFlatView;
+	LTVR_SetCloseMirrorFn	m_pfnSetCloseMirror;
+	// Left-handed play (see IsLeftHanded).
+	void		ApplyHandedness();
+	void		Bind(int nHand, unsigned nButton, int nCommand);	// a binding, by the game's hands
+	LTVR_State	m_RawState;			// the controllers as they really are this frame
+	bool		m_bLeftHanded;
+	bool		m_bSticksSwapped;		// the sticks swapped back between the game's hands (VRWalkStick)
+	int			m_nWalkStickPhys;		// the controller whose stick walks
 	void		UpdateRealCrouch();
 	bool		m_bRealCrouch;
 	bool		m_bStickCombo;			// both stick clicks went down together (no single clicks then)

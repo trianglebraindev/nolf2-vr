@@ -122,6 +122,12 @@
 //                   banks and climbs, your view doesn't); 1 = the view
 //                   tilts with the snowmobile
 //
+//   Left-handed play (see IsLeftHanded in VRMgr.h):
+//   VRLeftHanded    0 = the gun in your right hand (default), 1 = in your
+//                   left: the gun, the free hand and every button swap
+//   VRWalkStick     the stick you walk with: 0 = left (default), 1 = right
+//                   (the other turns), whichever hand the gun is in
+//
 //   Cutscenes (see IsCutsceneFlat):
 //   VRCutsceneFlat  0 = in 3D around you (default; you can look around the
 //                   scene), 1 = on a flat screen in front of you, framed
@@ -214,6 +220,8 @@ static VarTrack g_vtVRSeated;
 static VarTrack g_vtVRVehicleTilt;
 static VarTrack g_vtVRVehiclePiece;
 static VarTrack g_vtVRCutsceneFlat;
+static VarTrack g_vtVRLeftHanded;
+static VarTrack g_vtVRWalkStick;
 static VarTrack g_vtVRCheatGod;
 static VarTrack g_vtVRCheatInvisible;
 static VarTrack g_vtVRCheatAmmo;
@@ -263,6 +271,11 @@ CVRMgr::CVRMgr()
 	m_pfnSetOrigin		= NULL;
 	m_pfnSetOriginRot	= NULL;
 	m_pfnSetFlatView	= NULL;
+	m_pfnSetCloseMirror	= NULL;
+	memset(&m_RawState, 0, sizeof(m_RawState));
+	m_bLeftHanded		= false;
+	m_bSticksSwapped	= false;
+	m_nWalkStickPhys	= LTVR_LEFT;
 	m_bBarsHeld			= false;
 	m_bRiding			= false;
 	m_hRiddenVehicle	= LTNULL;
@@ -363,6 +376,7 @@ void CVRMgr::Init()
 	m_pfnSetOrigin		= (LTVR_SetOriginFn)GetProcAddress(hEngine, "LTVR_SetOrigin");
 	m_pfnSetOriginRot	= (LTVR_SetOriginRotFn)GetProcAddress(hEngine, "LTVR_SetOriginRot");
 	m_pfnSetFlatView	= (LTVR_SetFlatViewFn)GetProcAddress(hEngine, "LTVR_SetFlatView");
+	m_pfnSetCloseMirror	= (LTVR_SetCloseMirrorFn)GetProcAddress(hEngine, "LTVR_SetCloseMirror");
 	m_pfnSetBinding		= (LTVR_SetBindingFn)GetProcAddress(hEngine, "LTVR_SetBinding");
 	m_pfnClearBindings	= (LTVR_ClearBindingsFn)GetProcAddress(hEngine, "LTVR_ClearBindings");
 	m_pfnRecenter		= (LTVR_RecenterFn)GetProcAddress(hEngine, "LTVR_Recenter");
@@ -421,6 +435,8 @@ void CVRMgr::Init()
 	g_vtVRVehicleTilt.Init(g_pLTClient, "VRVehicleTilt", NULL, 0.0f);
 	g_vtVRVehiclePiece.Init(g_pLTClient, "VRVehiclePiece", NULL, -1.0f);
 	g_vtVRCutsceneFlat.Init(g_pLTClient, "VRCutsceneFlat", NULL, 0.0f);
+	g_vtVRLeftHanded.Init(g_pLTClient, "VRLeftHanded", NULL, 0.0f);
+	g_vtVRWalkStick.Init(g_pLTClient, "VRWalkStick", NULL, 0.0f);
 	g_vtVRCheatGod.Init(g_pLTClient, "VRCheatGod", NULL, 0.0f);
 	g_vtVRCheatInvisible.Init(g_pLTClient, "VRCheatInvisible", NULL, 0.0f);
 	g_vtVRCheatAmmo.Init(g_pLTClient, "VRCheatAmmo", NULL, 0.0f);
@@ -488,6 +504,8 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRVehicleTilt",		0.0f },
 	{ "VRVehiclePiece",		-1.0f },
 	{ "VRCutsceneFlat",		0.0f },
+	{ "VRLeftHanded",		0.0f },
+	{ "VRWalkStick",		0.0f },
 	{ "VRCheatGod",			0.0f },
 	{ "VRCheatInvisible",	0.0f },
 	{ "VRCheatAmmo",		0.0f },
@@ -618,6 +636,124 @@ bool CVRMgr::GetHandTracking(int nHand, LTVector& vPos) const
 	return true;
 }
 
+bool CVRMgr::GetHandTrackingReal(int nHand, LTVector& vPos) const
+{
+	if (!IsActive() || nHand < 0 || nHand > 1)
+		return false;
+	const LTVR_HandState& hand = m_RawState.hand[m_bLeftHanded ? 1 - nHand : nHand];
+	if (!hand.active || !hand.grip.valid)
+		return false;
+	vPos.Init(hand.grip.pos[0], hand.grip.pos[1], hand.grip.pos[2]);
+	return true;
+}
+
+// ----------------------------------------------------------------------- //
+// Left-handed play (see IsLeftHanded in VRMgr.h)
+// ----------------------------------------------------------------------- //
+
+// Mirroring across a plane (unit normal vN): a point, through vOrigin on
+// the plane; and a rotation, as the mirror shows it, made a proper rotation
+// again by flipping its own right axis (the mirror image of a right hand
+// is a left hand; this is that hand's frame). As rotations: half turns
+// about the plane's normal and about the rotation's own right axis.
+static LTVector VR_MirrorPoint(const LTVector& v, const LTVector& vOrigin, const LTVector& vN)
+{
+	return v - vN * (2.0f * (v - vOrigin).Dot(vN));
+}
+
+static LTRotation VR_MirrorRot(const LTRotation& r, const LTVector& vN)
+{
+	return LTRotation(vN.x, vN.y, vN.z, 0.0f) * r * LTRotation(1.0f, 0.0f, 0.0f, 0.0f);
+}
+
+static void VR_MirrorPose(LTVR_Pose& pose, const LTVector& vOrigin, const LTVector& vN)
+{
+	if (!pose.valid)
+		return;
+	LTVector v = VR_MirrorPoint(LTVector(pose.pos[0], pose.pos[1], pose.pos[2]), vOrigin, vN);
+	pose.pos[0] = v.x;
+	pose.pos[1] = v.y;
+	pose.pos[2] = v.z;
+	LTRotation r = VR_MirrorRot(LTRotation(pose.rot[0], pose.rot[1], pose.rot[2], pose.rot[3]), vN);
+	pose.rot[0] = r.m_Quat[0];
+	pose.rot[1] = r.m_Quat[1];
+	pose.rot[2] = r.m_Quat[2];
+	pose.rot[3] = r.m_Quat[3];
+}
+
+LTRotation CVRMgr::CloseToReal(const LTRotation& r) const
+{
+	return m_bLeftHanded ? VR_MirrorRot(r, LTVector(1.0f, 0.0f, 0.0f)) : r;
+}
+
+// The hands as the game is to see them this frame (m_RawState is how they
+// are). Left-handed: swapped, and both mirrored across the middle of the
+// head (the plane through it, square to its right), so the head itself is
+// unchanged. Its menu button stays where it is (the left controller's,
+// pause). Then the sticks: the game walks with LTVR_LEFT's, so they swap
+// back if that isn't the one VRWalkStick picks (the stick's push left and
+// right isn't mirrored: right is still right).
+void CVRMgr::ApplyHandedness()
+{
+	m_bLeftHanded = g_vtVRLeftHanded.GetFloat(0.0f) > 0.5f;
+	m_nWalkStickPhys = (g_vtVRWalkStick.GetFloat(0.0f) > 0.5f) ? LTVR_RIGHT : LTVR_LEFT;
+
+	if (m_bLeftHanded)
+	{
+		LTVR_HandState hand = m_State.hand[LTVR_LEFT];
+		m_State.hand[LTVR_LEFT] = m_State.hand[LTVR_RIGHT];
+		m_State.hand[LTVR_RIGHT] = hand;
+
+		if (m_State.head.valid)
+		{
+			LTVector vHead(m_State.head.pos[0], m_State.head.pos[1], m_State.head.pos[2]);
+			LTRotation rHead(m_State.head.rot[0], m_State.head.rot[1], m_State.head.rot[2], m_State.head.rot[3]);
+			LTVector vN = rHead.Right();
+			for (int i = 0; i < 2; ++i)
+			{
+				VR_MirrorPose(m_State.hand[i].grip, vHead, vN);
+				VR_MirrorPose(m_State.hand[i].aim, vHead, vN);
+			}
+		}
+
+		const unsigned nMenu = m_RawState.hand[LTVR_LEFT].buttons & LTVR_BTN_MENU;
+		m_State.hand[LTVR_LEFT].buttons = (m_State.hand[LTVR_LEFT].buttons & ~LTVR_BTN_MENU) | nMenu;
+		m_State.hand[LTVR_RIGHT].buttons &= ~LTVR_BTN_MENU;
+	}
+
+	const int nLeftPhys = m_bLeftHanded ? LTVR_RIGHT : LTVR_LEFT;
+	m_bSticksSwapped = (m_nWalkStickPhys != nLeftPhys);
+	if (m_bSticksSwapped)
+	{
+		const unsigned kDirs = LTVR_BTN_STICK_UP | LTVR_BTN_STICK_DOWN | LTVR_BTN_STICK_LEFT | LTVR_BTN_STICK_RIGHT;
+		LTVR_HandState& a = m_State.hand[LTVR_LEFT];
+		LTVR_HandState& b = m_State.hand[LTVR_RIGHT];
+		for (int k = 0; k < 2; ++k)
+		{
+			float f = a.stick[k];
+			a.stick[k] = b.stick[k];
+			b.stick[k] = f;
+		}
+		unsigned nA = a.buttons & kDirs, nB = b.buttons & kDirs;
+		a.buttons = (a.buttons & ~kDirs) | nB;
+		b.buttons = (b.buttons & ~kDirs) | nA;
+	}
+}
+
+// A binding by the game's hands, made on the real controller: the stick
+// directions on the controller whose stick that is, the rest on the one in
+// that hand.
+void CVRMgr::Bind(int nHand, unsigned nButton, int nCommand)
+{
+	if (!m_pfnSetBinding)
+		return;
+	const unsigned kDirs = LTVR_BTN_STICK_UP | LTVR_BTN_STICK_DOWN | LTVR_BTN_STICK_LEFT | LTVR_BTN_STICK_RIGHT;
+	int nPhys = m_bLeftHanded ? 1 - nHand : nHand;
+	if ((nButton & kDirs) && m_bSticksSwapped)
+		nPhys = 1 - nPhys;
+	m_pfnSetBinding(nPhys, nButton, nCommand);
+}
+
 bool CVRMgr::GameButtonPressed(int nHand, unsigned nButton) const
 {
 	if (!IsActive() || m_bAdjusting || IsDecisionOpen() || !g_pInterfaceMgr ||
@@ -737,20 +873,20 @@ void CVRMgr::SetDefaultBindings()
 
 	m_pfnClearBindings();
 
-	m_pfnSetBinding(LTVR_LEFT,  LTVR_BTN_TRIGGER,		COMMAND_ID_ACTIVATE);
-	m_pfnSetBinding(LTVR_LEFT,  LTVR_BTN_PRIMARY,		COMMAND_ID_MISSION);
+	Bind(LTVR_LEFT,  LTVR_BTN_TRIGGER,		COMMAND_ID_ACTIVATE);
+	Bind(LTVR_LEFT,  LTVR_BTN_PRIMARY,		COMMAND_ID_MISSION);
 
-	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_TRIGGER,		COMMAND_ID_FIRING);
-	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_SECONDARY,		COMMAND_ID_HOLSTER);
+	Bind(LTVR_RIGHT, LTVR_BTN_TRIGGER,		COMMAND_ID_FIRING);
+	Bind(LTVR_RIGHT, LTVR_BTN_SECONDARY,		COMMAND_ID_HOLSTER);
 	// (Reloading by hand: A drops the magazine, see CClientWeapon::
 	// VR_UpdateReload, and the right stick click is next ammo; otherwise A
 	// is next ammo and the click reloads. The click isn't bound: it acts
 	// when let go, so holding both stick clicks to set your height doesn't
 	// also reload; see UpdateStickClicks.)
 	if (g_vtVRReload.GetFloat(1.0f) == 0.0f)
-		m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_PRIMARY,	COMMAND_ID_NEXT_AMMO);
-	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK_UP,		COMMAND_ID_JUMP);
-	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK_DOWN,	COMMAND_ID_DUCKLOCK);
+		Bind(LTVR_RIGHT, LTVR_BTN_PRIMARY,	COMMAND_ID_NEXT_AMMO);
+	Bind(LTVR_RIGHT, LTVR_BTN_STICK_UP,		COMMAND_ID_JUMP);
+	Bind(LTVR_RIGHT, LTVR_BTN_STICK_DOWN,	COMMAND_ID_DUCKLOCK);
 }
 
 void CVRMgr::Update(float fFrameTime)
@@ -767,8 +903,15 @@ void CVRMgr::Update(float fFrameTime)
 	if (!m_pfnGetState || !m_pfnGetState(&m_State))
 	{
 		memset(&m_State, 0, sizeof(m_State));
+		memset(&m_RawState, 0, sizeof(m_RawState));
 		return;
 	}
+	m_RawState = m_State;
+	ApplyHandedness();
+
+	// (Left-handed: the gun and hands drawn mirrored, see IsLeftHanded.)
+	if (m_bLeftHanded && m_pfnSetCloseMirror)
+		m_pfnSetCloseMirror(1);
 
 	// Gameplay bindings only while playing; in menus the controllers drive
 	// the menu instead (and e.g. the trigger mustn't also count as "fire").
@@ -803,12 +946,16 @@ void CVRMgr::Update(float fFrameTime)
 
 	// 0 = none, 1 = normal play, 2 = adjusting the gun (fire only), 3 = riding
 	// (the triggers are gas and brake and B gets off, all read directly).
+	// (Bound again when the hands or sticks change sides.)
 	static int s_nBoundSet = 0;
+	static int s_nBoundSides = 0;
 	int nWantSet = bPlaying ? (m_bAdjusting ? 2 : (m_bRiding ? 3 : 1)) : 0;
+	const int nSides = (m_bLeftHanded ? 1 : 0) | (m_bSticksSwapped ? 2 : 0);
 	s_bBindingsOn = bPlaying;
-	if (nWantSet != s_nBoundSet)
+	if (nWantSet != s_nBoundSet || nSides != s_nBoundSides)
 	{
 		s_nBoundSet = nWantSet;
+		s_nBoundSides = nSides;
 		m_bMoveBodyBound = false;
 		m_bSnapTriggerOff = false;		// (the new set binds the trigger as it should be)
 		if (nWantSet == 1)
@@ -820,16 +967,16 @@ void CVRMgr::Update(float fFrameTime)
 			SetDefaultBindings();
 			if (m_pfnSetBinding)
 			{
-				m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_TRIGGER, -1);
-				m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_TRIGGER, -1);
-				m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_SECONDARY, -1);
+				Bind(LTVR_RIGHT, LTVR_BTN_TRIGGER, -1);
+				Bind(LTVR_LEFT, LTVR_BTN_TRIGGER, -1);
+				Bind(LTVR_RIGHT, LTVR_BTN_SECONDARY, -1);
 			}
 		}
 		else if (m_pfnClearBindings)
 		{
 			m_pfnClearBindings();
 			if (nWantSet == 2 && m_pfnSetBinding)
-				m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_TRIGGER, COMMAND_ID_FIRING);
+				Bind(LTVR_RIGHT, LTVR_BTN_TRIGGER, COMMAND_ID_FIRING);
 		}
 	}
 
@@ -845,12 +992,12 @@ void CVRMgr::Update(float fFrameTime)
 		{
 			if (bGrip && !m_bSnapTriggerOff)
 			{
-				m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_TRIGGER, -1);
+				Bind(LTVR_LEFT, LTVR_BTN_TRIGGER, -1);
 				m_bSnapTriggerOff = true;
 			}
 			else if (!bGrip && m_bSnapTriggerOff)
 			{
-				m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_TRIGGER, COMMAND_ID_ACTIVATE);
+				Bind(LTVR_LEFT, LTVR_BTN_TRIGGER, COMMAND_ID_ACTIVATE);
 				m_bSnapTriggerOff = false;
 			}
 		}
@@ -1641,7 +1788,8 @@ void CVRMgr::UpdateScope()
 			const LTVector vFwd = rAim.Forward();
 			const GunFit* pFit = GetCurrentFit();
 			const float fHeight = g_vtVRScopeHeight.GetFloat(8.0f) + (pFit ? pFit->fScopeUp : 0.0f);
-			const float fSide = pFit ? pFit->fScopeRight : 0.0f;
+			// (Left-handed, the gun is the mirror image: its right is your left.)
+			const float fSide = (pFit ? pFit->fScopeRight : 0.0f) * (m_bLeftHanded ? -1.0f : 1.0f);
 			const LTVector vScopeFrom = vFrom + rAim.Up() * (fHeight * fUnitsPerCm) + rAim.Right() * (fSide * fUnitsPerCm);
 			float fBestOff = 1e9f, fBestBehind = 0.0f, fBestUp = 0.0f, fBestRight = 0.0f;
 			LTVector vBestOnLine;
@@ -1777,12 +1925,12 @@ void CVRMgr::UpdateMoveBody()
 	if (Pressed(LTVR_LEFT, LTVR_BTN_GRIP) && !m_bTwoHand && !m_bAdjusting && !IsDecisionOpen() &&
 		!(m_bWantsMag && IsLeftHandAtShoulder()) && !IsLeftHandNearCock())
 	{
-		m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_GRIP, COMMAND_ID_MOVE_BODY);
+		Bind(LTVR_LEFT, LTVR_BTN_GRIP, COMMAND_ID_MOVE_BODY);
 		m_bMoveBodyBound = true;
 	}
 	else if (m_bMoveBodyBound && !bGrip)
 	{
-		m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_GRIP, -1);
+		Bind(LTVR_LEFT, LTVR_BTN_GRIP, -1);
 		m_bMoveBodyBound = false;
 	}
 }
@@ -2378,8 +2526,9 @@ bool CVRMgr::GetAimRay(LTVector& vFrom, LTRotation& rRot) const
 	LTRotation rCamRot;
 	g_pLTClient->GetObjectPos(hCamera, &vCamPos);
 	g_pLTClient->GetObjectRotation(hCamera, &rCamRot);
+	CloseToReal(vHand);
 	vFrom = vCamPos + VR_Rotate(rCamRot, vHand);
-	rRot = rCamRot * rHand;
+	rRot = rCamRot * CloseToReal(rHand);
 	return true;
 }
 
@@ -2623,8 +2772,9 @@ float CVRMgr::GetVehicleSteer() const
 {
 	if (!IsActive() || !m_bRiding || !m_bPlayingNow || m_bAdjusting)
 		return 0.0f;
+	// (Left-handed, the hands on the bars are mirrored: so is their turn.)
 	if (m_bBarsHeld)
-		return m_fBarSteer;
+		return m_bLeftHanded ? -m_fBarSteer : m_fBarSteer;
 	float x = m_State.hand[LTVR_LEFT].stick[0];
 	float y = 0.0f;
 	ApplyDeadZone(x, y);
@@ -2885,7 +3035,8 @@ LTVector CVRMgr::GetMoveVector(float fBodyYaw) const
 
 	// Which way is "forward" for the stick.
 	float fYaw = fBodyYaw;
-	const LTVR_HandState& left = m_State.hand[LTVR_LEFT];
+	// (The hand with the walking stick, where it really points.)
+	const LTVR_HandState& left = m_RawState.hand[m_nWalkStickPhys];
 	if (g_vtVRMoveWithHand.GetFloat() > 0.5f && left.aim.valid)
 		fYaw += YawOf(LTRotation(left.aim.rot[0], left.aim.rot[1], left.aim.rot[2], left.aim.rot[3]));
 	else
@@ -3349,7 +3500,9 @@ bool CVRMgr::GetWristHudPose(LTVector& vPos, LTRotation& rRot, float& fOpacity) 
 		return false;
 	const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
 	LTVector vOffset(g_vtVRWristHudX.GetFloat(-3.0f), g_vtVRWristHudY.GetFloat(0.0f), g_vtVRWristHudZ.GetFloat(-9.0f));
-	vPos = vCamPos + VR_Rotate(rCamRot, vLeft + VR_Rotate(rLeft, vOffset * fUnitsPerCm));
+	LTVector vLocal = vLeft + VR_Rotate(rLeft, vOffset * fUnitsPerCm);
+	CloseToReal(vLocal);
+	vPos = vCamPos + VR_Rotate(rCamRot, vLocal);
 
 	if (g_vtVRWristHudWatch.GetFloat(1.0f) == 0.0f)
 	{
@@ -3365,7 +3518,7 @@ bool CVRMgr::GetWristHudPose(LTVector& vPos, LTRotation& rRot, float& fOpacity) 
 	// along +X; its right runs toward your fingers (+Z) and its top away
 	// from you (-Y). (LTRotation(forward, up) gives right = +Z for these.)
 	LTRotation rFace(LTVector(1.0f, 0.0f, 0.0f), LTVector(0.0f, -1.0f, 0.0f));
-	rRot = rCamRot * rLeft * rFace;
+	rRot = rCamRot * CloseToReal(rLeft * rFace);
 
 	// Shows once you turn it toward you (within about 50 degrees of facing
 	// you) and stays until you turn it well away (past about 60), so it
@@ -3391,7 +3544,9 @@ bool CVRMgr::GetGunHudPos(LTVector& vPos) const
 		return false;
 	const float fUnitsPerCm = m_State.unitsPerMeter / 100.0f;
 	LTVector vOffset(g_vtVRGunHudX.GetFloat(-6.0f), g_vtVRGunHudY.GetFloat(-2.0f), g_vtVRGunHudZ.GetFloat(6.0f));
-	vPos = vCamPos + VR_Rotate(rCamRot, vHand + VR_Rotate(rGun, vOffset * fUnitsPerCm));
+	LTVector vLocal = vHand + VR_Rotate(rGun, vOffset * fUnitsPerCm);
+	CloseToReal(vLocal);
+	vPos = vCamPos + VR_Rotate(rCamRot, vLocal);
 	return true;
 }
 

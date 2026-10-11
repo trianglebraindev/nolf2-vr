@@ -75,6 +75,13 @@ void d3d_SetReallyClose(CReallyCloseData* pData)
 		D3DMATRIX mView;
 		d3d_MulMatrix(mView, *g_pVRReallyCloseToWorld, pData->m_OldView);
 		PD3DDEVICE->SetTransform(D3DTS_VIEW, &mView);
+
+		// Mirrored (left-handed play): faces wind the other way round.
+		if (g_bVRCloseMirror)
+		{
+			g_bVRFlipCull = true;
+			PD3DDEVICE->SetRenderState(D3DRS_CULLMODE, VR_FlipCull(g_nVRStyleCullMode));
+		}
 		return;
 	}
 
@@ -121,6 +128,12 @@ void d3d_UnsetReallyClose(CReallyCloseData* pData)
 	assert(pData);
 
 	PD3DDEVICE->SetViewport(&pData->m_OldViewport);
+
+	if (g_bVRFlipCull)
+	{
+		g_bVRFlipCull = false;
+		PD3DDEVICE->SetRenderState(D3DRS_CULLMODE, g_nVRStyleCullMode);
+	}
 
 	PD3DDEVICE->SetTransform(D3DTS_PROJECTION, &pData->m_OldProj);
 	PD3DDEVICE->SetTransform(D3DTS_VIEW, &pData->m_OldView );

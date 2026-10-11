@@ -143,6 +143,12 @@ install stays untouched.
 | Conversation choices | right stick up / down, right trigger or A to pick, B to say nothing | |
 | Home key (keyboard) | recentre | recentre |
 
+Left-handed (Options > VR > Gun hand: Left): every row swaps sides (fire
+on the left trigger, magazines from over your right shoulder, health on
+your right wrist, and so on); the gun and hands are drawn left-handed. The
+pause menu stays on the left menu button. Which stick walks is its own
+setting (Options > VR > Walk with).
+
 ## Settings
 
 The everyday ones are on the **Options > VR** page in the game. Everything
@@ -175,6 +181,8 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRReload` | 1 | 1 = reload by hand (A drops the magazine, one from over your left shoulder); 0 = the game's reload on the right stick click |
 | `VRThrow` | 1 | 1 = throw by hand (hold the trigger, swing, let go); 0 = the game's own throw |
 | `VRThrowSpeed` | 5 | how fast a throw (m/s, at the hand) goes the game's own distance; faster goes further |
+| `VRLeftHanded` | 0 | 1 = the gun in your left hand: the gun, the free hand and every button swap sides |
+| `VRWalkStick` | 0 | the stick you walk with: 0 = left, 1 = right (the other turns) |
 | `VRCutsceneFlat` | 0 | cutscenes: 0 = in 3D around you; 1 = on a flat screen in front of you |
 | `VRVehicleTilt` | 0 | riding the snowmobile: 0 = the horizon stays level; 1 = the view banks and climbs with it |
 | `VRSeated` | 0 | 0 = standing (crouch for real); 1 = seated (the stick crouches). Options > VR > Play position |

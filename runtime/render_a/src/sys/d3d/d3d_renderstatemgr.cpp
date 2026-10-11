@@ -174,7 +174,9 @@ bool CD3DRenderStateMgr::SetRenderStyleStates(CD3DRenderStyle* pRenderStyle, uin
 	PD3DDEVICE->SetRenderState(D3DRS_ZWRITEENABLE, kTables.m_bZWriteEnable[RenderPass.ZBufferMode]);
 
 	//The culling mode
-	PD3DDEVICE->SetRenderState(D3DRS_CULLMODE, kTables.m_nCullMode[RenderPass.CullMode]);
+	// (VR, left-handed: flipped while drawing mirrored really-close things.)
+	g_nVRStyleCullMode = kTables.m_nCullMode[RenderPass.CullMode];
+	PD3DDEVICE->SetRenderState(D3DRS_CULLMODE, g_bVRFlipCull ? VR_FlipCull(g_nVRStyleCullMode) : g_nVRStyleCullMode);
 
 	//The texture factor
 	PD3DDEVICE->SetRenderState(D3DRS_TEXTUREFACTOR,RenderPass.TextureFactor);

@@ -45,6 +45,18 @@ ViewParams g_ViewParams;
 const ViewBoxDef* g_pVRViewBoxOverride = NULL;
 const D3DMATRIX* g_pVRReallyCloseToWorld = NULL;
 bool g_bVRSkipReallyClose = false;
+bool g_bVRCloseMirror = false;
+bool g_bVRFlipCull = false;
+uint32 g_nVRStyleCullMode = D3DCULL_CCW;
+
+uint32 VR_FlipCull(uint32 nCullMode)
+{
+	if (nCullMode == D3DCULL_CW)
+		return D3DCULL_CCW;
+	if (nCullMode == D3DCULL_CCW)
+		return D3DCULL_CW;
+	return nCullMode;
+}
 
 // Increments the frame code and resets all the world structures' frame
 // codes if it wraps around.
