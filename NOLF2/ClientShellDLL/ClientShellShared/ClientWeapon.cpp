@@ -6232,7 +6232,10 @@ void CClientWeapon::VR_SetupReload()
 
 	HMODELNODE hClip = INVALID_MODEL_NODE;
 	if ( LT_OK != g_pModelLT->GetNode( m_hObject, "clip", hClip ) )
-		hClip = VR_FindMagBone();
+		hClip = INVALID_MODEL_NODE;
+	LTVector vOut;
+	hClip = VR_FindMagBone( hClip, vOut );
+	VR_SetMagAlign( vOut );
 	if ( INVALID_MODEL_NODE != hClip &&
 	     LT_OK == g_pModelLT->GetBindPoseNodeTransform( m_hObject, hClip, m_mVRClipBind ) )
 	{
@@ -6550,7 +6553,8 @@ void CClientWeapon::VR_UpdateReload()
 		{
 			m_hVRMagHand = VR_CreateMagObject( true );
 			m_hVRMagHandNode = m_hVRClipNode;
-			m_mVRMagHandTurn = m_mVRClipTurn;
+			// Held like the Beretta's: its long axis down out of your fist.
+			m_mVRMagHandTurn = m_mVRMagAlign * m_mVRClipTurn;
 		}
 		else
 		{
@@ -6637,27 +6641,41 @@ void CClientWeapon::VR_UpdateReload()
 	}
 }
 
-// The magazine's bone in a model with no "clip" bone, found from the game's
-// own reload animation: a hidden copy of the model is stepped through it,
-// and the bone (not a hand's or arm's, not the gun's own) that travels
-// furthest relative to the gun is the magazine, if it travels far enough.
-// Worked out once per weapon; the candidates go to the log.
-HMODELNODE CClientWeapon::VR_FindMagBone()
+// The magazine's bone, and which way it leaves the gun, from the game's own
+// reload animation: a hidden copy of the model is stepped through it. With
+// hKnown (a "clip" bone) only that bone is followed; otherwise every bone
+// (not a hand's or arm's, not the gun's own) is, and the one that travels
+// furthest relative to the gun, mostly downward, is the magazine.
+// vOut: the way it leaves, in the model's space as the gun is held (a
+// magazine slides out along its length, so this is also its long axis);
+// straight down if the animation doesn't move it. Worked out once per
+// weapon; the candidates go to the log.
+HMODELNODE CClientWeapon::VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut )
 {
 	static int s_anFound[256];		// per weapon id: -2 not yet, -1 none, else the bone
+	static LTVector s_avOut[256];
 	static bool s_bInit = false;
 	if ( !s_bInit )
 	{
 		for ( int i = 0; i < 256; ++i )
+		{
 			s_anFound[i] = -2;
+			s_avOut[i].Init( 0.0f, -1.0f, 0.0f );
+		}
 		s_bInit = true;
 	}
+	vOut.Init( 0.0f, -1.0f, 0.0f );
 	if ( !m_pWeapon || !g_VRMgr.IsActive() )
-		return INVALID_MODEL_NODE;
+		return hKnown;
 	const int nId = m_nWeaponId;
 	if ( s_anFound[nId] != -2 )
+	{
+		vOut = s_avOut[nId];
+		if ( INVALID_MODEL_NODE != hKnown )
+			return hKnown;
 		return ( s_anFound[nId] >= 0 ) ? (HMODELNODE)s_anFound[nId] : INVALID_MODEL_NODE;
-	s_anFound[nId] = -1;
+	}
+	s_anFound[nId] = ( INVALID_MODEL_NODE != hKnown ) ? (int)hKnown : -1;
 
 	ObjectCreateStruct ocs;
 	INIT_OBJECTCREATESTRUCT( ocs );
@@ -6666,7 +6684,7 @@ HMODELNODE CClientWeapon::VR_FindMagBone()
 	ocs.m_Flags = 0;		// (never drawn)
 	HOBJECT hTemp = g_pLTClient->CreateObject( &ocs );
 	if ( !hTemp )
-		return INVALID_MODEL_NODE;
+		return hKnown;
 
 	HMODELNODE hGun;
 	uint32 nNodes = 0;
@@ -6676,13 +6694,13 @@ HMODELNODE CClientWeapon::VR_FindMagBone()
 	     INVALID_ANI == nAnim || LT_OK != g_pModelLT->SetCurAnim( hTemp, MAIN_TRACKER, nAnim ) ||
 	     LT_OK != g_pModelLT->GetCurAnimLength( hTemp, MAIN_TRACKER, nLength ) || nLength == 0 )
 	{
-		CVRMgr::Log( "Reload: %s - no reload animation to find its magazine in", m_pWeapon->szName );
+		CVRMgr::Log( "Reload: %s - no reload animation to follow its magazine in", m_pWeapon->szName );
 		g_pLTClient->RemoveObject( hTemp );
-		return INVALID_MODEL_NODE;
+		return hKnown;
 	}
 	g_pModelLT->SetPlaying( hTemp, MAIN_TRACKER, false );
 
-	// The candidate bones.
+	// The bones to follow.
 	enum { kMaxCand = 24, kSamples = 24 };
 	HMODELNODE ahCand[kMaxCand];
 	char aszCand[kMaxCand][32];
@@ -6696,14 +6714,21 @@ HMODELNODE CClientWeapon::VR_FindMagBone()
 		if ( LT_OK != g_pModelLT->GetNodeName( hTemp, (HMODELNODE)i, szName, sizeof( szName ) ) )
 			continue;
 		bool bSkip = false;
-		for ( int k = 0; k < (int)( sizeof( kSkip ) / sizeof( kSkip[0] ) ) && !bSkip; ++k )
+		if ( INVALID_MODEL_NODE != hKnown )
 		{
-			char szLow[64], szKey[32];
-			SAFE_STRCPY( szLow, szName );
-			SAFE_STRCPY( szKey, kSkip[k] );
-			_strlwr( szLow );
-			_strlwr( szKey );
-			bSkip = ( strstr( szLow, szKey ) != NULL );
+			bSkip = ( (HMODELNODE)i != hKnown );
+		}
+		else
+		{
+			for ( int k = 0; k < (int)( sizeof( kSkip ) / sizeof( kSkip[0] ) ) && !bSkip; ++k )
+			{
+				char szLow[64], szKey[32];
+				SAFE_STRCPY( szLow, szName );
+				SAFE_STRCPY( szKey, kSkip[k] );
+				_strlwr( szLow );
+				_strlwr( szKey );
+				bSkip = ( strstr( szLow, szKey ) != NULL );
+			}
 		}
 		if ( bSkip )
 			continue;
@@ -6715,12 +6740,15 @@ HMODELNODE CClientWeapon::VR_FindMagBone()
 	}
 
 	// Step through the reload, each bone relative to the gun's own bone.
+	LTRotation rGunStart( 0.0f, 0.0f, 0.0f, 1.0f );
 	for ( int k = 0; k <= kSamples; ++k )
 	{
 		g_pModelLT->SetCurAnimTime( hTemp, MAIN_TRACKER, (uint32)( (float)nLength * (float)k / (float)kSamples ) );
 		LTransform tGun;
 		if ( LT_OK != g_pModelLT->GetNodeTransform( hTemp, hGun, tGun, LTFALSE ) )
 			continue;
+		if ( 0 == k )
+			rGunStart = tGun.m_Rot;
 		for ( int c = 0; c < nCand; ++c )
 		{
 			LTransform t;
@@ -6752,19 +6780,29 @@ HMODELNODE CClientWeapon::VR_FindMagBone()
 		if ( strlen( szAll ) + strlen( szOne ) < sizeof( szAll ) )
 			strcat( szAll, szOne );
 		// A magazine leaves the gun mostly downward (the AK-47's goes down
-		// 1.17 of 1.35; the shotgun's pump slides straight back, 0.41).
-		bool bDown = ( -avMost[c].y ) >= 0.5f * afTravel[c];
+		// 1.17 of 1.35; the shotgun's pump slides straight back, 0.41). A
+		// known "clip" bone counts whichever way it goes (the Sterling's
+		// goes in from the side).
+		bool bDown = ( INVALID_MODEL_NODE != hKnown ) || ( -avMost[c].y ) >= 0.5f * afTravel[c];
 		if ( bDown && ( nBest < 0 || afTravel[c] > afTravel[nBest] ) )
 			nBest = c;
 	}
 	// (Model units: the hand is 0.38 across, so 0.4 is about a hand's width.)
 	const float kMinTravel = 0.4f;
-	bool bFound = nBest >= 0 && afTravel[nBest] >= kMinTravel;
-	CVRMgr::Log( "Reload: %s - bones moving in its reload (travel, most-moved offset; model units):%s -> %s",
-		m_pWeapon->szName, nCand ? szAll : " none", bFound ? aszCand[nBest] : "no magazine" );
+	bool bFound = nBest >= 0 && ( afTravel[nBest] >= kMinTravel || INVALID_MODEL_NODE != hKnown );
+	if ( bFound && afTravel[nBest] > 0.05f )
+	{
+		// Its way out, from the gun's frame into the model's as held.
+		LTVector vDir = avMost[nBest] / afTravel[nBest];
+		vOut = VR_Rotate( rGunStart, vDir );
+		vOut.Normalize();
+	}
+	CVRMgr::Log( "Reload: %s - bones moving in its reload (travel, most-moved offset; model units):%s -> %s, leaves along (%.2f %.2f %.2f)",
+		m_pWeapon->szName, nCand ? szAll : " none", bFound ? aszCand[nBest] : "no magazine", vOut.x, vOut.y, vOut.z );
+	s_avOut[nId] = vOut;
 	if ( bFound )
 		s_anFound[nId] = (int)ahCand[nBest];
-	return bFound ? ahCand[nBest] : INVALID_MODEL_NODE;
+	return bFound ? ahCand[nBest] : hKnown;
 }
 
 // VR: the muzzle of the gun in your hand (tracers start there, see
@@ -6775,4 +6813,39 @@ bool CClientWeapon::VR_GetMuzzlePos( LTVector *pvPos ) const
 		return false;
 	*pvPos = m_vFlashPos;
 	return true;
+}
+
+// The turn that points a magazine's way out of its gun (vOut, model space)
+// straight down, as a pistol's magazine sits in its grip: then every
+// magazine sits along your fist the way the Beretta's does (its way out is
+// about straight down already).
+void CClientWeapon::VR_SetMagAlign( LTVector const &vOut )
+{
+	m_mVRMagAlign.Identity();
+	LTVector vFrom = vOut;
+	float fLen = vFrom.Mag();
+	if ( fLen < 1e-4f )
+		return;
+	vFrom /= fLen;
+	const LTVector vTo( 0.0f, -1.0f, 0.0f );
+	// axis = from x to (written out: LTVector::Cross is reversed)
+	LTVector vAxis( vFrom.y * vTo.z - vFrom.z * vTo.y, vFrom.z * vTo.x - vFrom.x * vTo.z, vFrom.x * vTo.y - vFrom.y * vTo.x );
+	float fSin = vAxis.Mag();
+	float fCos = vFrom.Dot( vTo );
+	float fAngle = (float)atan2( fSin, fCos );
+	if ( fSin < 1e-4f )
+	{
+		if ( fCos > 0.0f )
+			return;					// already down
+		vAxis.Init( 0.0f, 0.0f, 1.0f );	// straight up: half a turn about forward
+		fAngle = 3.14159265f;
+	}
+	else
+		vAxis /= fSin;
+	// Rotation by fAngle about vAxis (turns vFrom onto vTo), written out.
+	float c = (float)cos( fAngle ), sn = (float)sin( fAngle ), t = 1.0f - c;
+	const LTVector &k = vAxis;
+	m_mVRMagAlign.m[0][0] = c + k.x * k.x * t;		m_mVRMagAlign.m[0][1] = k.x * k.y * t - k.z * sn;	m_mVRMagAlign.m[0][2] = k.x * k.z * t + k.y * sn;
+	m_mVRMagAlign.m[1][0] = k.y * k.x * t + k.z * sn;	m_mVRMagAlign.m[1][1] = c + k.y * k.y * t;		m_mVRMagAlign.m[1][2] = k.y * k.z * t - k.x * sn;
+	m_mVRMagAlign.m[2][0] = k.z * k.x * t - k.y * sn;	m_mVRMagAlign.m[2][1] = k.z * k.y * t + k.x * sn;	m_mVRMagAlign.m[2][2] = c + k.z * k.z * t;
 }

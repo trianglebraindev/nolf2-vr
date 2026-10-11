@@ -488,6 +488,17 @@ the shutdown hang.
   must now leave mostly downward (down >= half its travel), so the
   shotgun has none: nothing drops, and (Tre) the hand holds a stand-in,
   the Beretta's magazine.
+- Third test (Tre): streaks gone, shotgun better; the Beretta's magazine
+  is held right but the AK-47's and Sterling's lie flat across the hand.
+  Holding a magazine "as it sits in the gun" only suits the Beretta (its
+  magazine is in the pistol grip, along the fist); the AK-47's sits ahead
+  of the trigger guard and the Sterling's goes in from the side. Now each
+  magazine's long axis is turned to point straight down out of the fist,
+  as the Beretta's does: the long axis is the way it leaves the gun in
+  the reload animation (a magazine slides out along its length), now
+  followed for "clip" bones too (VR_FindMagBone; logged as "leaves along
+  (x y z)"), and VR_SetMagAlign turns that onto straight down (model
+  space as the gun is held). The falling copy still keeps the gun's turn.
 - The shoulder (CVRMgr::IsLeftHandAtShoulder): left of the head's middle,
   no further forward than the face, from about chest height up, within
   half a metre, in a frame turned by the head's heading only. While the
