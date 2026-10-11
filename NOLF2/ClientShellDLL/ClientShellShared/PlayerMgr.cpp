@@ -5333,7 +5333,24 @@ void CPlayerMgr::HideShowAttachments(HOBJECT hObj)
         uint32 dwUsrFlags;
         g_pCommonLT->GetObjectFlags(attachList[i], OFT_User, dwUsrFlags);
 
-        if (dwUsrFlags & USRFLG_ATTACH_HIDE1SHOW3)
+        // VR: the snowmobile you're riding stays in sight: its player-view
+		// model is only the cockpit (handlebars, dash, windshield), so with
+		// the world one hidden there was nothing under you (Tre).
+		bool bVRVehicle = g_VRMgr.IsActive() && (dwUsrFlags & USRFLG_ATTACH_HIDE1SHOW3) &&
+			g_pGameClientShell->GetSFXMgr()->FindSpecialFX(SFX_PLAYERVEHICLE_ID, attachList[i]);
+
+        if (bVRVehicle)
+		{
+			g_pCommonLT->SetObjectFlags(attachList[i], OFT_Flags, FLAG_VISIBLE, FLAG_VISIBLE);
+			static HOBJECT s_hLogged = LTNULL;
+			if (s_hLogged != attachList[i])
+			{
+				s_hLogged = attachList[i];
+				g_VRMgr.LogModelOnce(attachList[i], "Snowmobile (world)");
+				CVRMgr::Log("Vehicle: showing the snowmobile you ride (its world model)");
+			}
+		}
+        else if (dwUsrFlags & USRFLG_ATTACH_HIDE1SHOW3)
 		{
 			if (m_pPlayerCamera->IsFirstPerson())
 			{

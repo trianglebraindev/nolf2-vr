@@ -694,6 +694,15 @@ the shutdown hang.
   Really-close space is at VRGunScale while riding (the model is made at
   the hands' size). Tilt: the engine's new LTVR_SetOriginRot (LTVR_VERSION
   11) turns the body every way.
+- First test (Tre): it didn't move at all, and the player-view model is
+  only the cockpit (bars, dash, windshield, engine front), so there was
+  nothing under you. Now: the snowmobile you ride (its world model,
+  attached to the player, hidden in first person by
+  CPlayerMgr::HideShowAttachments) stays visible in VR; a once-a-second
+  riding log (CVehicleMgr::VR_LogRiding: gas, brake, steer, flags, may
+  move, the climb-on animation, speed) to find why it doesn't move; and if
+  the climb-on ("Select") animation never reports done, it goes after
+  2.5 s (the game only lets you move once it's done).
 - The model's own hands stay on the bars for now. Its bones are logged
   once to vr_models.log ("Snowmobile"), to put your hands there (or on the
   bars) next.

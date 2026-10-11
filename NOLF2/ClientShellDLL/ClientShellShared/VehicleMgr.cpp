@@ -181,6 +181,8 @@ CVehicleMgr::CVehicleMgr()
 
     m_bVehicleStopped    = LTTRUE;
 	m_bVRReverse		 = false;
+	m_fVRSelectStart	 = -1.0f;
+	m_fVRNextLog		 = 0.0f;
 	m_fVRStopBrakeStart	 = -1.0f;
     m_bVehicleAtMaxSpeed = LTFALSE;
 
@@ -1917,8 +1919,36 @@ void CVehicleMgr::UpdateModels()
 //
 // ----------------------------------------------------------------------- //
 
+// VR: once a second while riding, what the controls and the snowmobile are
+// doing (it wouldn't move at first, Tre). (From UpdateVehicleModel, which
+// runs whether or not it may move.)
+void CVehicleMgr::VR_LogRiding()
+{
+	if (!g_VRMgr.IsActive() || !g_VRMgr.IsRiding())
+		return;
+	const float fTime = g_pLTClient->GetTime();
+	if (fTime < m_fVRNextLog)
+		return;
+	m_fVRNextLog = fTime + 1.0f;
+
+	LTBOOL bAniDone = LTFALSE;
+	const char* pszAni = IsCurVehicleAni("Select", bAniDone) ? "select" : (IsCurVehicleAni("Deselect", bAniDone) ? "deselect" : "other");
+	const float fUpm = g_VRMgr.GetUnitsPerMeter() > 0.0f ? g_VRMgr.GetUnitsPerMeter() : 60.0f;
+	LTVector vVel = g_pMoveMgr->GetVelocity();
+	vVel.y = 0.0f;
+	CVRMgr::Log("Vehicle: gas %.2f brake %.2f steer %.2f%s | flags fwd %d brake %d | may move %d (player %d) | anim %s%s | "
+		"speed %.1f m/s of %.1f, accel %.0f of %.0f | stopped %d ground %d reverse %d",
+		g_VRMgr.GetVehicleThrottle(), g_VRMgr.GetVehicleBrake(), g_VRMgr.GetVehicleSteer(), g_VRMgr.AreBarsHeld() ? " (bars)" : "",
+		(m_dwControlFlags & BC_CFLG_FORWARD) ? 1 : 0, (m_dwControlFlags & BC_CFLG_REVERSE) ? 1 : 0,
+		(int)g_pMoveMgr->GetAllowMovement(), (int)g_pPlayerMgr->IsPlayerMovementAllowed(), pszAni, bAniDone ? " (done)" : "",
+		vVel.Mag() / fUpm, GetMaxVelMag() / fUpm, m_fVehicleBaseMoveAccel, GetMaxAccelMag(),
+		(int)m_bVehicleStopped, (int)g_pMoveMgr->IsOnGround(), (int)m_bVRReverse);
+}
+
 void CVehicleMgr::UpdateVehicleModel()
 {
+	VR_LogRiding();
+
 	if (!m_hVehicleModel || (m_ePPhysicsModel != PPM_SNOWMOBILE) ) return;
 
 	//See if we are paused, if so we need to pause the animation...
@@ -2195,6 +2225,23 @@ void CVehicleMgr::UpdateVehicleSounds()
 
 	if (IsCurVehicleAni("Select", bIsDone))
 	{
+		// (VR: measuring why the snowmobile wouldn't move, Tre: if the
+		// climb-on animation never says it's done, go anyway after 2.5 s.)
+		if (g_VRMgr.IsActive())
+		{
+			float fNow = g_pLTClient->GetTime();
+			if (m_fVRSelectStart < 0.0f)
+				m_fVRSelectStart = fNow;
+			if (!bIsDone && fNow - m_fVRSelectStart > 2.5f)
+			{
+				CVRMgr::Log("Vehicle: the climb-on animation never finished (playback state %u): moving anyway",
+					g_pLTClient->GetModelPlaybackState(m_hVehicleModel));
+				bIsDone = LTTRUE;
+			}
+			if (bIsDone && !g_pMoveMgr->GetAllowMovement())
+				CVRMgr::Log("Vehicle: climbed on after %.1f s, free to move", fNow - m_fVRSelectStart);
+		}
+
 		if (bIsDone)
 		{
 			// Okay, we can move now...
@@ -2207,7 +2254,12 @@ void CVehicleMgr::UpdateVehicleSounds()
 	}
 	else if (IsCurVehicleAni("Deselect", bIsDone))
 	{
+		m_fVRSelectStart = -1.0f;
 		return;
+	}
+	else
+	{
+		m_fVRSelectStart = -1.0f;
 	}
 
 	bIsDone = LTFALSE;
