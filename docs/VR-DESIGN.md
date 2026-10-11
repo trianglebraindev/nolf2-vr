@@ -316,7 +316,7 @@ Next, in a suggested order:
     "Menus: the mouse steps aside").
 11. Reloading by hand (see "Manual reloading"); cocking by hand after
     running dry (first pass, see "Cocking").
-12. Throwing by hand (first pass, see "Throwing").
+12. Throwing by hand (done: "perfect", Tre; see "Throwing").
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
