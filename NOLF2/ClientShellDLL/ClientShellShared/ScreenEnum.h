@@ -82,6 +82,9 @@ ADD_SCREEN(POSTLOAD,ScreenPostload)
 //purpose: layout lookups go by name, so it looks like that page. (Looking
 //a screen up by name finds the Game page first, which is what we want.)
 ADD_SCREEN(VR,ScreenGame)
+//options - Cheats, and its Level select (NOLF2 VR project), likewise
+ADD_SCREEN(VRCHEATS,ScreenGame)
+ADD_SCREEN(VRLEVELS,ScreenGame)
 
 // Tron's player management screen
 ADD_SCREEN(SUBROUTINES,ScreenSubroutines)

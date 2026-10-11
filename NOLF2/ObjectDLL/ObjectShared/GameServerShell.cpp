@@ -2477,7 +2477,10 @@ void CGameServerShell::CheatGod (CPlayerObj* pPlayer, uint32 nData)
 {
 	if (!pPlayer) return; // yeah, this is redundant but hell, cheats aren't called every frame
 
-	pPlayer->ToggleGodMode ();
+	// (The client sends the mode it wants: setting it, rather than flipping
+	// it, keeps the two in step when the VR cheats page re-applies god mode
+	// after a level or save loads.)
+	pPlayer->SetGodMode (nData != 0);
 }
 
 // ----------------------------------------------------------------------- //
@@ -2598,7 +2601,9 @@ void CGameServerShell::CheatTears (CPlayerObj* pPlayer, uint32 nData)
 {
 	if (!pPlayer) return;
 
-	if ((g_bInfiniteAmmo = !g_bInfiniteAmmo)) pPlayer->FullWeaponCheat();
+	// (Set from the client's mode, not flipped: see CheatGod.)
+	g_bInfiniteAmmo = (nData != 0);
+	if (g_bInfiniteAmmo) pPlayer->FullWeaponCheat();
 }
 
 // ----------------------------------------------------------------------- //
@@ -2821,7 +2826,8 @@ extern float g_kfDefaultBodyExplosionVelocity;
 		g_vtBodyExplosionVelMultiplier.Init(g_pLTServer, "BodyExplosionMult", NULL, g_kfDefaultBodyExplosionVelocity);
 	}
 
-	if (g_vtBodyExplosionVelMultiplier.GetFloat() < 10.0f)
+	// (Set from the client's mode, not flipped: see CheatGod.)
+	if (nData != 0)
 	{
 		g_vtBodyExplosionVelMultiplier.SetFloat(10.0f);
 	}

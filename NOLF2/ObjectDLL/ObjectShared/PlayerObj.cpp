@@ -3351,6 +3351,12 @@ void CPlayerObj::ToggleGodMode()
 	m_damage.SetCanDamage(!m_bGodMode);
 }
 
+void CPlayerObj::SetGodMode(bool bOn)
+{
+	m_bGodMode = bOn ? LTTRUE : LTFALSE;
+	m_damage.SetCanDamage(!m_bGodMode);
+}
+
 
 // ----------------------------------------------------------------------- //
 //

@@ -54,6 +54,7 @@
 //under options/game
 #include "ScreenCrosshair.h"
 #include "ScreenVR.h"
+#include "ScreenVRCheats.h"
 
 //under options/controls
 #include "ScreenMouse.h"
@@ -220,6 +221,12 @@ void CTO2ScreenMgr::AddScreen(eScreenID screenID)
 		break;
 	case SCREEN_ID_VR:
 		pScreen = debug_new(CScreenVR);
+		break;
+	case SCREEN_ID_VRCHEATS:
+		pScreen = debug_new(CScreenVRCheats);
+		break;
+	case SCREEN_ID_VRLEVELS:
+		pScreen = debug_new(CScreenVRLevels);
 		break;
 	case SCREEN_ID_CONTROLS:
 		pScreen = debug_new(CScreenControls);

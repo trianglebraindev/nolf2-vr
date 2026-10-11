@@ -83,6 +83,15 @@ public:
 	// Your head now = Cate standing, facing forward (both stick clicks held
 	// a second, or Options > VR > Set my height now).
 	void		SetHeightNow();
+	// Cheats that stay on until turned off (Options > Cheats): set one (now,
+	// if in a game; the setting is kept) and put them back after a level or
+	// save loads (OnEnterWorld, from CGameClientShell).
+	void		SetStayOnCheat(const char* pszSetting, bool bOn);
+	static bool	CanCheat();
+	void		OnEnterWorld();
+	void		UpdateCheats();
+	bool		m_bCheatsPending;
+	float		m_fCheatsAt;
 	bool		IsSeated() const;					// VRSeated
 	bool		IsRealCrouching() const	{ return m_bRealCrouch; }	// standing, head well down
 

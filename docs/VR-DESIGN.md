@@ -319,6 +319,7 @@ Next, in a suggested order:
 12. Throwing by hand (done: "perfect", Tre; see "Throwing").
 13. Height, seated / standing and crouching for real (done: "works
     perfect", Tre; see "Height and crouching").
+14. Cheats page with level select, for testing (first pass, see "Cheats").
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
@@ -633,6 +634,32 @@ the shutdown hang.
   reload or open the adjust mode): the left one starts / ends the adjust
   mode, the right one is sent to the game as a key press (next ammo, or
   reload with the game's reloading) instead of being bound.
+
+## Cheats (first pass)
+
+- Tre's ask: a cheat menu below the VR settings, toggles and the game's
+  own cheats, and a level select "so I can easily get to the vehicle
+  levels for testing". Picks: its own page (Options > Cheats, under VR);
+  every level of every mission, started fresh at the current difficulty
+  with the game's loadout; toggles stay on until turned off; all of the
+  game's single-player cheats except the chase view (third person) and the
+  multiplayer / debugging ones.
+- ScreenVRCheats.cpp: CScreenVRCheats and CScreenVRLevels, both borrowing
+  the Game page's look like the VR page (ScreenEnum.h: VRCHEATS, VRLEVELS
+  named ScreenGame).
+- Toggles: god mode, invisible to enemies, infinite ammo (the game's
+  "tears", which also gives every weapon), flying bodies ("baddaboom"),
+  and the chapter unlock ("endgame", a registry flag). The first four are
+  settings (VRCheatGod / Invisible / Ammo / Bodies in vr_settings.txt);
+  CVRMgr::OnEnterWorld (from CGameClientShell) has UpdateCheats put them
+  back a second after every level or save loads.
+- CCheatMgr::SetToggle / Run / IsEndgameUnlocked / SetEndgameUnlocked are
+  new; the server's god, tears and body-golfing cheats now set the mode
+  the client sends instead of flipping it (they used to flip, so putting
+  one back on could have turned it off).
+- Level select: MISSION / LEVEL names from the mission data (the level's
+  file name if it has none), CMissionMgr::StartGameFromLevel as the
+  game's own chapter list does.
 
 ## Menus: the mouse steps aside
 

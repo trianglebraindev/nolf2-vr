@@ -35,6 +35,17 @@ class CCheatMgr
 
 		bool	Process( CheatCode nCheatCode, CParsedMsg &cMsg );
 
+		// NOLF2 VR project: the cheats page (Options > Cheats, see
+		// ScreenVRCheats). A toggle (god, invisible, tears, body golfing) set
+		// on or off, telling the server even if it's already that way (after
+		// a level or save loads, the server has forgotten); a one-shot cheat
+		// run as if typed; and the "endgame" chapter unlock.
+		LTBOOL	IsActive( CheatCode nCheatCode ) const { return ( nCheatCode > CHEAT_NONE && nCheatCode < CHEAT_MAX ) ? s_CheatInfo[nCheatCode].bActive : LTFALSE; }
+		void	SetToggle( CheatCode nCheatCode, bool bOn );
+		void	Run( CheatCode nCheatCode );
+		bool	IsEndgameUnlocked();
+		void	SetEndgameUnlocked( bool bOn );
+
 	private:
 
         void    SendCheatMessage( CheatCode nCheatCode, uint32 nData );

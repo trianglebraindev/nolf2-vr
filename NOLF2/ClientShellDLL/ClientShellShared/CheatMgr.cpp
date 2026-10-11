@@ -394,6 +394,48 @@ bool CCheatMgr::Process( CheatCode nCheatCode, CParsedMsg &cMsg )
 
 // ----------------------------------------------------------------------- //
 //
+//	NOLF2 VR project: the cheats page (see CheatMgr.h).
+//
+// ----------------------------------------------------------------------- //
+
+void CCheatMgr::SetToggle( CheatCode nCheatCode, bool bOn )
+{
+	switch ( nCheatCode )
+	{
+		case CHEAT_GOD:			SetGodMode( bOn ? LTTRUE : LTFALSE );		break;
+		case CHEAT_INVISIBLE:	SetInvisible( bOn ? LTTRUE : LTFALSE );		break;
+		case CHEAT_TEARS:		Tears( bOn ? LTTRUE : LTFALSE );			break;
+		case CHEAT_BODYGOLFING:	BodyGolfing( bOn ? LTTRUE : LTFALSE );		break;
+		default:				return;
+	}
+	if ( bOn )
+		m_bPlayerCheated = LTTRUE;
+}
+
+void CCheatMgr::Run( CheatCode nCheatCode )
+{
+	const char *pszArg = s_CheatInfo[0].pzText;
+	CParsedMsg cMsg( 1, &pszArg );
+	Process( nCheatCode, cMsg );
+}
+
+bool CCheatMgr::IsEndgameUnlocked()
+{
+	CRegMgr* pRegMgr = g_pVersionMgr->GetRegMgr();
+	return pRegMgr->IsValid() && pRegMgr->Get( "EndGame", 0 ) != 0;
+}
+
+void CCheatMgr::SetEndgameUnlocked( bool bOn )
+{
+	CRegMgr* pRegMgr = g_pVersionMgr->GetRegMgr();
+	if ( pRegMgr->IsValid() )
+		pRegMgr->Set( "EndGame", bOn ? 1 : 0 );
+	if ( bOn )
+		m_bPlayerCheated = LTTRUE;
+}
+
+// ----------------------------------------------------------------------- //
+//
 //	ROUTINE:	CCheatMgr::SendCheatMessage()
 //
 //	PURPOSE:	sends a cheat to the server

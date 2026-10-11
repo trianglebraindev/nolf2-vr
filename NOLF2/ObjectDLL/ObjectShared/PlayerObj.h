@@ -97,6 +97,7 @@ class CPlayerObj : public CCharacter
         void SetSpectatorMode(LTBOOL bOn);
         void SetInvisibleMode(LTBOOL bOn);
 		void ToggleGodMode();
+		void SetGodMode(bool bOn);
 
 		// Makes player invulnerable for a period of time.
 		void SetRespawnInvulnerability( );

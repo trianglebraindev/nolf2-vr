@@ -1473,6 +1473,9 @@ void CGameClientShell::OnEnterWorld()
 	// In world now.
 	m_bInWorld = true;
 
+	// (VR project: cheats set to stay on go back on, see CVRMgr::UpdateCheats.)
+	g_VRMgr.OnEnterWorld();
+
 	// Make sure we enable all object render groups so we don't have any weird state
 	// left over from previous levels
 	g_pLTClient->SetAllObjectRenderGroupEnabled();

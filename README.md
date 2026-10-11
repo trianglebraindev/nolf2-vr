@@ -58,6 +58,12 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   then your left hand works the pump, not the gun). An orange glow marks the part to pull. The sniper rifle needs
   no cocking.
 
+- **Cheats** (Options > Cheats): god mode, invisible to enemies, infinite
+  ammo and flying bodies (these stay on through levels and loading until
+  you turn them off), all weapons / gear / mods, full ammo / health /
+  armor, skill points, finish the level or mission, a snowmobile, unlock
+  the chapter list, and Level select (any level of any mission).
+
 - **Throwing by hand** (default; Options > VR > Throwing: By hand / Game
   original): grenades, the banana, coins, shuriken: hold the trigger, swing
   your arm and let go. The harder you throw, the further it goes. The bear

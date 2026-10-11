@@ -117,6 +117,11 @@
 //                   set your height before Cate crouches (default 25;
 //                   0 = never, the stick only).
 //
+//   Cheats (Options > Cheats, see ScreenVRCheats; on until turned off, put
+//   back after every level or save loads, see UpdateCheats):
+//   VRCheatGod, VRCheatInvisible, VRCheatAmmo (infinite ammo), VRCheatBodies
+//                   (explosions throw bodies far): 1 = on
+//
 //   Throwing (see CClientWeapon::VR_UpdateThrow):
 //   VRThrow         1 = by hand (default): hold the trigger, swing, let go.
 //                   0 = the game's own (the trigger throws along the aim).
@@ -152,6 +157,7 @@
 #include "LayoutMgr.h"
 #include "HUDItem.h"
 #include "ltquaduvutils.h"
+#include "CheatMgr.h"
 #include <stdarg.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -192,6 +198,10 @@ static VarTrack g_vtVRSwing;
 static VarTrack g_vtVRReload;
 static VarTrack g_vtVRThrow;
 static VarTrack g_vtVRSeated;
+static VarTrack g_vtVRCheatGod;
+static VarTrack g_vtVRCheatInvisible;
+static VarTrack g_vtVRCheatAmmo;
+static VarTrack g_vtVRCheatBodies;
 static VarTrack g_vtVRCrouchDepth;
 static VarTrack g_vtVRThrowSpeed;
 static VarTrack g_vtVRVignette;
@@ -270,6 +280,8 @@ CVRMgr::CVRMgr()
 	m_bRingOpen			= false;
 	m_bMoveBodyBound	= false;
 	m_bRealCrouch		= false;
+	m_bCheatsPending	= false;
+	m_fCheatsAt			= 0.0f;
 	m_bStickCombo		= false;
 	m_bComboHeld		= false;
 	m_bComboDone		= false;
@@ -380,6 +392,10 @@ void CVRMgr::Init()
 	g_vtVRReload.Init(g_pLTClient, "VRReload", NULL, 1.0f);
 	g_vtVRThrow.Init(g_pLTClient, "VRThrow", NULL, 1.0f);
 	g_vtVRSeated.Init(g_pLTClient, "VRSeated", NULL, 0.0f);
+	g_vtVRCheatGod.Init(g_pLTClient, "VRCheatGod", NULL, 0.0f);
+	g_vtVRCheatInvisible.Init(g_pLTClient, "VRCheatInvisible", NULL, 0.0f);
+	g_vtVRCheatAmmo.Init(g_pLTClient, "VRCheatAmmo", NULL, 0.0f);
+	g_vtVRCheatBodies.Init(g_pLTClient, "VRCheatBodies", NULL, 0.0f);
 	g_vtVRCrouchDepth.Init(g_pLTClient, "VRCrouchDepth", NULL, 25.0f);
 	g_vtVRThrowSpeed.Init(g_pLTClient, "VRThrowSpeed", NULL, 5.0f);
 	g_vtVRVignette.Init(g_pLTClient, "VRVignette", NULL, 0.0f);
@@ -440,6 +456,10 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRReload",			1.0f },
 	{ "VRThrow",			1.0f },
 	{ "VRSeated",			0.0f },
+	{ "VRCheatGod",			0.0f },
+	{ "VRCheatInvisible",	0.0f },
+	{ "VRCheatAmmo",		0.0f },
+	{ "VRCheatBodies",		0.0f },
 	{ "VRCrouchDepth",		25.0f },
 	{ "VRThrowSpeed",		5.0f },
 	{ "VRVignette",			0.0f },
@@ -646,6 +666,9 @@ void CVRMgr::Update(float fFrameTime)
 {
 	if (!m_bInitialized)
 		Init();
+
+	// (With or without the headset.)
+	UpdateCheats();
 
 	m_aPrevButtons[0] = m_State.hand[0].buttons;
 	m_aPrevButtons[1] = m_State.hand[1].buttons;
@@ -2384,6 +2407,61 @@ LTVector CVRMgr::GetMoveVector(float fBodyYaw) const
 	LTVector vForward((float)sin(fYaw), 0.0f, (float)cos(fYaw));
 	LTVector vRight((float)cos(fYaw), 0.0f, -(float)sin(fYaw));
 	return vForward * fY + vRight * fX;
+}
+
+// ----------------------------------------------------------------------- //
+// Cheats that stay on (Options > Cheats)
+// ----------------------------------------------------------------------- //
+
+// The cheats page's toggles: which setting goes with which cheat.
+static const struct { const char* pszSetting; CheatCode eCheat; } kStayOnCheats[] =
+{
+	{ "VRCheatGod",			CHEAT_GOD },
+	{ "VRCheatInvisible",	CHEAT_INVISIBLE },
+	{ "VRCheatAmmo",		CHEAT_TEARS },
+	{ "VRCheatBodies",		CHEAT_BODYGOLFING },
+};
+
+void CVRMgr::OnEnterWorld()
+{
+	// A level or a saved game loaded: the server has forgotten the cheats.
+	// Put them back once the player's in (a second on).
+	m_bCheatsPending = true;
+	m_fCheatsAt = g_pLTClient->GetTime() + 1.0f;
+}
+
+bool CVRMgr::CanCheat()
+{
+	return g_pCheatMgr && g_pLTClient->IsConnected() && !IsMultiplayerGame() && g_pPlayerMgr &&
+		g_pPlayerMgr->IsPlayerInWorld();
+}
+
+void CVRMgr::SetStayOnCheat(const char* pszSetting, bool bOn)
+{
+	SetSetting(pszSetting, bOn ? 1.0f : 0.0f);
+	for (int i = 0; i < (int)(sizeof(kStayOnCheats) / sizeof(kStayOnCheats[0])); ++i)
+	{
+		if (stricmp(kStayOnCheats[i].pszSetting, pszSetting) == 0 && CanCheat())
+		{
+			g_pCheatMgr->SetToggle(kStayOnCheats[i].eCheat, bOn);
+			Log("Cheat: %s %s", pszSetting, bOn ? "on" : "off");
+		}
+	}
+}
+
+void CVRMgr::UpdateCheats()
+{
+	if (!m_bCheatsPending || g_pLTClient->GetTime() < m_fCheatsAt || !CanCheat())
+		return;
+	m_bCheatsPending = false;
+	for (int i = 0; i < (int)(sizeof(kStayOnCheats) / sizeof(kStayOnCheats[0])); ++i)
+	{
+		if (GetSetting(kStayOnCheats[i].pszSetting) != 0.0f)
+		{
+			g_pCheatMgr->SetToggle(kStayOnCheats[i].eCheat, true);
+			Log("Cheat: %s put back on after loading", kStayOnCheats[i].pszSetting);
+		}
+	}
 }
 
 void CVRMgr::Recenter()
