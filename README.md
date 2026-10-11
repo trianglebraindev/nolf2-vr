@@ -4,7 +4,7 @@ A virtual reality conversion of **No One Lives Forever 2: A Spy in H.A.R.M.'s Wa
 (Monolith, 2002), built to feel as close to a native VR game as possible:
 full 6DoF head tracking, motion controllers with the gun in your hand,
 aiming where the gun points, and the game's own interface brought into the
-headset. It isn't a head-aimed injector mod: it's a source-level port built
+headset. This is not a head-aimed injector mod but rahter a source-level port built
 on the Jupiter EX (LithTech) engine source and Monolith's NOLF2 game code.
 
 > **Unofficial fan project.** No game data is included or stored here: you
@@ -15,9 +15,9 @@ on the Jupiter EX (LithTech) engine source and Monolith's NOLF2 game code.
 
 ### What you need
 
-- Windows 10 or 11, and a PC VR headset with an **OpenXR** runtime
+- Windows 10 or 11, and a PCVR headset with an **OpenXR** runtime
   (Virtual Desktop, SteamVR or Meta Quest Link) set as the active one.
-  Developed and tested on Quest 3 with Virtual Desktop (VDXR).
+  Developed and tested on Quest 3 with Virtual Desktop (VDXR) on a 5080/ ultra 9 285k
 - **No One Lives Forever 2, patched to 1.3.** This mod was built on the
   English (UK) CD release with the official 1.3 patch; any retail copy
   updated to 1.3 should work. Copies are available from
@@ -48,7 +48,7 @@ clicks for a second to set your height. Settings are in **Options > VR**.
 
 ## Features
 
-- **Real VR**: stereo 3D with 6DoF head tracking at the headset's own frame
+- **Real VR**: stereo 3D with 6DoF head tracking at the headsets own frame
   rate, true world scale (adjustable), standing or seated play, crouching
   for real, and height calibration with one button hold.
 - **The gun in your hand**: the game's own weapon models at real size,
@@ -102,7 +102,7 @@ clicks for a second to set your height. Settings are in **Options > VR**.
 | Left Y or menu button | pause menu | back |
 | Left stick click | adjust the gun's fit in your hand (looking through a scope: adjust the scope; holding a magazine: adjust how it's held) | |
 | Conversation choices | right stick up / down, right trigger or A to pick, B to say nothing | |
-| Home key (keyboard) | recentre | recentre |
+| Home key (keyboard) | recentre | recenter |
 
 Left-handed (Options > VR > Gun hand: Left): every row swaps sides (fire
 on the left trigger, magazines from over your right shoulder, health on
