@@ -378,9 +378,6 @@ private:
 	bool		IsLeftHandNearCock() const;
 	bool		m_bMouseKnown;
 	int			m_nLastMouseX, m_nLastMouseY;
-	bool		m_bSnapTriggerOff;		// left trigger unbound (snapshot) while the left grip is held
-	int			m_nSnapMsgFrames;		// frames until "snapshot saved" (kept out of the picture)
-	void		UpdateSnapshot();
 	void		UpdateWeaponRing(float fFrameTime);
 	bool		OpenWeaponRing();
 	void		CloseWeaponRing(bool bChoose);
@@ -522,7 +519,6 @@ private:
 	LTVR_BeginLayerFromScreenFn	m_pfnBeginLayerFromScreen;
 	LTVR_SetLayerPoseFn		m_pfnSetLayerPose;
 	LTVR_SetScopeViewFn		m_pfnSetScopeView;
-	LTVR_TakeSnapshotFn		m_pfnTakeSnapshot;
 	LTVR_SetMirrorEyeFn		m_pfnSetMirrorEye;
 	LTVR_ShowMarkerFn		m_pfnShowMarker;
 	LTVR_SetVignetteFn		m_pfnSetVignette;

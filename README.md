@@ -97,7 +97,6 @@ clicks for a second to set your height. Settings are in **Options > VR**.
 | Right stick click | next ammo (manual reloading) or reload (game original) | |
 | Left grip over your left shoulder | take a magazine (manual reloading, gun without one); push it into the gun to reload | |
 | Left trigger | use, search, pick up (at the crosshair) | select |
-| Left grip + left trigger | snapshot of what the headset shows (the `Snapshots` folder) | |
 | Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
@@ -160,7 +159,6 @@ Files the game writes (in the `VR` folder, or `run\` for a source build):
 | `vr_guns.txt` | each weapon's fit in your hand, its scope offset and how its magazine is held (from the adjust mode) |
 | `xrbridge.log`, `vr_game.log`, `vr_models.log` | headset, game and model logs |
 | `crash_*.txt`, `crash_*.dmp` | crash reports |
-| `Snapshots\vr_*.png` | snapshots (left grip + left trigger) |
 
 ## Building from source
 

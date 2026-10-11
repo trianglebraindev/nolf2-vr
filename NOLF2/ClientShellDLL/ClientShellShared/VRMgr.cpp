@@ -299,12 +299,10 @@ CVRMgr::CVRMgr()
 	m_pfnBeginLayerFromScreen = NULL;
 	m_pfnSetLayerPose	= NULL;
 	m_pfnSetScopeView	= NULL;
-	m_pfnTakeSnapshot	= NULL;
 	m_pfnSetMirrorEye	= NULL;
 	m_pfnShowMarker		= NULL;
 	m_pfnSetVignette	= NULL;
 	m_fVignette			= 0.0f;
-	m_bSnapTriggerOff	= false;
 	m_bMouseInUse		= false;
 	m_bWantsMag			= false;
 	m_bWantsCock		= false;
@@ -312,7 +310,6 @@ CVRMgr::CVRMgr()
 	m_bMouseKnown		= false;
 	m_nLastMouseX		= 0;
 	m_nLastMouseY		= 0;
-	m_nSnapMsgFrames	= 0;
 	m_bScoped			= false;
 	m_bRingOpen			= false;
 	m_bMoveBodyBound	= false;
@@ -394,7 +391,6 @@ void CVRMgr::Init()
 	m_pfnBeginLayerFromScreen = (LTVR_BeginLayerFromScreenFn)GetProcAddress(hEngine, "LTVR_BeginLayerFromScreen");
 	m_pfnSetLayerPose	= (LTVR_SetLayerPoseFn)GetProcAddress(hEngine, "LTVR_SetLayerPose");
 	m_pfnSetScopeView	= (LTVR_SetScopeViewFn)GetProcAddress(hEngine, "LTVR_SetScopeView");
-	m_pfnTakeSnapshot	= (LTVR_TakeSnapshotFn)GetProcAddress(hEngine, "LTVR_TakeSnapshot");
 	m_pfnSetMirrorEye	= (LTVR_SetMirrorEyeFn)GetProcAddress(hEngine, "LTVR_SetMirrorEye");
 	m_pfnShowMarker		= (LTVR_ShowMarkerFn)GetProcAddress(hEngine, "LTVR_ShowMarker");
 	m_pfnSetVignette	= (LTVR_SetVignetteFn)GetProcAddress(hEngine, "LTVR_SetVignette");
@@ -957,7 +953,6 @@ void CVRMgr::Update(float fFrameTime)
 		s_nBoundSet = nWantSet;
 		s_nBoundSides = nSides;
 		m_bMoveBodyBound = false;
-		m_bSnapTriggerOff = false;		// (the new set binds the trigger as it should be)
 		if (nWantSet == 1)
 		{
 			SetDefaultBindings();
@@ -984,24 +979,8 @@ void CVRMgr::Update(float fFrameTime)
 	UpdateHudMode();
 	if (bPlaying)
 	{
-		// While the left grip is held the left trigger takes a snapshot
-		// instead of "activate" (normal play only: adjusting leaves the
-		// left trigger unbound anyway).
-		bool bGrip = (m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) != 0;
-		if (nWantSet == 1 && m_pfnSetBinding)
-		{
-			if (bGrip && !m_bSnapTriggerOff)
-			{
-				Bind(LTVR_LEFT, LTVR_BTN_TRIGGER, -1);
-				m_bSnapTriggerOff = true;
-			}
-			else if (!bGrip && m_bSnapTriggerOff)
-			{
-				Bind(LTVR_LEFT, LTVR_BTN_TRIGGER, COMMAND_ID_ACTIVATE);
-				m_bSnapTriggerOff = false;
-			}
-		}
-		UpdateSnapshot();
+		// (The left grip + left trigger snapshot is gone: Tre kept setting
+		// it off by accident. The engine's LTVR_TakeSnapshot is still there.)
 		if (bCutscene)
 		{
 			m_bTwoHand = false;
@@ -1110,28 +1089,6 @@ float CVRMgr::GetSmoothTurnAmount() const
 		return 0.0f;
 	float fAmount = (fX - kStickDeadZone) / (1.0f - kStickDeadZone);
 	return (fAmount > 1.0f) ? 1.0f : fAmount;
-}
-
-// Left grip held + left trigger: save what the headset shows (the engine
-// writes run\Snapshots\vr_<date>_<time>.png as this frame is shown). The
-// "saved" message waits a few frames so it isn't in the picture.
-void CVRMgr::UpdateSnapshot()
-{
-	if (m_nSnapMsgFrames > 0 && --m_nSnapMsgFrames == 0)
-		Message("Snapshot saved (the Snapshots folder).");
-
-	if (!(m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) || !Pressed(LTVR_LEFT, LTVR_BTN_TRIGGER))
-		return;
-	if (m_bBarsHeld)
-		return;		// (riding: holding the handlebars and braking)
-	if (!m_pfnTakeSnapshot)
-	{
-		Message("Snapshots need the new engine (run update.bat).");
-		return;
-	}
-	m_pfnTakeSnapshot();
-	m_nSnapMsgFrames = 4;
-	Log("Snapshot taken (holding: %s%s)", m_szCurrentGun[0] ? m_szCurrentGun : "nothing", m_bScoped ? ", through the scope" : "");
 }
 
 void CVRMgr::Log(const char* pszFormat, ...)

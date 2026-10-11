@@ -105,7 +105,7 @@ needs. Not ordered within a group yet.
 | Right stick click | next ammo (manual reloading) or reload (game original) | |
 | Left grip over your left shoulder | take a magazine (manual reloading, gun without one); push it into the gun to reload | |
 | Left trigger | activate (use, talk, search) | select |
-| Left grip + left trigger | snapshot (the trigger doesn't activate while the grip is held) | |
+| ~~Left grip + left trigger~~ | ~~snapshot~~ (removed: Tre kept setting it off; the engine's LTVR_TakeSnapshot remains, unused) | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
 | Left stick click | adjust gun; while looking through a scope, adjust the scope; while holding a magazine, adjust how it's held (again: done, saves) | |
