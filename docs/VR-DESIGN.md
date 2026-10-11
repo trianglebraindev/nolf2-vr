@@ -319,7 +319,8 @@ Next, in a suggested order:
 12. Throwing by hand (done: "perfect", Tre; see "Throwing").
 13. Height, seated / standing and crouching for real (done: "works
     perfect", Tre; see "Height and crouching").
-14. Cheats page with level select, for testing (first pass, see "Cheats").
+14. Cheats page with level select, for testing (done; see "Cheats").
+15. The snowmobile (first pass, see "Snowmobile").
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
@@ -660,6 +661,42 @@ the shutdown hang.
 - Level select: MISSION / LEVEL names from the mission data (the level's
   file name if it has none), CMissionMgr::StartGameFromLevel as the
   game's own chapter list does.
+
+## Snowmobile (first pass)
+
+- The only vehicle the player drives (CVehicleMgr PPM_SNOWMOBILE; the
+  "lure" is a scripted ride, the light cycle is TRON's).
+- Tre's picks: steer with the handlebars when both hands hold them, the
+  left stick otherwise; right trigger gas, left trigger brake / reverse;
+  the horizon level by default with "tilt with it" as an option
+  (Options > VR > Snowmobile view, VRVehicleTilt); get on with "use" (left
+  trigger) as on foot, off with B.
+- Before: the PV snowmobile model is a really-close model placed relative
+  to the camera, which in VR is the head, so it turned with your head;
+  steering was the mouse / keyboard's, so nothing in VR steered it.
+- CVRMgr::UpdateVehicle (riding = physics model PPM_SNOWMOBILE): its own
+  binding set (3) unbinds both triggers and B; the grips don't take the
+  gun, pick up bodies or open the weapon ring. Handlebars: both grips
+  while both hands are in front of you, below your chin, 20 - 100 cm
+  apart (logged with the hands' places, to fit to the model's bars once
+  they're measured); the steer is the angle of the line between the hands
+  seen from above, full lock at 30 degrees. The model's bars turn the same
+  (CVehicleMgr::AdjustCameraRoll).
+- CVehicleMgr: the triggers set the forward / brake flags; the gas pulled
+  part way lowers the top speed (a fifth at a touch); the brake held for
+  0.4 s at a stop reverses, at a quarter of top speed, steering the other
+  way (the game's snowmobile had no reverse, and can't turn standing
+  still: nose against a wall it was stuck); the steering sets the game's
+  "steering wheel" (m_fYawDiff) directly.
+- The model: placed in your own space (the eyes with the head still), then
+  turned into the head's space (CVRMgr::BodyToCloseCamera); with the
+  horizon level it takes the bank and climb the flat view would have had.
+  Really-close space is at VRGunScale while riding (the model is made at
+  the hands' size). Tilt: the engine's new LTVR_SetOriginRot (LTVR_VERSION
+  11) turns the body every way.
+- The model's own hands stay on the bars for now. Its bones are logged
+  once to vr_models.log ("Snowmobile"), to put your hands there (or on the
+  bars) next.
 
 ## Menus: the mouse steps aside
 

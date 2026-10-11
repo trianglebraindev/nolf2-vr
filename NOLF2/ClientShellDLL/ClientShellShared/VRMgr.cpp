@@ -117,6 +117,11 @@
 //                   set your height before Cate crouches (default 25;
 //                   0 = never, the stick only).
 //
+//   Riding the snowmobile (see UpdateVehicle):
+//   VRVehicleTilt   0 = the horizon stays level (default; the snowmobile
+//                   banks and climbs, your view doesn't); 1 = the view
+//                   tilts with the snowmobile
+//
 //   Cheats (Options > Cheats, see ScreenVRCheats; on until turned off, put
 //   back after every level or save loads, see UpdateCheats):
 //   VRCheatGod, VRCheatInvisible, VRCheatAmmo (infinite ammo), VRCheatBodies
@@ -158,6 +163,7 @@
 #include "HUDItem.h"
 #include "ltquaduvutils.h"
 #include "CheatMgr.h"
+#include "VehicleMgr.h"
 #include <stdarg.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -198,6 +204,7 @@ static VarTrack g_vtVRSwing;
 static VarTrack g_vtVRReload;
 static VarTrack g_vtVRThrow;
 static VarTrack g_vtVRSeated;
+static VarTrack g_vtVRVehicleTilt;
 static VarTrack g_vtVRCheatGod;
 static VarTrack g_vtVRCheatInvisible;
 static VarTrack g_vtVRCheatAmmo;
@@ -245,6 +252,11 @@ CVRMgr::CVRMgr()
 	m_bInitialized		= false;
 	m_pfnGetState		= NULL;
 	m_pfnSetOrigin		= NULL;
+	m_pfnSetOriginRot	= NULL;
+	m_bBarsHeld			= false;
+	m_bRiding			= false;
+	m_fBarSteer			= 0.0f;
+	m_bPlayingNow		= false;
 	m_pfnSetBinding		= NULL;
 	m_pfnClearBindings	= NULL;
 	m_pfnRecenter		= NULL;
@@ -337,6 +349,7 @@ void CVRMgr::Init()
 	HMODULE hEngine = GetModuleHandle(NULL);
 	m_pfnGetState		= (LTVR_GetStateFn)GetProcAddress(hEngine, "LTVR_GetState");
 	m_pfnSetOrigin		= (LTVR_SetOriginFn)GetProcAddress(hEngine, "LTVR_SetOrigin");
+	m_pfnSetOriginRot	= (LTVR_SetOriginRotFn)GetProcAddress(hEngine, "LTVR_SetOriginRot");
 	m_pfnSetBinding		= (LTVR_SetBindingFn)GetProcAddress(hEngine, "LTVR_SetBinding");
 	m_pfnClearBindings	= (LTVR_ClearBindingsFn)GetProcAddress(hEngine, "LTVR_ClearBindings");
 	m_pfnRecenter		= (LTVR_RecenterFn)GetProcAddress(hEngine, "LTVR_Recenter");
@@ -392,6 +405,7 @@ void CVRMgr::Init()
 	g_vtVRReload.Init(g_pLTClient, "VRReload", NULL, 1.0f);
 	g_vtVRThrow.Init(g_pLTClient, "VRThrow", NULL, 1.0f);
 	g_vtVRSeated.Init(g_pLTClient, "VRSeated", NULL, 0.0f);
+	g_vtVRVehicleTilt.Init(g_pLTClient, "VRVehicleTilt", NULL, 0.0f);
 	g_vtVRCheatGod.Init(g_pLTClient, "VRCheatGod", NULL, 0.0f);
 	g_vtVRCheatInvisible.Init(g_pLTClient, "VRCheatInvisible", NULL, 0.0f);
 	g_vtVRCheatAmmo.Init(g_pLTClient, "VRCheatAmmo", NULL, 0.0f);
@@ -456,6 +470,7 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRReload",			1.0f },
 	{ "VRThrow",			1.0f },
 	{ "VRSeated",			0.0f },
+	{ "VRVehicleTilt",		0.0f },
 	{ "VRCheatGod",			0.0f },
 	{ "VRCheatInvisible",	0.0f },
 	{ "VRCheatAmmo",		0.0f },
@@ -702,9 +717,13 @@ void CVRMgr::Update(float fFrameTime)
 		SaveGunFits();
 	}
 
-	// 0 = none, 1 = normal play, 2 = adjusting the gun (fire only).
+	// Riding the snowmobile: its controls (see UpdateVehicle).
+	UpdateVehicle(bPlaying);
+
+	// 0 = none, 1 = normal play, 2 = adjusting the gun (fire only), 3 = riding
+	// (the triggers are gas and brake and B gets off, all read directly).
 	static int s_nBoundSet = 0;
-	int nWantSet = bPlaying ? (m_bAdjusting ? 2 : 1) : 0;
+	int nWantSet = bPlaying ? (m_bAdjusting ? 2 : (m_bRiding ? 3 : 1)) : 0;
 	s_bBindingsOn = bPlaying;
 	if (nWantSet != s_nBoundSet)
 	{
@@ -714,6 +733,16 @@ void CVRMgr::Update(float fFrameTime)
 		if (nWantSet == 1)
 		{
 			SetDefaultBindings();
+		}
+		else if (nWantSet == 3)
+		{
+			SetDefaultBindings();
+			if (m_pfnSetBinding)
+			{
+				m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_TRIGGER, -1);
+				m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_TRIGGER, -1);
+				m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_SECONDARY, -1);
+			}
 		}
 		else if (m_pfnClearBindings)
 		{
@@ -745,11 +774,21 @@ void CVRMgr::Update(float fFrameTime)
 			}
 		}
 		UpdateSnapshot();
-		UpdateStickClicks(nWantSet == 1);
+		UpdateStickClicks(nWantSet == 1 || nWantSet == 3);
 		UpdateGunAdjust(fFrameTime);
-		UpdateTwoHand();
-		UpdateMoveBody();
-		UpdateWeaponRing(fFrameTime);
+		if (m_bRiding)
+		{
+			// (The grips are for the handlebars.)
+			m_bTwoHand = false;
+			if (m_bRingOpen)
+				CloseWeaponRing(false);
+		}
+		else
+		{
+			UpdateTwoHand();
+			UpdateMoveBody();
+			UpdateWeaponRing(fFrameTime);
+		}
 	}
 	else
 	{
@@ -762,8 +801,10 @@ void CVRMgr::Update(float fFrameTime)
 
 	UpdateVignette(fFrameTime, bPlaying);
 
+	// (Riding: the snowmobile's model is made at the hands' size, as the
+	// guns are at VRGunScale.)
 	if (m_pfnSetCloseScale)
-		m_pfnSetCloseScale(GetGunScale());
+		m_pfnSetCloseScale(GetCloseScale());
 }
 
 // The comfort vignette: how much you're moving (walk stick) and smooth
@@ -833,6 +874,8 @@ void CVRMgr::UpdateSnapshot()
 
 	if (!(m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) || !Pressed(LTVR_LEFT, LTVR_BTN_TRIGGER))
 		return;
+	if (m_bBarsHeld)
+		return;		// (riding: holding the handlebars and braking)
 	if (!m_pfnTakeSnapshot)
 	{
 		Message("Snapshots need the new engine (run update.bat).");
@@ -2349,6 +2392,185 @@ void CVRMgr::SetOrigin(const LTVector& vEyePos, float fBodyYaw)
 	m_pfnSetOrigin(aPos, fBodyYaw);
 }
 
+void CVRMgr::SetOriginRot(const LTVector& vEyePos, const LTRotation& rBody)
+{
+	if (!m_pfnSetOriginRot)
+		return;
+	float aPos[3] = { vEyePos.x, vEyePos.y, vEyePos.z };
+	float aRot[4] = { rBody.m_Quat[0], rBody.m_Quat[1], rBody.m_Quat[2], rBody.m_Quat[3] };
+	m_pfnSetOriginRot(aPos, aRot);
+}
+
+// ----------------------------------------------------------------------- //
+// Riding the snowmobile (Tre's picks): the right trigger is the gas, the
+// left the brake (and, held when stopped, reverse); steer with the
+// handlebars when both hands grip them, else the left stick; B gets off
+// (getting on is "use", the left trigger, as on foot). The view stays level
+// unless VRVehicleTilt. CVehicleMgr reads these (GetVehicle*) and places the
+// snowmobile model; CPlayerMgr tilts the view.
+// ----------------------------------------------------------------------- //
+
+bool CVRMgr::IsVehicleTilt() const
+{
+	return g_vtVRVehicleTilt.GetFloat(0.0f) != 0.0f;
+}
+
+static bool VR_IsRidingNow()
+{
+	return g_pPlayerMgr && g_pPlayerMgr->GetMoveMgr() && g_pPlayerMgr->GetMoveMgr()->GetVehicleMgr() &&
+		g_pPlayerMgr->GetMoveMgr()->GetVehicleMgr()->GetPhysicsModel() == PPM_SNOWMOBILE;
+}
+
+float CVRMgr::GetVehicleThrottle() const
+{
+	if (!IsActive() || !m_bRiding || !m_bPlayingNow)
+		return 0.0f;
+	float f = m_State.hand[LTVR_RIGHT].trigger;
+	return (f < 0.05f) ? 0.0f : (f > 1.0f ? 1.0f : f);
+}
+
+float CVRMgr::GetVehicleBrake() const
+{
+	if (!IsActive() || !m_bRiding || !m_bPlayingNow)
+		return 0.0f;
+	float f = m_State.hand[LTVR_LEFT].trigger;
+	return (f < 0.05f) ? 0.0f : (f > 1.0f ? 1.0f : f);
+}
+
+// -1 full left .. 1 full right.
+float CVRMgr::GetVehicleSteer() const
+{
+	if (!IsActive() || !m_bRiding || !m_bPlayingNow)
+		return 0.0f;
+	if (m_bBarsHeld)
+		return m_fBarSteer;
+	float x = m_State.hand[LTVR_LEFT].stick[0];
+	float y = 0.0f;
+	ApplyDeadZone(x, y);
+	return x;
+}
+
+// Both hands on the handlebars: the line from the left hand to the right,
+// seen from above (in your own space, which faces the way the snowmobile
+// does), turned like the bars. Full lock at kBarLockDeg. Grabbing needs
+// both grips while both hands are in front of you, below your chin, a
+// handlebar's width apart (the bars' exact place in the model is still to
+// be measured, see vr_models.log "Snowmobile").
+const float CVRMgr::kBarLockDeg = 30.0f;
+
+void CVRMgr::UpdateVehicle(bool bPlaying)
+{
+	bool bWasRiding = m_bRiding;
+	m_bRiding = IsActive() && VR_IsRidingNow();
+	m_bPlayingNow = bPlaying;
+	if (m_bRiding != bWasRiding)
+	{
+		m_bBarsHeld = false;
+		m_fBarSteer = 0.0f;
+		Log("Vehicle: %s", m_bRiding ? "on the snowmobile" : "off the snowmobile");
+	}
+	if (!m_bRiding || !bPlaying)
+	{
+		m_bBarsHeld = false;
+		return;
+	}
+
+	const float fUpm = m_State.unitsPerMeter > 0.0f ? m_State.unitsPerMeter : 60.0f;
+	LTVector vL, vR;
+	const bool bHands = GetHandTracking(LTVR_LEFT, vL) && GetHandTracking(LTVR_RIGHT, vR);
+	const bool bGripL = (m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) != 0;
+	const bool bGripR = (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_GRIP) != 0;
+
+	if (m_bBarsHeld)
+	{
+		if (!bGripL || !bGripR || !bHands)
+		{
+			m_bBarsHeld = false;
+			m_fBarSteer = 0.0f;
+			Log("Vehicle: let go of the handlebars");
+		}
+	}
+	else if (bHands && bGripL && bGripR && (Pressed(LTVR_LEFT, LTVR_BTN_GRIP) || Pressed(LTVR_RIGHT, LTVR_BTN_GRIP)))
+	{
+		// In front of you, below your chin, a handlebar's width apart
+		// (metres, in your own space: x right, y up from your set height,
+		// z forward).
+		LTVector vHead = GetHeadOffset();
+		LTVector aRel[2] = { (vL - vHead) / fUpm, (vR - vHead) / fUpm };
+		float fApart = (vR - vL).Mag() / fUpm;
+		bool bOk = fApart > 0.2f && fApart < 1.0f;
+		for (int i = 0; i < 2; ++i)
+			bOk = bOk && aRel[i].z > 0.05f && aRel[i].z < 0.8f && aRel[i].y < 0.0f && aRel[i].y > -0.9f;
+		Log("Vehicle: both grips at L (%.2f %.2f %.2f) R (%.2f %.2f %.2f) m from the head, %.2f m apart: %s",
+			aRel[0].x, aRel[0].y, aRel[0].z, aRel[1].x, aRel[1].y, aRel[1].z, fApart,
+			bOk ? "took the handlebars" : "not on the handlebars");
+		m_bBarsHeld = bOk;
+	}
+
+	if (m_bBarsHeld)
+	{
+		LTVector d = vR - vL;
+		float fAngle = (float)atan2(d.z, d.x);	// 0 = level; right hand back = turning right
+		float fSteer = -RAD2DEG(fAngle) / kBarLockDeg;
+		m_fBarSteer = (fSteer < -1.0f) ? -1.0f : (fSteer > 1.0f ? 1.0f : fSteer);
+	}
+
+	// B gets off (as "use" does on foot).
+	if (Pressed(LTVR_RIGHT, LTVR_BTN_SECONDARY))
+	{
+		Log("Vehicle: B - getting off");
+		SendCommandClick(COMMAND_ID_ACTIVATE);
+	}
+}
+
+// A key press and release, routed as CGameClientShell routes commands: the
+// interface first, then the player.
+void CVRMgr::SendCommandClick(int nCommand)
+{
+	if (!g_pPlayerMgr || !g_pInterfaceMgr || !g_pPlayerMgr->IsPlayerInWorld())
+		return;
+	if (g_pPlayerMgr->IsPlayerDead() || !g_pInterfaceMgr->OnCommandOn(nCommand))
+		g_pPlayerMgr->OnCommandOn(nCommand);
+	if (!g_pInterfaceMgr->OnCommandOff(nCommand))
+		g_pPlayerMgr->OnCommandOff(nCommand);
+}
+
+float CVRMgr::GetCloseScale() const
+{
+	return m_bRiding ? g_vtVRGunScale.GetFloat(12.0f) : GetGunScale();
+}
+
+void CVRMgr::LogModelOnce(HOBJECT hModel, const char* pszTag)
+{
+	static char s_aszLogged[8][32];
+	static int s_nLogged = 0;
+	if (!hModel || !pszTag || !m_pfnLogModel || !IsActive())
+		return;
+	for (int i = 0; i < s_nLogged; ++i)
+	{
+		if (!stricmp(s_aszLogged[i], pszTag))
+			return;
+	}
+	if (s_nLogged < 8)
+	{
+		strncpy(s_aszLogged[s_nLogged], pszTag, 31);
+		s_aszLogged[s_nLogged][31] = '\0';
+		++s_nLogged;
+		m_pfnLogModel(hModel, pszTag);
+	}
+}
+
+// A point / rotation of the snowmobile's player-view model, given in your
+// own space (body: the eyes with the head untracked, really-close units),
+// into the camera's (the head's), where really-close models are drawn.
+void CVRMgr::BodyToCloseCamera(LTVector& vPos, LTRotation& rRot, float fCloseScale) const
+{
+	LTRotation rHead = GetHeadRotation();
+	LTVector vGame = vPos * fCloseScale - GetHeadOffset();
+	vPos = VR_Unrotate(rHead, vGame) / fCloseScale;
+	rRot = (~rHead) * rRot;
+}
+
 float CVRMgr::GetTurnDelta(float fFrameTime)
 {
 	if (!IsActive() || m_bAdjusting)
@@ -2560,16 +2782,8 @@ void CVRMgr::UpdateStickClicks(bool bPlay)
 	if (!m_bStickCombo)
 	{
 		m_bLeftStickClick = bPlay && bLWas && !bL;
-		if (bPlay && bRWas && !bR && g_pPlayerMgr && g_pInterfaceMgr && g_pPlayerMgr->IsPlayerInWorld())
-		{
-			// A key press and release, routed as CGameClientShell routes
-			// commands: the interface first, then the player.
-			int nCommand = (g_vtVRReload.GetFloat(1.0f) != 0.0f) ? COMMAND_ID_NEXT_AMMO : COMMAND_ID_RELOAD;
-			if (g_pPlayerMgr->IsPlayerDead() || !g_pInterfaceMgr->OnCommandOn(nCommand))
-				g_pPlayerMgr->OnCommandOn(nCommand);
-			if (!g_pInterfaceMgr->OnCommandOff(nCommand))
-				g_pPlayerMgr->OnCommandOff(nCommand);
-		}
+		if (bPlay && bRWas && !bR && !m_bRiding)
+			SendCommandClick((g_vtVRReload.GetFloat(1.0f) != 0.0f) ? COMMAND_ID_NEXT_AMMO : COMMAND_ID_RELOAD);
 	}
 	if (!bL && !bR)
 		m_bStickCombo = false;

@@ -28,6 +28,7 @@
 #include "FXButeMgr.h"
 #include "SurfaceFunctions.h"
 #include "PlayerViewAttachmentMgr.h"
+#include "VRMgr.h"
 
 #define ROUNDFLOAT(f) ((int)((f) + ((f) > 0 ? 0.5 : -0.5)))
 
@@ -179,6 +180,8 @@ CVehicleMgr::CVehicleMgr()
 	m_nVehicleTurnDirection	= 0;
 
     m_bVehicleStopped    = LTTRUE;
+	m_bVRReverse		 = false;
+	m_fVRStopBrakeStart	 = -1.0f;
     m_bVehicleAtMaxSpeed = LTFALSE;
 
 	m_fHandlebarRoll = 0.0f;
@@ -333,6 +336,8 @@ void CVehicleMgr::InitWorldData()
 	m_fVehicleBaseMoveAccel = 0.0f;
 
 	m_bVehicleStopped       = LTTRUE;
+	m_bVRReverse			= false;
+	m_fVRStopBrakeStart		= -1.0f;
     m_bVehicleAtMaxSpeed    = LTFALSE;
     m_bVehicleTurning       = LTFALSE;
 	m_nVehicleTurnDirection	= 0;
@@ -554,6 +559,18 @@ void CVehicleMgr::UpdateSnowmobileControlFlags()
 	if ((m_dwControlFlags & BC_CFLG_LEFT) && (m_dwControlFlags & BC_CFLG_STRAFE))
 	{
 		m_dwControlFlags |= BC_CFLG_STRAFE_LEFT;
+	}
+
+	// VR: the right trigger is the gas, the left the brake (steering is
+	// CalculateBankingVehicleRotation's; see CVRMgr::UpdateVehicle).
+	if (g_VRMgr.IsActive() && g_VRMgr.IsRiding())
+	{
+		m_dwControlFlags &= ~(BC_CFLG_FORWARD | BC_CFLG_REVERSE | BC_CFLG_LEFT | BC_CFLG_RIGHT |
+			BC_CFLG_STRAFE_LEFT | BC_CFLG_STRAFE_RIGHT | BC_CFLG_FIRING);
+		if (g_VRMgr.GetVehicleBrake() > 0.25f)
+			m_dwControlFlags |= BC_CFLG_REVERSE;
+		else if (g_VRMgr.GetVehicleThrottle() > 0.0f)
+			m_dwControlFlags |= BC_CFLG_FORWARD;
 	}
 
 	if ( (m_dwControlFlags & BC_CFLG_FORWARD) ||
@@ -870,6 +887,38 @@ void CVehicleMgr::UpdateVehicleMotion()
     LTFLOAT fMaxAccel  = GetMaxAccelMag(GetSurfaceVelMult(m_eSurface));
     LTFLOAT fMaxVel    = GetMaxVelMag(GetSurfaceVelMult(m_eSurface));
 
+	// VR: how far the gas is pulled sets the top speed (a fifth of it at a
+	// touch); the brake held at a stop for a moment reverses (the game's
+	// snowmobile has no reverse: Tre asked for brake / reverse).
+	const bool bVR = g_VRMgr.IsActive() && g_VRMgr.IsRiding();
+	if (bVR)
+	{
+		const float fGas = g_VRMgr.GetVehicleThrottle();
+		if (bForward && fGas > 0.0f)
+			fMaxVel *= 0.2f + 0.8f * fGas;
+
+		bool bWasReverse = m_bVRReverse;
+		if (g_VRMgr.GetVehicleBrake() > 0.25f && fGas <= 0.0f && (m_bVehicleStopped || m_bVRReverse))
+		{
+			if (m_fVRStopBrakeStart < 0.0f)
+				m_fVRStopBrakeStart = fTime;
+			if (fTime - m_fVRStopBrakeStart > 0.4f)
+				m_bVRReverse = true;
+		}
+		else
+		{
+			m_bVRReverse = false;
+			m_fVRStopBrakeStart = -1.0f;
+		}
+		if (m_bVRReverse != bWasReverse)
+			CVRMgr::Log("Vehicle: %s", m_bVRReverse ? "reversing" : "out of reverse");
+	}
+	else
+	{
+		m_bVRReverse = false;
+		m_fVRStopBrakeStart = -1.0f;
+	}
+
 	// If we have a velocity from a JumpVolume use that as the max...
 	
 	if( m_bHaveJumpVolumeVel )
@@ -958,6 +1007,28 @@ void CVehicleMgr::UpdateVehicleMotion()
 		vForward.Normalize();
 	}
 
+
+	// VR: reversing, slowly (a quarter of top speed).
+	if (m_bVRReverse)
+	{
+		LTVector vFlat = g_pMoveMgr->GetVelocity();
+		vFlat.y = 0.0f;
+		const float fRevMax = fMaxVel * 0.25f;
+		if (vFlat.Mag() > fRevMax)
+		{
+			LTVector vVel = g_pMoveMgr->GetVelocity();
+			vFlat *= fRevMax / vFlat.Mag();
+			vVel.x = vFlat.x;
+			vVel.z = vFlat.z;
+			g_pPhysicsLT->SetVelocity(hObj, &vVel);
+		}
+		m_fVehicleBaseMoveAccel = 0.0f;
+		vAccel -= vForward * (fMaxAccel * 0.5f);
+		if (g_pPlayerMgr->IsPlayerDead() || !g_pPlayerMgr->IsPlayerMovementAllowed())
+			vAccel.Init();
+		g_pPhysicsLT->SetAcceleration(hObj, &vAccel);
+		return;
+	}
 
 	// If we aren't dead we can drive around
 
@@ -1804,6 +1875,9 @@ void CVehicleMgr::CreateVehicleModel()
 			// Create any player-view attachments 
 
 			g_pPVAttachmentMgr->CreatePVAttachments( m_hVehicleModel );
+
+			// (VR: its bones, sockets and pieces, once, for vr_models.log.)
+			g_VRMgr.LogModelOnce( m_hVehicleModel, "Snowmobile" );
 		}
 		break;
 
@@ -1910,6 +1984,21 @@ void CVehicleMgr::UpdateVehicleModel()
 	vNewPos += rRot.Right() * (m_vVehicleOffset.x + m_vHeadOffset.x);
 	vNewPos += rRot.Up() * (m_vVehicleOffset.y + m_vHeadOffset.y);
 	vNewPos += rRot.Forward() * (m_vVehicleOffset.z + m_vHeadOffset.z);
+
+	// VR: the model sits in your own space (where your eyes are with the head
+	// still), not stuck to your face: turned into the head's space, where
+	// really-close models are drawn. With the horizon level the view doesn't
+	// bank and climb with the snowmobile, so the model does.
+	if (g_VRMgr.IsActive())
+	{
+		if (!g_VRMgr.IsVehicleTilt())
+		{
+			LTRotation rTilt(g_pPlayerMgr->GetPitch(), 0.0f, g_pPlayerMgr->GetRoll());
+			rRot = rTilt * rRot;
+			vNewPos = rTilt.Right() * vNewPos.x + rTilt.Up() * vNewPos.y + rTilt.Forward() * vNewPos.z;
+		}
+		g_VRMgr.BodyToCloseCamera(vNewPos, rRot, g_VRMgr.GetCloseScale());
+	}
 
 	g_pLTClient->SetObjectPosAndRotation(m_hVehicleModel, &vNewPos, &rRot);
 
@@ -2937,6 +3026,20 @@ void CVehicleMgr::CalculateBankingVehicleRotation(LTVector & vPlayerPYR,
 		m_dwControlFlags &= ~BC_CFLG_RIGHT;
 	}
 
+	// VR: the handlebars (both hands on them) or the left stick set the
+	// "steering wheel" directly (see CVRMgr::GetVehicleSteer); the mouse and
+	// keyboard turning below is skipped.
+	const bool bVRSteer = g_VRMgr.IsActive() && g_VRMgr.IsRiding();
+	if (bVRSteer)
+	{
+		float fSteer = (IsCurVehicleAni("Deselect", bIsDone) || IsCurVehicleAni("Select", bIsDone)) ? 0.0f :
+			g_VRMgr.GetVehicleSteer();
+		m_bKeyboardTurning = LTFALSE;
+		m_fYawDiff = fSteer * fMaxOffset;
+		m_eMouseTurnDirection = (m_fYawDiff > fOffset) ? TD_RIGHT : ((m_fYawDiff < -fOffset) ? TD_LEFT : TD_CENTER);
+		fYawDelta = 0.0f;
+	}
+
 	if (fYawDelta)
 	{
 		m_bKeyboardTurning = LTFALSE;
@@ -2944,7 +3047,10 @@ void CVehicleMgr::CalculateBankingVehicleRotation(LTVector & vPlayerPYR,
 
 	// See if we are turning (using the keyboard)...
 
-	if ((m_dwControlFlags & BC_CFLG_STRAFE_LEFT) || (m_dwControlFlags & BC_CFLG_LEFT))
+	if (bVRSteer)
+	{
+	}
+	else if ((m_dwControlFlags & BC_CFLG_STRAFE_LEFT) || (m_dwControlFlags & BC_CFLG_LEFT))
 	{
 		m_bKeyboardTurning = LTTRUE;
 		fYawDelta = -fAdjustedYawDelta;
@@ -3024,7 +3130,7 @@ void CVehicleMgr::CalculateBankingVehicleRotation(LTVector & vPlayerPYR,
 	// Depending on the direction we are turning, cap our yaw difference (from center)
 	// and determine if the direciton we're turning changed...
 
-	switch (m_eMouseTurnDirection)
+	if (!bVRSteer) switch (m_eMouseTurnDirection)
 	{
 		case TD_LEFT :
 		{
@@ -3117,7 +3223,8 @@ void CVehicleMgr::CalculateBankingVehicleRotation(LTVector & vPlayerPYR,
 
 		if (!m_bVehicleStopped)
 		{
-			vPlayerPYR.y += (m_fYawDelta * m_nVehicleTurnDirection);
+			// (VR, reversing: the bars turn the back end, so the other way.)
+			vPlayerPYR.y += (m_fYawDelta * m_nVehicleTurnDirection) * (m_bVRReverse ? -1.0f : 1.0f);
 		}
 	}
 
@@ -3630,8 +3737,12 @@ void CVehicleMgr::UpdateSnowmobileGear()
 	{
         m_bVehicleStopped = LTTRUE;
 
-		myVel.Init();
-		g_pMoveMgr->SetVelocity(myVel);
+		// (VR, reversing: it starts from a stop, so it isn't held there.)
+		if (!m_bVRReverse)
+		{
+			myVel.Init();
+			g_pMoveMgr->SetVelocity(myVel);
+		}
 	}
 
 	// Add a little movement to show we stopped...
@@ -3773,12 +3884,19 @@ void CVehicleMgr::AdjustCameraRoll(LTFLOAT & fRoll)
 
 		m_fHandlebarRoll = fMaxCant * fPercent;
 
+		// (VR: the bars turn as far as your hands do on them, up to their
+		// full lock; see CVRMgr::UpdateVehicle.)
+		if (g_VRMgr.IsActive() && g_VRMgr.IsRiding())
+		{
+			m_fHandlebarRoll = DEG2RAD(CVRMgr::kBarLockDeg) * fPercent;
+		}
+
 
 		// Update head can't only when moving...
 
 		if (!m_bVehicleStopped)
 		{
-			fRoll = m_fHandlebarRoll;
+			fRoll = fMaxCant * fPercent;
 
 			// Move head left or right depending on amount we are turning...
 

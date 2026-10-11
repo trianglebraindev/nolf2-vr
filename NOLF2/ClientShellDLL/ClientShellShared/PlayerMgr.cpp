@@ -3563,9 +3563,16 @@ void CPlayerMgr::UpdateCameraPosition()
 					m_fVRDuck = ( m_fVRDuck + fStep > fTarget ) ? fTarget : m_fVRDuck + fStep;
 			}
 			vPos.y	+= m_fVRDuck;
-			g_VRMgr.SetOrigin(vPos, m_fYaw);
 
-			LTRotation rBody(0.0f, m_fYaw, 0.0f);
+			// Riding with "tilt with the vehicle" on: the body banks and
+			// climbs with the snowmobile (otherwise only its heading turns).
+			const bool bTilt = g_VRMgr.IsRiding() && g_VRMgr.IsVehicleTilt();
+			LTRotation rBody = bTilt ? LTRotation(m_fPitch, m_fYaw, m_fRoll) : LTRotation(0.0f, m_fYaw, 0.0f);
+			if (bTilt)
+				g_VRMgr.SetOriginRot(vPos, rBody);
+			else
+				g_VRMgr.SetOrigin(vPos, m_fYaw);
+
 			LTVector vHead = g_VRMgr.GetHeadOffset();
 			vPos += rBody.Right() * vHead.x + rBody.Up() * vHead.y + rBody.Forward() * vHead.z;
 		}
@@ -3895,7 +3902,11 @@ LTBOOL CPlayerMgr::UpdateCameraRotation()
 				// VR: the body's heading comes from the game (stick / mouse
 				// turning); everything else comes from the head. No recoil or
 				// shake rotation: the view must only move when the head does.
-				m_rRotation = LTRotation(0.0f, m_fYaw, 0.0f) * g_VRMgr.GetHeadRotation();
+				// (Riding with "tilt with the vehicle": its bank and climb too.)
+				if (g_VRMgr.IsRiding() && g_VRMgr.IsVehicleTilt())
+					m_rRotation = LTRotation(m_fPitch, m_fYaw, m_fRoll) * g_VRMgr.GetHeadRotation();
+				else
+					m_rRotation = LTRotation(0.0f, m_fYaw, 0.0f) * g_VRMgr.GetHeadRotation();
 			}
 			else
 			{

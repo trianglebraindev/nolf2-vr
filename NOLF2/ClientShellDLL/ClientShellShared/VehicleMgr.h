@@ -212,6 +212,8 @@ class CVehicleMgr
 	bool			m_bHolsteredWeapon;
 
     LTBOOL			m_bVehicleStopped;
+	bool			m_bVRReverse;			// VR: reversing (brake held at a stop)
+	float			m_fVRStopBrakeStart;	// (when the brake went on at a stop, -1 none)
     LTBOOL          m_bVehicleAtMaxSpeed;
     LTBOOL			m_bVehicleTurning;          // Are we turning (vehicle mode)
 	int				m_nVehicleTurnDirection;	// Direction we are turning

@@ -191,6 +191,8 @@ static int					g_nVRMirrorEye		= -1;		// this frame's eye (LTVR_SetMirrorEye), -
 static bool					g_bVROriginSet		= false;
 static LTVector				g_vVROrigin;
 static float				g_fVROriginYaw		= 0.0f;
+static bool					g_bVROriginRot		= false;	// (LTVR_SetOriginRot: turned every way)
+static LTRotation			g_rVROriginRot;
 
 // Latest state handed to the game (LTVR_GetState).
 static LTVR_State			g_VRState;
@@ -599,6 +601,17 @@ extern "C" __declspec(dllexport) void LTVR_SetOrigin(const float pos[3], float f
 	g_vVROrigin.Init(pos[0], pos[1], pos[2]);
 	g_fVROriginYaw = fYaw;
 	g_bVROriginSet = true;
+	g_bVROriginRot = false;
+}
+
+extern "C" __declspec(dllexport) void LTVR_SetOriginRot(const float pos[3], const float rot[4])
+{
+	if (!pos || !rot)
+		return;
+	g_vVROrigin.Init(pos[0], pos[1], pos[2]);
+	g_rVROriginRot = LTRotation(rot[0], rot[1], rot[2], rot[3]);
+	g_bVROriginSet = true;
+	g_bVROriginRot = true;
 }
 
 extern "C" __declspec(dllexport) void LTVR_SetBinding(int hand, unsigned button, int commandId)
@@ -689,7 +702,8 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 	// The body: where the player's eyes are (head untracked) and which way
 	// the body faces. The game provides this (LTVR_SetOrigin); if it
 	// hasn't this frame, fall back to the camera's position and heading.
-	const LTRotation rBody = g_bVROriginSet ? LTRotation(LTVector(0.0f, 1.0f, 0.0f), g_fVROriginYaw) : YawOnly(pDesc->m_Rotation);
+	const LTRotation rBody = !g_bVROriginSet ? YawOnly(pDesc->m_Rotation) :
+		(g_bVROriginRot ? g_rVROriginRot : LTRotation(LTVector(0.0f, 1.0f, 0.0f), g_fVROriginYaw));
 	const LTVector vBodyPos = g_bVROriginSet ? g_vVROrigin : pDesc->m_Pos;
 	g_vVRBodyPosUsed = vBodyPos;
 	g_rVRBodyUsed = rBody;
@@ -2118,6 +2132,7 @@ void d3d_VR_OnSwapBuffers()
 
 	// The game sets the origin again each frame it draws the world.
 	g_bVROriginSet = false;
+	g_bVROriginRot = false;
 
 	VR_UpdateCursorClip();
 

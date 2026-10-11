@@ -68,6 +68,21 @@ public:
 	// tracking applied) and which way the body faces. The headset view is
 	// built on top of this.
 	void		SetOrigin(const LTVector& vEyePos, float fBodyYaw);
+	void		SetOriginRot(const LTVector& vEyePos, const LTRotation& rBody);	// (tilting with a vehicle)
+
+	// Riding the snowmobile (see UpdateVehicle): gas 0..1, brake 0..1, steer
+	// -1 (left) .. 1 (right); VRVehicleTilt; the model into the head's space.
+	bool		IsRiding() const			{ return m_bRiding; }
+	bool		IsVehicleTilt() const;
+	bool		AreBarsHeld() const			{ return m_bBarsHeld; }
+	float		GetVehicleThrottle() const;
+	float		GetVehicleBrake() const;
+	float		GetVehicleSteer() const;
+	void		BodyToCloseCamera(LTVector& vPos, LTRotation& rRot, float fCloseScale) const;
+	void		SendCommandClick(int nCommand);
+	float		GetCloseScale() const;		// really-close space's size this frame
+	void		LogModelOnce(HOBJECT hModel, const char* pszTag);	// (vr_models.log)
+	static const float kBarLockDeg;			// the handlebars' full lock, degrees
 
 	// How much to turn the body this frame (radians), from the turn
 	// stick: smooth by default, snap turns if VRSnapTurn is 1.
@@ -278,6 +293,12 @@ private:
 	void		UpdateHudMode();
 	void		UpdateGunAdjust(float fFrameTime);
 	void		UpdateStickClicks(bool bPlay);
+	void		UpdateVehicle(bool bPlaying);
+	bool		m_bRiding;
+	bool		m_bPlayingNow;
+	bool		m_bBarsHeld;			// both hands on the snowmobile's handlebars
+	float		m_fBarSteer;
+	LTVR_SetOriginRotFn		m_pfnSetOriginRot;
 	void		UpdateRealCrouch();
 	bool		m_bRealCrouch;
 	bool		m_bStickCombo;			// both stick clicks went down together (no single clicks then)

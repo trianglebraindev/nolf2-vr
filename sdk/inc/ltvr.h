@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	10
+#define LTVR_VERSION	11
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -81,6 +81,11 @@ typedef int  (*LTVR_GetStateFn)(LTVR_State* pState);
 // turns toward +X). The headset view is built on top of this. Call every
 // frame the player's view is rendered.
 typedef void (*LTVR_SetOriginFn)(const float pos[3], float fYaw);
+
+// The same, with the body turned every way (quaternion x, y, z, w, as
+// LTRotation): riding a vehicle with the view tilting as it does (the
+// "tilt with the vehicle" option). This frame only.
+typedef void (*LTVR_SetOriginRotFn)(const float pos[3], const float rot[4]);
 
 // Binds a controller button (hand + one LTVR_BTN_* bit) to an engine
 // command ID: while the button is held, the command reads as on, exactly

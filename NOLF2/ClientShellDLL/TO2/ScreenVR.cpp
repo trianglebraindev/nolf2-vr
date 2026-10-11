@@ -60,6 +60,7 @@ namespace
 		kHelpSwing,
 		kHelpReload,
 		kHelpThrow,
+		kHelpVehicleTilt,
 		kHelpReset,
 		kHelpGiveAll,
 		kHelpEnd
@@ -85,6 +86,7 @@ namespace
 		"Swing a sword to hit with it: how hard a swing has to be, or off (then only the trigger slashes). The trigger works either way.",
 		"Manual: A drops the magazine, grip over your left shoulder for a new one and push it into the gun (stick click: next ammo). Game original: stick click reloads.",
 		"By hand: hold the trigger, swing your arm and let go to throw (the harder, the further). Game original: the trigger throws straight ahead.",
+		"Riding the snowmobile: keep the horizon level (comfortable), or let the view bank and climb with it.",
 		"Put every setting on this page back to how it started.",
 		"For testing: every weapon, gadget and piece of gear, with full ammo (single player, in a mission).",
 	};
@@ -123,6 +125,7 @@ CScreenVR::CScreenVR()
 	m_nReload = 0;
 	m_nThrow = 0;
 	m_nSeated = 0;
+	m_nVehicleTilt = 0;
 	m_nVignette = 0;
 	m_nVignetteWhen = 2;
 }
@@ -246,6 +249,10 @@ LTBOOL CScreenVR::Build()
 	pCycle->AddString("By hand");
 	pCycle->AddString("Game original");
 
+	pCycle = AddCycle((char*)"Snowmobile view", kHelpVehicleTilt, kGap, &m_nVehicleTilt);
+	pCycle->AddString("Level horizon");
+	pCycle->AddString("Tilt with it");
+
 	pCycle = AddCycle((char*)"Sword swings", kHelpSwing, kGap, &m_nSwing);
 	pCycle->AddString("Off");
 	pCycle->AddString("Light");
@@ -298,7 +305,7 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 			const char* const aNames[] = { "VRSnapTurn", "VRTurnSpeed", "VRSnapAngle", "VRMoveWithHand",
 				"VRUnitsPerMeter", "VRHudDistance", "VRHudAngle", "VRHudFollow", "VRWristHud",
 				"VRWristHudWatch", "VRGunHud", "VRArms", "VRSwing", "VRSwingSpeed", "VRVignette",
-				"VRVignetteWhen", "VRReload", "VRThrow", "VRSeated" };
+				"VRVignetteWhen", "VRReload", "VRThrow", "VRSeated", "VRVehicleTilt" };
 			for (int i = 0; i < (int)(sizeof(aNames) / sizeof(aNames[0])); ++i)
 				CVRMgr::SetSetting(aNames[i], CVRMgr::GetSettingDefault(aNames[i]));
 			ReadSettings();
@@ -435,6 +442,7 @@ void CScreenVR::ReadSettings()
 	m_nReload = (CVRMgr::GetSetting("VRReload") != 0.0f) ? 0 : 1;
 	m_nThrow = (CVRMgr::GetSetting("VRThrow") != 0.0f) ? 0 : 1;
 	m_nSeated = (CVRMgr::GetSetting("VRSeated") != 0.0f) ? 1 : 0;
+	m_nVehicleTilt = (CVRMgr::GetSetting("VRVehicleTilt") != 0.0f) ? 1 : 0;
 	if (CVRMgr::GetSetting("VRSwing") == 0.0f)
 		m_nSwing = 0;
 	else
@@ -465,6 +473,7 @@ void CScreenVR::WriteSettings()
 	CVRMgr::SetSetting("VRReload",			m_nReload == 0 ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRThrow",			m_nThrow == 0 ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRSeated",			m_nSeated ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRVehicleTilt",		m_nVehicleTilt ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRSwing",			m_nSwing ? 1.0f : 0.0f);
 	if (m_nSwing > 0 && m_nSwing <= kNumSwingSpeeds)
 		CVRMgr::SetSetting("VRSwingSpeed",	kSwingSpeeds[m_nSwing - 1]);
