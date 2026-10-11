@@ -65,7 +65,6 @@ CREDITS
   and Mark Adler.
 - The Microsoft Visual C++ runtime and D3DX9 files are Microsoft
   redistributables.
-- NOLF2 VR: Tre (Triangle Brain Studio), with Claude.
 
 This is an unofficial, free fan project, not affiliated with Monolith,
 Warner Bros. or Activision.

@@ -262,7 +262,6 @@ Design notes, decisions and the roadmap: [`docs/VR-DESIGN.md`](docs/VR-DESIGN.md
 - **zlib**: Jean-loup Gailly and Mark Adler.
 - The Visual C++ runtime and D3DX9 in the release: Microsoft
   redistributables.
-- NOLF2 VR: **Tre (Triangle Brain Studio)**, with Claude.
 
 This is an unofficial, free fan project, not affiliated with Monolith,
 Warner Bros. or Activision.
