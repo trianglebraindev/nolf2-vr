@@ -1295,6 +1295,19 @@ void CClientMgr::Term()
 
     TermClientShellDE();
 
+    // (NOLF2 VR project) The crash on exit: the game's DLL is gone by now
+    // (EndShell / TermClientShellDE above) and so is its memory, but object
+    // references it held (LTObjRef) were still linked into the objects' lists.
+    // Removing the objects below walked those lists to tell each reference
+    // its object was gone, reading freed memory. There's no one left to
+    // tell: cut every object's reference list loose first.
+    for (i=0; i < NUM_OBJECTTYPES; i++) {
+        LTLink* pRefHead = &m_ObjectMgr.m_ObjectLists[i].m_Head;
+        for (LTLink* pRefCur = pRefHead->m_pNext; pRefCur != pRefHead; pRefCur = pRefCur->m_pNext) {
+            ((LTObject*)pRefCur->m_pData)->m_RefList.TieOff();
+        }
+    }
+
     // Get rid of ALL objects.  Should be done before closing the shell (and world)
     // so WorldModel's WorldData pointers are valid.
     for (i=0; i < NUM_OBJECTTYPES; i++) {

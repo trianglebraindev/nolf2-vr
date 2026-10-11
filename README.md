@@ -62,7 +62,8 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   ammo and flying bodies (these stay on through levels and loading until
   you turn them off), all weapons / gear / mods, full ammo / health /
   armor, skill points, finish the level or mission, a snowmobile, unlock
-  the chapter list, and Level select (any level of any mission).
+  the chapter list, and Level select (any level of any mission; levels
+  with a scripted ride or a vehicle are marked [ride] / [vehicle]).
 
 - **The snowmobile**: right trigger is the gas (squeeze harder to go
   faster), left trigger the brake; hold the brake at a stop to reverse.

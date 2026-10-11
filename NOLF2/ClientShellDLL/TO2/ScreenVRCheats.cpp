@@ -30,6 +30,7 @@
 #include "CheatMgr.h"
 #include "MissionMgr.h"
 #include "MissionButeMgr.h"
+#include <map>
 
 namespace
 {
@@ -361,6 +362,103 @@ LTBOOL CScreenVRLevels::Build()
 
 // Every level of every mission, "Mission: level". (Built when the page
 // opens: the missions are loaded by then.)
+// What a level has to ride, read from its world file's list of objects
+// (just their class names, not the level itself): a scripted ride (the game
+// moves you along, "PlayerLure") and / or a vehicle you drive
+// ("PlayerVehicle"). Remembered for the session.
+enum { kLevelRide = 1, kLevelVehicle = 2 };
+
+static int VR_LevelRides(const char* pszLevel)
+{
+	static std::map<std::string, int> s_mapRides;
+	std::map<std::string, int>::iterator it = s_mapRides.find(pszLevel);
+	if (it != s_mapRides.end())
+		return it->second;
+
+	int nRides = 0;
+	char szFile[MAX_PATH];
+	const size_t nLen = strlen(pszLevel);
+	if (nLen > 4 && stricmp(pszLevel + nLen - 4, ".dat") == 0)
+		LTSNPrintF(szFile, sizeof(szFile), "%s", pszLevel);
+	else
+		LTSNPrintF(szFile, sizeof(szFile), "%s.dat", pszLevel);
+
+	ILTStream* pStream = LTNULL;
+	if (g_pLTClient->OpenFile(szFile, &pStream) == LT_OK && pStream)
+	{
+		uint32 nVersion = 0, nObjectPos = 0, nObjects = 0;
+		pStream->Read(&nVersion, sizeof(nVersion));
+		pStream->Read(&nObjectPos, sizeof(nObjectPos));
+		uint32 nFileLen = 0;
+		pStream->GetLen(&nFileLen);
+		if (pStream->ErrorStatus() == LT_OK && nObjectPos > 0 && nObjectPos < nFileLen)
+		{
+			pStream->SeekTo(nObjectPos);
+			pStream->Read(&nObjects, sizeof(nObjects));
+			if (nObjects > 50000)
+				nObjects = 0;
+			// (Each object: its size, class name and properties. The size
+			// lets us jump to the next one; checked on the first object by
+			// reading its properties through as the engine's LoadObjects
+			// does, and if it doesn't match, every object is read through.)
+			bool bSkip = false;
+			for (uint32 i = 0; i < nObjects && pStream->ErrorStatus() == LT_OK; ++i)
+			{
+				uint16 nDataLen = 0;
+				pStream->Read(&nDataLen, sizeof(nDataLen));
+				uint32 nStart = 0;
+				pStream->GetPos(&nStart);
+				char szClass[64];
+				pStream->ReadString(szClass, sizeof(szClass));
+				if (stricmp(szClass, "PlayerLure") == 0)
+					nRides |= kLevelRide;
+				else if (stricmp(szClass, "PlayerVehicle") == 0)
+					nRides |= kLevelVehicle;
+
+				if (bSkip)
+				{
+					pStream->SeekTo(nStart + nDataLen);
+					continue;
+				}
+
+				uint32 nProps = 0;
+				pStream->Read(&nProps, sizeof(nProps));
+				for (uint32 k = 0; k < nProps && pStream->ErrorStatus() == LT_OK; ++k)
+				{
+					char szName[8];
+					pStream->ReadString(szName, sizeof(szName));	// (reads past the whole name)
+					uint8 nCode = 0;
+					uint32 nFlags = 0;
+					uint16 nPropLen = 0;
+					pStream->Read(&nCode, sizeof(nCode));
+					pStream->Read(&nFlags, sizeof(nFlags));
+					pStream->Read(&nPropLen, sizeof(nPropLen));
+					if (nCode == PT_STRING)
+					{
+						char szValue[8];
+						pStream->ReadString(szValue, sizeof(szValue));
+					}
+					else
+					{
+						uint32 nPos = 0;
+						pStream->GetPos(&nPos);
+						pStream->SeekTo(nPos + nPropLen);
+					}
+				}
+				if (i == 0)
+				{
+					uint32 nEnd = 0;
+					pStream->GetPos(&nEnd);
+					bSkip = (nEnd == nStart + nDataLen);
+				}
+			}
+		}
+		pStream->Release();
+	}
+	s_mapRides[pszLevel] = nRides;
+	return nRides;
+}
+
 void CScreenVRLevels::BuildList()
 {
 	if (!m_pList || !g_pMissionButeMgr)
@@ -368,6 +466,7 @@ void CScreenVRLevels::BuildList()
 	m_pList->RemoveAll();
 	m_aLevels.clear();
 
+	const DWORD dwStart = GetTickCount();
 	uint8 nFontSize = (uint8)g_pLayoutMgr->GetScreenCustomInt(SCREEN_ID_SINGLE,"ListFontSize");
 	for (int m = 0; m < g_pMissionButeMgr->GetNumMissions(); ++m)
 	{
@@ -393,11 +492,18 @@ void CScreenVRLevels::BuildList()
 				SAFE_STRCPY(szLevel, pszFile ? pszFile + 1 : level.szLevel);
 			}
 
+			// (Marked if there's something to ride, for testing those.)
+			const int nRides = VR_LevelRides(level.szLevel);
+			const char* pszRides = (nRides == (kLevelRide | kLevelVehicle)) ? "  [ride, vehicle]" :
+				(nRides == kLevelRide) ? "  [ride]" : (nRides == kLevelVehicle) ? "  [vehicle]" : "";
+			if (nRides)
+				CVRMgr::Log("Level select: %s (%s)%s", szLevel, level.szLevel, pszRides);
+
 			char szItem[300];
 			if (szMission[0])
-				LTSNPrintF(szItem, sizeof(szItem), "%s: %s", szMission, szLevel);
+				LTSNPrintF(szItem, sizeof(szItem), "%s: %s%s", szMission, szLevel, pszRides);
 			else
-				LTSNPrintF(szItem, sizeof(szItem), "%s", szLevel);
+				LTSNPrintF(szItem, sizeof(szItem), "%s%s", szLevel, pszRides);
 
 			CLTGUITextCtrl* pItem = CreateTextItem(szItem, CMD_VR_LEVEL_FIRST + (uint32)m_aLevels.size(), 0);
 			if (nFontSize)
@@ -407,7 +513,7 @@ void CScreenVRLevels::BuildList()
 			m_aLevels.push_back(level.szLevel);
 		}
 	}
-	CVRMgr::Log("Level select: %d levels", (int)m_aLevels.size());
+	CVRMgr::Log("Level select: %d levels (%lu ms)", (int)m_aLevels.size(), GetTickCount() - dwStart);
 }
 
 void CScreenVRLevels::OnFocus(LTBOOL bFocus)

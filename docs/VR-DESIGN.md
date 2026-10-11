@@ -323,7 +323,8 @@ Next, in a suggested order:
 15. The snowmobile (driving, view and hands working, see "Snowmobile").
 16. Finger sensing on the free hand (see "Finger sensing").
 17. Cutscenes in 3D or on a flat screen (see "Cutscenes").
-Later: the shutdown hang, the occasional crash loading, the Tommy gun's rare tracer
+18. The crash on exit and the occasional crash loading (see "Crashes").
+Later: the Tommy gun's rare tracer
 streaks; from the backlog: left-handed play, grip hold vs toggle, the
 quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
 
@@ -664,6 +665,11 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
 - Level select: MISSION / LEVEL names from the mission data (the level's
   file name if it has none), CMissionMgr::StartGameFromLevel as the
   game's own chapter list does.
+- Levels with something to ride are marked "[ride]" (a scripted ride,
+  class PlayerLure) and / or "[vehicle]" (PlayerVehicle, e.g. the
+  snowmobile), read from each world file's object list (class names only;
+  the object's size skips to the next, checked against a full read of the
+  first). Logged to vr_game.log with the time the list took.
 
 ## Snowmobile (first pass)
 
@@ -772,6 +778,31 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
   starts (VRScreenDistance / VRScreenAngle, as menus) and stays there.
 - The letterbox bars are kept in flat mode (they frame the shot on a
   screen; in 3D they'd float in front of the scene, so they stay off).
+
+## Crashes: on exit and loading
+
+Measured from the crash reports and minidumps (crash_*.txt / .dmp in run\,
+symbols from the build's .pdb files):
+
+- On exit (every exit crash): CClientMgr::Term unloads the game DLL
+  (EndShell, TermClientShellDE), then removes all objects; removing one
+  walks its list of LTObjRef references to clear them, and those
+  references lived in the game DLL's memory, now freed. Fix: before the
+  objects go, every object's reference list is cut loose (no one is left
+  to notify).
+- Loading a level (now and then, usually fine the second time): every one
+  had the main thread inside CLTDirectMusicMgr::InitLevel -> LoadSegment
+  -> the segment's Download (dmime -> dmusic -> dswave reading the waves
+  through our loader), while dmusic.dll's own service thread read through
+  a null interface pointer (dmusic+189C8, `mov eax,[ecx]` on an object
+  whose count was set but whose pointer wasn't yet): a race inside
+  DirectMusic. A first load is slower (disk), so the half-made object
+  lasts longer. Fix (CDMServiceGuard, ltdirectmusic_impl.cpp): while
+  InitLevel / TermLevel run, dmusic's threads (found by their start
+  address inside dmusic.dll) are suspended, but only when caught parked
+  at their usual waiting spot (learnt by sampling: the first return
+  address into dmusic's code on the stack), so never mid-work holding a
+  lock; a 10 s watchdog lets them go regardless. Logged as "[music]".
 
 ## Menus: the mouse steps aside
 

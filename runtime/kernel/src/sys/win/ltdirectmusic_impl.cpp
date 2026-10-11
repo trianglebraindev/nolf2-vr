@@ -90,6 +90,293 @@ extern void DebugConsoleOutput(const char* msg, uint8 nRed = 255, uint8 nBlue = 
 
 #define SAFE_RELEASE(p)      { if(p) { (p)->Release(); (p)=NULL; } }
 
+///////////////////////////////////////////////////////////////////////////////////////////
+// DirectMusic's service thread, kept still while we load and unload music
+// (NOLF2 VR project).
+//
+// The occasional crash loading a level: every crash report had the main
+// thread inside a segment's Download (dmime -> dmusic -> dswave reading the
+// waves) while one of dmusic.dll's own threads read through a null pointer
+// on an object that was still being set up. That's a race inside Windows'
+// DirectMusic, worse on today's many-core CPUs and on a first load (slow
+// disk reads keep the object half made for longer), which is why a second
+// try usually works.
+//
+// So while InitLevel / TermLevel load and unload music, dmusic's threads are
+// suspended -- but only while they're parked in their wait (the spot each
+// one is found at almost all the time), never in the middle of their work,
+// where they might hold a lock the loading needs. A watchdog lets them go
+// after 10 seconds whatever happens, so a mistake here costs a pause, not a
+// hang. Each use is logged to vr_game.log ("[music]").
+///////////////////////////////////////////////////////////////////////////////////////////
+
+#include <tlhelp32.h>
+#include <stdio.h>
+#include <stdarg.h>
+
+namespace
+{
+	void DMGuard_Log(const char* pszFormat, ...)
+	{
+		FILE* pFile = fopen("vr_game.log", "a");
+		if (!pFile)
+			return;
+		va_list args;
+		va_start(args, pszFormat);
+		fprintf(pFile, "[music] ");
+		vfprintf(pFile, pszFormat, args);
+		fprintf(pFile, "\n");
+		va_end(args);
+		fclose(pFile);
+	}
+
+	struct DMCode
+	{
+		DWORD	dwImageStart, dwImageEnd;	// all of dmusic.dll
+		DWORD	dwCodeStart, dwCodeEnd;		// its code
+	};
+
+	bool DMGuard_FindCode(DMCode& code)
+	{
+		HMODULE hMod = GetModuleHandleA("dmusic.dll");
+		if (!hMod)
+			return false;
+		const BYTE* pBase = (const BYTE*)hMod;
+		const IMAGE_DOS_HEADER* pDos = (const IMAGE_DOS_HEADER*)pBase;
+		if (pDos->e_magic != IMAGE_DOS_SIGNATURE)
+			return false;
+		const IMAGE_NT_HEADERS* pNt = (const IMAGE_NT_HEADERS*)(pBase + pDos->e_lfanew);
+		if (pNt->Signature != IMAGE_NT_SIGNATURE)
+			return false;
+		code.dwImageStart = (DWORD)(UINT_PTR)pBase;
+		code.dwImageEnd = code.dwImageStart + pNt->OptionalHeader.SizeOfImage;
+		const IMAGE_SECTION_HEADER* pSec = IMAGE_FIRST_SECTION(pNt);
+		for (WORD i = 0; i < pNt->FileHeader.NumberOfSections; ++i, ++pSec)
+		{
+			if (pSec->Characteristics & IMAGE_SCN_MEM_EXECUTE)
+			{
+				code.dwCodeStart = code.dwImageStart + pSec->VirtualAddress;
+				code.dwCodeEnd = code.dwCodeStart + pSec->Misc.VirtualSize;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Where in dmusic a suspended thread is: 1 = running dmusic's own code
+	// right now; otherwise the first address into dmusic's code on its stack
+	// (the call it's waiting in), 0 if none.
+	DWORD DMGuard_ReadStack(DWORD dwEsp, const DMCode& code)
+	{
+		// (Only as far as the stack's memory goes.)
+		MEMORY_BASIC_INFORMATION mbi;
+		if (!VirtualQuery((const void*)(UINT_PTR)dwEsp, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT)
+			return 0;
+		const DWORD dwEnd = (DWORD)(UINT_PTR)mbi.BaseAddress + (DWORD)mbi.RegionSize;
+		const DWORD* pStack = (const DWORD*)(UINT_PTR)dwEsp;
+		for (int i = 0; i < 256 && dwEsp + 4 * (i + 1) <= dwEnd; ++i)
+		{
+			if (pStack[i] >= code.dwCodeStart && pStack[i] < code.dwCodeEnd)
+				return pStack[i];
+		}
+		return 0;
+	}
+
+	DWORD DMGuard_Spot(HANDLE hThread, const DMCode& code)
+	{
+		CONTEXT ctx;
+		ZeroMemory(&ctx, sizeof(ctx));
+		ctx.ContextFlags = CONTEXT_CONTROL;
+		if (!GetThreadContext(hThread, &ctx))
+			return 0;
+		if (ctx.Eip >= code.dwCodeStart && ctx.Eip < code.dwCodeEnd)
+			return 1;
+		return DMGuard_ReadStack(ctx.Esp, code);
+	}
+
+	// Where each thread waits, once learnt (thread id -> spot).
+	struct DMHome { DWORD dwThreadId; DWORD dwSpot; };
+	DMHome	g_aDMHomes[8];
+	int		g_nDMHomes = 0;
+
+	// Suspends the thread if (and once) it's parked where it waits. False:
+	// left running.
+	bool DMGuard_SuspendParked(HANDLE hThread, DWORD dwThreadId, const DMCode& code, DWORD& dwHome)
+	{
+		dwHome = 0;
+		for (int i = 0; i < g_nDMHomes; ++i)
+		{
+			if (g_aDMHomes[i].dwThreadId == dwThreadId)
+				dwHome = g_aDMHomes[i].dwSpot;
+		}
+		if (!dwHome)
+		{
+			// Learn it: where it's found most often.
+			const int kSamples = 12;
+			DWORD aSpot[kSamples];
+			for (int i = 0; i < kSamples; ++i)
+			{
+				aSpot[i] = 0;
+				if (SuspendThread(hThread) == (DWORD)-1)
+					return false;
+				aSpot[i] = DMGuard_Spot(hThread, code);
+				ResumeThread(hThread);
+				Sleep(1);
+			}
+			int nBest = 0;
+			for (int i = 0; i < kSamples; ++i)
+			{
+				if (aSpot[i] <= 1)
+					continue;
+				int n = 0;
+				for (int j = 0; j < kSamples; ++j)
+				{
+					if (aSpot[j] == aSpot[i])
+						++n;
+				}
+				if (n > nBest)
+				{
+					nBest = n;
+					dwHome = aSpot[i];
+				}
+			}
+			if (nBest < kSamples - 2)
+			{
+				DMGuard_Log("thread %lu: no steady waiting spot (%d of %d), left running", dwThreadId, nBest, kSamples);
+				dwHome = 0;
+				return false;
+			}
+			if (g_nDMHomes < (int)(sizeof(g_aDMHomes) / sizeof(g_aDMHomes[0])))
+			{
+				g_aDMHomes[g_nDMHomes].dwThreadId = dwThreadId;
+				g_aDMHomes[g_nDMHomes].dwSpot = dwHome;
+				++g_nDMHomes;
+			}
+		}
+
+		for (int nTry = 0; nTry < 100; ++nTry)
+		{
+			if (SuspendThread(hThread) == (DWORD)-1)
+				return false;
+			if (DMGuard_Spot(hThread, code) == dwHome)
+				return true;
+			ResumeThread(hThread);
+			Sleep(1);
+		}
+		DMGuard_Log("thread %lu: never caught waiting, left running", dwThreadId);
+		return false;
+	}
+
+	typedef LONG (WINAPI *NtQueryInformationThreadFn)(HANDLE, int, PVOID, ULONG, PULONG);
+	const int kThreadQuerySetWin32StartAddress = 9;
+
+	class CDMServiceGuard
+	{
+	public:
+		CDMServiceGuard(const char* pszWhat)
+		{
+			m_pszWhat = pszWhat;
+			m_nThreads = 0;
+			m_nResumed = 0;
+			m_hDone = NULL;
+			m_hWatchdog = NULL;
+			m_dwStart = GetTickCount();
+
+			DMCode code;
+			if (!DMGuard_FindCode(code))
+				return;
+			NtQueryInformationThreadFn pfnQuery = (NtQueryInformationThreadFn)GetProcAddress(
+				GetModuleHandleA("ntdll.dll"), "NtQueryInformationThread");
+			if (!pfnQuery)
+				return;
+
+			HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+			if (hSnap == INVALID_HANDLE_VALUE)
+				return;
+			const DWORD dwPid = GetCurrentProcessId();
+			const DWORD dwMe = GetCurrentThreadId();
+			THREADENTRY32 te;
+			te.dwSize = sizeof(te);
+			for (BOOL bOk = Thread32First(hSnap, &te); bOk; bOk = Thread32Next(hSnap, &te))
+			{
+				if (te.th32OwnerProcessID != dwPid || te.th32ThreadID == dwMe)
+					continue;
+				if (m_nThreads >= (int)(sizeof(m_ahThreads) / sizeof(m_ahThreads[0])))
+					break;
+				HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION,
+					FALSE, te.th32ThreadID);
+				if (!hThread)
+					continue;
+				DWORD dwStartAddr = 0;
+				if (pfnQuery(hThread, kThreadQuerySetWin32StartAddress, &dwStartAddr, sizeof(dwStartAddr), NULL) >= 0 &&
+					dwStartAddr >= code.dwImageStart && dwStartAddr < code.dwImageEnd)
+				{
+					DWORD dwHome = 0;
+					if (DMGuard_SuspendParked(hThread, te.th32ThreadID, code, dwHome))
+					{
+						DMGuard_Log("%s: holding dmusic thread %lu (starts dmusic+%lX, waits at dmusic+%lX)", m_pszWhat,
+							te.th32ThreadID, dwStartAddr - code.dwImageStart, dwHome - code.dwImageStart);
+						m_ahThreads[m_nThreads++] = hThread;
+						continue;
+					}
+				}
+				CloseHandle(hThread);
+			}
+			CloseHandle(hSnap);
+
+			if (m_nThreads)
+			{
+				m_hDone = CreateEvent(NULL, TRUE, FALSE, NULL);
+				if (m_hDone)
+					m_hWatchdog = CreateThread(NULL, 0, Watchdog, this, 0, NULL);
+			}
+		}
+
+		~CDMServiceGuard()
+		{
+			if (m_hDone)
+				SetEvent(m_hDone);
+			if (m_hWatchdog)
+			{
+				WaitForSingleObject(m_hWatchdog, INFINITE);
+				CloseHandle(m_hWatchdog);
+			}
+			ResumeAll(false);
+			if (m_hDone)
+				CloseHandle(m_hDone);
+			for (int i = 0; i < m_nThreads; ++i)
+				CloseHandle(m_ahThreads[i]);
+		}
+
+	private:
+		static DWORD WINAPI Watchdog(void* pData)
+		{
+			CDMServiceGuard* pGuard = (CDMServiceGuard*)pData;
+			if (WaitForSingleObject(pGuard->m_hDone, 10000) == WAIT_TIMEOUT)
+				pGuard->ResumeAll(true);
+			return 0;
+		}
+
+		void ResumeAll(bool bWatchdog)
+		{
+			if (!m_nThreads || InterlockedExchange(&m_nResumed, 1))
+				return;
+			for (int i = 0; i < m_nThreads; ++i)
+				ResumeThread(m_ahThreads[i]);
+			DMGuard_Log("%s: let go after %lu ms%s", m_pszWhat, GetTickCount() - m_dwStart,
+				bWatchdog ? " (WATCHDOG: the loading waited on it)" : "");
+		}
+
+		const char*		m_pszWhat;
+		HANDLE			m_ahThreads[8];
+		int				m_nThreads;
+		volatile LONG	m_nResumed;
+		HANDLE			m_hDone;
+		HANDLE			m_hWatchdog;
+		DWORD			m_dwStart;
+	};
+}
+
 // output error to console
 void LTDMConOutError(char *pMsg, ...)
 {
@@ -800,6 +1087,9 @@ LTRESULT CLTDirectMusicMgr::InitLevel(const char* sWorkingDirectory, const char*
 	LTDMConOutMsg(3, "CLTDirectMusicMgr::InitLevel sWorkingDirectory=%s sControlFileName=%s sDefine1=%s sDefine2=%s sDeine3=%s\n",
 					  sWorkingDirectory, sControlFileName, sDefine1, sDefine2, sDefine3);
 
+	// (dmusic's own threads kept still while the music loads: see CDMServiceGuard.)
+	CDMServiceGuard cGuard("load music");
+
 	// control file mgr object used for reading the control file
 #ifdef NOLITHTECH
 	CControlFileMgrRezFile controlFile(m_sRezFileName);
@@ -1041,6 +1331,9 @@ LTRESULT CLTDirectMusicMgr::InitLevel(const char* sWorkingDirectory, const char*
 LTRESULT CLTDirectMusicMgr::TermLevel()
 {
 	LTDMConOutMsg(3, "CLTDirectMusicMgr::TermLevel\n");
+
+	// (And while it's unloaded.)
+	CDMServiceGuard cGuard("unload music");
 
 	// if the mgr is not initialized we fail
 	if (m_bInitialized == false) 
