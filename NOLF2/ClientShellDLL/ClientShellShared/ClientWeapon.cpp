@@ -33,6 +33,7 @@
 #include "PlayerViewAttachmentMgr.h"
 #include "GadgetTargetFX.h"
 #include "VRMgr.h"
+#include "HUDMgr.h"
 
 //
 // Externs
@@ -6218,14 +6219,18 @@ bool CClientWeapon::VR_ReloadBlocksFire() const
 void CClientWeapon::VR_SetupReload()
 {
 	VR_RemoveMagObjects();
+	m_mVRMagHandSkin.Identity();
+	m_mVRMagDropSkin.Identity();
 	m_eVRMag = VRMAG_IN;
 	m_hVRClipNode = INVALID_MODEL_NODE;
 	m_bVRReloadGun = false;
 	if ( !m_hObject || !m_pWeapon )
 		return;
 
-	HMODELNODE hClip;
-	if ( LT_OK == g_pModelLT->GetNode( m_hObject, "clip", hClip ) &&
+	HMODELNODE hClip = INVALID_MODEL_NODE;
+	if ( LT_OK != g_pModelLT->GetNode( m_hObject, "clip", hClip ) )
+		hClip = VR_FindMagBone();
+	if ( INVALID_MODEL_NODE != hClip &&
 	     LT_OK == g_pModelLT->GetBindPoseNodeTransform( m_hObject, hClip, m_mVRClipBind ) )
 	{
 		m_hVRClipNode = hClip;
@@ -6243,7 +6248,7 @@ void CClientWeapon::VR_SetupReload()
 		bool bByHand = m_bVRReloadGun && m_pAmmo && ( GADGET != m_pAmmo->eType ) && ( m_pWeapon->nShotsPerClip > 1 );
 		CVRMgr::Log( "Reload: %s %s (%d rounds a load%s)", m_pWeapon->szName,
 			bByHand ? "reloads by hand" : "uses the game's reload", m_pWeapon->nShotsPerClip,
-			!bByHand ? "" : ( INVALID_MODEL_NODE != m_hVRClipNode ? ", magazine bone: shown" : ", no magazine bone: touch the gun" ) );
+			!bByHand ? "" : ( INVALID_MODEL_NODE != m_hVRClipNode ? ", magazine shown" : ", no magazine found: touch the gun" ) );
 	}
 }
 
@@ -6271,7 +6276,12 @@ void CClientWeapon::VR_MagOnlyNodeControl( const NodeControlData &data, void *pU
 		return;
 	if ( data.m_hNode == p->m_hVRClipNode )
 	{
-		*data.m_pNodeTransform = p->m_mVRClipBind;
+		// Bone matrices here already carry the object's own placement (as
+		// the free left hand's do, see CVRMgr::GetFreeHandTransform), so the
+		// magazine is put exactly where it goes: the rest pose moved by the
+		// copy's own "skin" transform (to your hand, or falling).
+		const LTMatrix &mSkin = ( data.m_hModel == p->m_hVRMagDrop ) ? p->m_mVRMagDropSkin : p->m_mVRMagHandSkin;
+		*data.m_pNodeTransform = mSkin * p->m_mVRClipBind;
 		return;
 	}
 	LTMatrix &m = *data.m_pNodeTransform;
@@ -6355,8 +6365,6 @@ void CClientWeapon::VR_StartMagDrop()
 	if ( !m_hVRMagDrop )
 		return;
 	m_fVRMagDropScale = g_VRMgr.GetGunScale();
-	LTVector vScale( m_fVRMagDropScale, m_fVRMagDropScale, m_fVRMagDropScale );
-	g_pLTClient->SetObjectScale( m_hVRMagDrop, &vScale );
 	m_vVRMagDropPoint = m_vCamPos + VR_Rotate( m_rCamRot, vClip );
 	m_rVRMagDropRot = m_rCamRot * m_rVRObjRot;
 	m_vVRMagDropVel.Init( 0.0f, 0.0f, 0.0f );
@@ -6365,15 +6373,25 @@ void CClientWeapon::VR_StartMagDrop()
 	VR_PlaceMagDrop();
 }
 
+// The falling copy: the magazine's rest point at m_vVRMagDropPoint (world),
+// turned by m_rVRMagDropRot, at the gun's size.
 void CClientWeapon::VR_PlaceMagDrop()
 {
 	if ( !m_hVRMagDrop )
 		return;
 	LTVector vClipBind;
 	m_mVRClipBind.GetTranslation( vClipBind );
-	LTVector vPos = m_vVRMagDropPoint - VR_Rotate( m_rVRMagDropRot, vClipBind * m_fVRMagDropScale );
-	g_pLTClient->SetObjectPos( m_hVRMagDrop, &vPos );
-	g_pLTClient->SetObjectRotation( m_hVRMagDrop, &m_rVRMagDropRot );
+	LTMatrix mRot;
+	mRot.Identity();
+	m_rVRMagDropRot.ConvertToMatrix( mRot );
+	const float s = m_fVRMagDropScale;
+	for ( int r = 0; r < 3; ++r )
+		for ( int c = 0; c < 3; ++c )
+			mRot.m[r][c] *= s;
+	LTVector vMoved = VR_Rotate( m_rVRMagDropRot, vClipBind * s );
+	mRot.SetTranslation( m_vVRMagDropPoint - vMoved );
+	m_mVRMagDropSkin = mRot;
+	g_pLTClient->SetObjectPos( m_hVRMagDrop, &m_vVRMagDropPoint );
 }
 
 // Falls (tumbling a little) until it hits the ground, lies there a moment,
@@ -6466,13 +6484,25 @@ void CClientWeapon::VR_UpdateReload()
 
 	// A: drop the magazine. Its rounds stay in your reserve (the total is
 	// unchanged; only the gun's load goes to nothing).
-	if ( VRMAG_IN == m_eVRMag && W_IDLE == GetState() && g_VRMgr.GameButtonPressed( LTVR_RIGHT, LTVR_BTN_PRIMARY ) )
+	if ( VRMAG_IN == m_eVRMag && g_VRMgr.GameButtonPressed( LTVR_RIGHT, LTVR_BTN_PRIMARY ) )
 	{
-		VR_StartMagDrop();
-		m_eVRMag = VRMAG_OUT;
-		m_nAmmoInClip = 0;
-		VR_PlayReloadSound( 0 );
-		CVRMgr::Log( "Reload: %s magazine dropped", m_pWeapon->szName );
+		// Not while reloading, switching or put away (firing is fine: the
+		// shot's animation may still be finishing).
+		WeaponState eState = GetState();
+		if ( W_RELOADING == eState || W_SELECT == eState || W_DESELECT == eState || W_INACTIVE == eState )
+		{
+			CVRMgr::Log( "Reload: %s - A ignored (weapon state %d)", m_pWeapon->szName, (int)eState );
+		}
+		else
+		{
+			VR_StartMagDrop();
+			m_eVRMag = VRMAG_OUT;
+			m_nAmmoInClip = 0;
+			if ( g_pHUDMgr )
+				g_pHUDMgr->QueueUpdate( kHUDAmmo );
+			VR_PlayReloadSound( 0 );
+			CVRMgr::Log( "Reload: %s magazine dropped (weapon state %d)", m_pWeapon->szName, (int)eState );
+		}
 	}
 
 	// Left grip with the hand over your left shoulder: a fresh magazine (if
@@ -6507,12 +6537,17 @@ void CClientWeapon::VR_UpdateReload()
 	if ( m_hVRMagHand )
 	{
 		// The magazine's bone at the hand, turned as the hand is (it hangs
-		// below your fist as it would in a gun held in that hand).
+		// below your fist as it would in a gun held in that hand). In
+		// really-close space: camera space / the gun's size.
 		LTVector vClipBind;
 		m_mVRClipBind.GetTranslation( vClipBind );
-		LTVector vObj = vLeft / g_VRMgr.GetGunScale() - VR_Rotate( rLeft, vClipBind );
-		g_pLTClient->SetObjectPos( m_hVRMagHand, &vObj );
-		g_pLTClient->SetObjectRotation( m_hVRMagHand, &rLeft );
+		LTVector vHand = vLeft / g_VRMgr.GetGunScale();
+		LTMatrix mRot;
+		mRot.Identity();
+		rLeft.ConvertToMatrix( mRot );
+		mRot.SetTranslation( vHand - VR_Rotate( rLeft, vClipBind ) );
+		m_mVRMagHandSkin = mRot;
+		g_pLTClient->SetObjectPos( m_hVRMagHand, &vHand );
 	}
 
 	// Into the gun: the magazine to the gun's magazine well, or (no magazine
@@ -6536,7 +6571,136 @@ void CClientWeapon::VR_UpdateReload()
 		}
 		m_eVRMag = VRMAG_IN;
 		ReloadClip( false, -1, true, true );
+		if ( g_pHUDMgr )
+			g_pHUDMgr->QueueUpdate( kHUDAmmo );
 		VR_PlayReloadSound( 1 );
 		CVRMgr::Log( "Reload: %s reloaded (%d in the gun)", m_pWeapon->szName, m_nAmmoInClip );
 	}
+}
+
+// The magazine's bone in a model with no "clip" bone, found from the game's
+// own reload animation: a hidden copy of the model is stepped through it,
+// and the bone (not a hand's or arm's, not the gun's own) that travels
+// furthest relative to the gun is the magazine, if it travels far enough.
+// Worked out once per weapon; the candidates go to the log.
+HMODELNODE CClientWeapon::VR_FindMagBone()
+{
+	static int s_anFound[256];		// per weapon id: -2 not yet, -1 none, else the bone
+	static bool s_bInit = false;
+	if ( !s_bInit )
+	{
+		for ( int i = 0; i < 256; ++i )
+			s_anFound[i] = -2;
+		s_bInit = true;
+	}
+	if ( !m_pWeapon || !g_VRMgr.IsActive() )
+		return INVALID_MODEL_NODE;
+	const int nId = m_nWeaponId;
+	if ( s_anFound[nId] != -2 )
+		return ( s_anFound[nId] >= 0 ) ? (HMODELNODE)s_anFound[nId] : INVALID_MODEL_NODE;
+	s_anFound[nId] = -1;
+
+	ObjectCreateStruct ocs;
+	INIT_OBJECTCREATESTRUCT( ocs );
+	PopulateCreateStruct( &ocs );
+	ocs.m_ObjectType = OT_MODEL;
+	ocs.m_Flags = 0;		// (never drawn)
+	HOBJECT hTemp = g_pLTClient->CreateObject( &ocs );
+	if ( !hTemp )
+		return INVALID_MODEL_NODE;
+
+	HMODELNODE hGun;
+	uint32 nNodes = 0;
+	uint32 nAnim = g_pLTClient->GetAnimIndex( hTemp, ns_szReloadAnimationName );
+	uint32 nLength = 0;
+	if ( LT_OK != g_pModelLT->GetNode( hTemp, "gun", hGun ) || LT_OK != g_pModelLT->GetNumNodes( hTemp, nNodes ) ||
+	     INVALID_ANI == nAnim || LT_OK != g_pModelLT->SetCurAnim( hTemp, MAIN_TRACKER, nAnim ) ||
+	     LT_OK != g_pModelLT->GetCurAnimLength( hTemp, MAIN_TRACKER, nLength ) || nLength == 0 )
+	{
+		CVRMgr::Log( "Reload: %s - no reload animation to find its magazine in", m_pWeapon->szName );
+		g_pLTClient->RemoveObject( hTemp );
+		return INVALID_MODEL_NODE;
+	}
+	g_pModelLT->SetPlaying( hTemp, MAIN_TRACKER, false );
+
+	// The candidate bones.
+	enum { kMaxCand = 24, kSamples = 24 };
+	HMODELNODE ahCand[kMaxCand];
+	char aszCand[kMaxCand][32];
+	LTVector avStart[kMaxCand], avMost[kMaxCand];
+	float afTravel[kMaxCand];
+	int nCand = 0;
+	static const char *kSkip[] = { "thumb", "pointer", "middle", "ring", "pinky", "wrist", "arm", "Vol", "Plot", "gun", "cuff" };
+	for ( uint32 i = 0; i < nNodes && nCand < kMaxCand; ++i )
+	{
+		char szName[64] = "";
+		if ( LT_OK != g_pModelLT->GetNodeName( hTemp, (HMODELNODE)i, szName, sizeof( szName ) ) )
+			continue;
+		bool bSkip = false;
+		for ( int k = 0; k < (int)( sizeof( kSkip ) / sizeof( kSkip[0] ) ) && !bSkip; ++k )
+		{
+			char szLow[64], szKey[32];
+			SAFE_STRCPY( szLow, szName );
+			SAFE_STRCPY( szKey, kSkip[k] );
+			_strlwr( szLow );
+			_strlwr( szKey );
+			bSkip = ( strstr( szLow, szKey ) != NULL );
+		}
+		if ( bSkip )
+			continue;
+		ahCand[nCand] = (HMODELNODE)i;
+		SAFE_STRCPY( aszCand[nCand], szName );
+		afTravel[nCand] = 0.0f;
+		avMost[nCand].Init( 0.0f, 0.0f, 0.0f );
+		++nCand;
+	}
+
+	// Step through the reload, each bone relative to the gun's own bone.
+	for ( int k = 0; k <= kSamples; ++k )
+	{
+		g_pModelLT->SetCurAnimTime( hTemp, MAIN_TRACKER, (uint32)( (float)nLength * (float)k / (float)kSamples ) );
+		LTransform tGun;
+		if ( LT_OK != g_pModelLT->GetNodeTransform( hTemp, hGun, tGun, LTFALSE ) )
+			continue;
+		for ( int c = 0; c < nCand; ++c )
+		{
+			LTransform t;
+			if ( LT_OK != g_pModelLT->GetNodeTransform( hTemp, ahCand[c], t, LTFALSE ) )
+				continue;
+			LTVector vRel = VR_Unrotate( tGun.m_Rot, t.m_Pos - tGun.m_Pos );
+			if ( 0 == k )
+				avStart[c] = vRel;
+			else
+			{
+				float fTravel = ( vRel - avStart[c] ).Mag();
+				if ( fTravel > afTravel[c] )
+				{
+					afTravel[c] = fTravel;
+					avMost[c] = vRel - avStart[c];
+				}
+			}
+		}
+	}
+	g_pLTClient->RemoveObject( hTemp );
+
+	int nBest = -1;
+	char szAll[512] = "";
+	for ( int c = 0; c < nCand; ++c )
+	{
+		char szOne[96];
+		_snprintf( szOne, sizeof( szOne ), " %s %.2f (%.2f %.2f %.2f);", aszCand[c], afTravel[c], avMost[c].x, avMost[c].y, avMost[c].z );
+		szOne[sizeof( szOne ) - 1] = '\0';
+		if ( strlen( szAll ) + strlen( szOne ) < sizeof( szAll ) )
+			strcat( szAll, szOne );
+		if ( nBest < 0 || afTravel[c] > afTravel[nBest] )
+			nBest = c;
+	}
+	// (Model units: the hand is 0.38 across, so 0.4 is about a hand's width.)
+	const float kMinTravel = 0.4f;
+	bool bFound = nBest >= 0 && afTravel[nBest] >= kMinTravel;
+	CVRMgr::Log( "Reload: %s - bones moving in its reload (travel, most-moved offset; model units):%s -> %s",
+		m_pWeapon->szName, nCand ? szAll : " none", bFound ? aszCand[nBest] : "no magazine" );
+	if ( bFound )
+		s_anFound[nId] = (int)ahCand[nBest];
+	return bFound ? ahCand[nBest] : INVALID_MODEL_NODE;
 }

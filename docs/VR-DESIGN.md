@@ -446,6 +446,29 @@ the shutdown hang.
   sounds 1 and 2.
 - Insert: the held magazine within 10 cm of the gun's clip bone; without a
   clip bone, the left hand within 15 cm of the right.
+- First test (Tre): works on most guns, but (1) the magazine in the hand
+  hung at a fixed spot in front of the face, (2) the AK-47 and sniper
+  showed nothing, (3) the ammo read-out kept the old count after a drop,
+  (4) the infinite-ammo Tommy gun showed no count, (5) the shotgun
+  wouldn't drop. Fixes:
+  (1) Bone matrices in a node control already carry the object's own
+  placement (the free left hand sets its wrist straight in really-close
+  space), so setting the magazine bone to its rest pose dropped the
+  object's placement. The copies now build the bone's matrix directly:
+  skin x rest pose, the skin taking the rest pose's magazine point to the
+  hand (really-close space) or to the falling point (world, times the
+  gun's size).
+  (2) Models without a "clip" bone: a hidden copy is stepped through the
+  game's own "Reload" animation (24 steps) and the bone (not a hand's,
+  arm's or the gun's) that travels furthest relative to the gun bone is
+  the magazine, if it travels at least 0.4 model units (about a hand's
+  width). Logged: "Reload: <weapon> - bones moving in its reload ...".
+  (3) The HUD only redraws when told: drop and insert queue kHUDAmmo.
+  (4) The game hides the count for infinite-ammo guns; with reloading by
+  hand they show the magazine's count.
+  (5) A could only drop while the weapon was idle; now anything but
+  reloading / switching / put away, and a refusal is logged with the
+  weapon's state.
 - The shoulder (CVRMgr::IsLeftHandAtShoulder): left of the head's middle,
   no further forward than the face, from about chest height up, within
   half a metre, in a frame turned by the head's heading only. While the

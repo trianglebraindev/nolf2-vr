@@ -15,6 +15,7 @@
 #include "ClientWeaponBase.h"
 #include "ClientWeaponMgr.h"
 #include "PlayerMgr.h"
+#include "VRMgr.h"
 
 //******************************************************************************************
 //**
@@ -27,6 +28,7 @@ CHUDAmmo::CHUDAmmo()
 	m_UpdateFlags = kHUDAmmo;
 	m_bDraw = LTFALSE;
 	m_bInfinite = LTFALSE;
+	m_bVRClipOnly = false;
 }
 
 LTBOOL CHUDAmmo::Init()
@@ -113,7 +115,7 @@ void CHUDAmmo::Render()
 
 	}
 
-	if (m_bUseText &&  !m_bInfinite)
+	if (m_bUseText && (!m_bInfinite || m_bVRClipOnly))
 	{
 		m_pStr->Render();
 	}
@@ -182,10 +184,17 @@ void CHUDAmmo::Update()
 		m_VRRect.Add(cx - fClipW, cy, fClipW, ch);
 	}
 
-	if (m_bUseText && !m_bInfinite)
+	// (VR, reloading by hand: an infinite-ammo gun still shows what's in its
+	// magazine, since that's what you reload.)
+	bool bShowClipOnly = m_bInfinite && g_VRMgr.IsManualReload() && pWeapon->nShotsPerClip > 1;
+	m_bVRClipOnly = bShowClipOnly;
+	if (m_bUseText && (!m_bInfinite || bShowClipOnly))
 	{
 		char str[32];
-		sprintf(str,"%d/%d", nAmmoInClip, nAmmo < 0 ? 0 : nAmmo);
+		if (bShowClipOnly)
+			sprintf(str,"%d", nAmmoInClip);
+		else
+			sprintf(str,"%d/%d", nAmmoInClip, nAmmo < 0 ? 0 : nAmmo);
 
 		uint8 h = (uint8)((float)m_nTextHeight * g_pInterfaceResMgr->GetYRatio());
 

@@ -476,8 +476,11 @@ protected:
 	enum VRMagState { VRMAG_IN, VRMAG_OUT, VRMAG_HAND };
 	VRMagState    m_eVRMag;
 	bool          m_bVRReloadGun;		// a gun that reloads by hand (magazine bone or muzzle)
-	HMODELNODE    m_hVRClipNode;		// the "clip" bone, or INVALID_MODEL_NODE
+	HMODELNODE    m_hVRClipNode;		// the magazine's bone ("clip", or found from the reload), or INVALID_MODEL_NODE
 	LTMatrix      m_mVRClipBind;
+	LTMatrix      m_mVRMagHandSkin;		// where the hand / falling copies put the magazine (see VR_MagOnlyNodeControl)
+	LTMatrix      m_mVRMagDropSkin;
+	HMODELNODE    VR_FindMagBone();
 	HOBJECT       m_hVRMagHand;
 	HOBJECT       m_hVRMagDrop;
 	LTVector      m_vVRMagDropPoint;	// world: where the magazine's bone is

@@ -68,6 +68,7 @@ private:
 
 	LTBOOL		m_bDraw;
 	LTBOOL		m_bInfinite;
+	bool		m_bVRClipOnly;	// VR, reloading by hand: an infinite gun shows its magazine
 
 	CUIPolyString*	m_pStr;
 
