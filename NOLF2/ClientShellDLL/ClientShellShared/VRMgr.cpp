@@ -240,6 +240,8 @@ CVRMgr::CVRMgr()
 	m_bSnapTriggerOff	= false;
 	m_bMouseInUse		= false;
 	m_bWantsMag			= false;
+	m_bWantsCock		= false;
+	m_vCockPoint.Init(0.0f, 0.0f, 0.0f);
 	m_bMouseKnown		= false;
 	m_nLastMouseX		= 0;
 	m_nLastMouseY		= 0;
@@ -479,6 +481,20 @@ bool CVRMgr::IsLeftHandAtShoulder() const
 	LTRotation rYaw(LTVector(0.0f, 1.0f, 0.0f), GetHeadYaw());
 	LTVector v = VR_Unrotate(rYaw, vGrip - GetHeadOffset()) / m_State.unitsPerMeter;	// metres: right, up, forward
 	return v.x < 0.05f && v.x > -0.5f && v.y > -0.45f && v.y < 0.35f && v.z < 0.10f && v.z > -0.5f;
+}
+
+// The left hand is where the gun is gripped to cock it (12 cm, a little
+// more than the weapon's own 10 cm, so a grab there is never also a grab of
+// the gun).
+bool CVRMgr::IsLeftHandNearCock() const
+{
+	if (!m_bWantsCock || m_State.unitsPerMeter <= 0.0f)
+		return false;
+	LTVector vLeft;
+	LTRotation rLeft;
+	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
+		return false;
+	return (vLeft - m_vCockPoint).Mag() / m_State.unitsPerMeter < 0.12f;
 }
 
 bool CVRMgr::IsSwingOn() const
@@ -1433,7 +1449,7 @@ void CVRMgr::UpdateMoveBody()
 		return;
 	bool bGrip = (m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) != 0;
 	if (Pressed(LTVR_LEFT, LTVR_BTN_GRIP) && !m_bTwoHand && !m_bAdjusting && !IsDecisionOpen() &&
-		!(m_bWantsMag && IsLeftHandAtShoulder()))
+		!(m_bWantsMag && IsLeftHandAtShoulder()) && !IsLeftHandNearCock())
 	{
 		m_pfnSetBinding(LTVR_LEFT, LTVR_BTN_GRIP, COMMAND_ID_MOVE_BODY);
 		m_bMoveBodyBound = true;
@@ -1455,6 +1471,8 @@ void CVRMgr::UpdateTwoHand()
 		return;
 	if (m_bWantsMag && IsLeftHandAtShoulder())
 		return;		// (taking a magazine, see CClientWeapon::VR_UpdateReload)
+	if (IsLeftHandNearCock())
+		return;		// (cocking, see CClientWeapon::VR_UpdateCock)
 
 	LTVector vLeft, vRight;
 	LTRotation rLeft, rAim, rGun;

@@ -51,8 +51,10 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
 - **Reloading by hand** (default; Options > VR > Reloading: Manual / Game
   original): when the gun's empty, A drops the magazine, reach over your
   left shoulder and grip to take a new one, and push it into the gun.
-  Guns without a separate magazine in their model (shotgun, sniper rifle,
-  AK-47 so far) reload by bringing your left hand to the gun.
+  Guns without a separate magazine in their model (the shotgun) reload by
+  bringing your left hand to the gun. Fired empty, a gun then needs
+  cocking: grip the slide / cocking handle with your left hand and pull
+  it back (the shotgun: pump it back and forward).
 
 - **Swords**: swing the katana or tulwar and it hits what the blade passes
   through (the trigger still does the game's own slash). How hard a swing

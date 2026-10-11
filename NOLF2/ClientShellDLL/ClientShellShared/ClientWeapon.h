@@ -484,7 +484,24 @@ protected:
 	LTMatrix      m_mVRClipTurn;		// how the magazine sits in the gun as you hold it (rotation only)
 	HMODELNODE    m_hVRMagHandNode;		// the magazine bone in the hand copy (a stand-in gun's, for guns without one)
 	LTMatrix      m_mVRMagHandTurn;		// how that magazine sits in its gun (rotation only)
-	HMODELNODE    VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut );
+	HMODELNODE    VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut, HMODELNODE &hPump );
+
+	// VR: cocking by hand after running dry (see VR_UpdateCock).
+	enum VRCockKind { VRCOCK_NONE, VRCOCK_SLIDE, VRCOCK_PUMP };
+	VRCockKind    m_eVRCockKind;		// what the cocking part does (none: grab and pull, nothing moves)
+	HMODELNODE    m_hVRCockNode;		// the slide / lever / pump bone, or INVALID_MODEL_NODE
+	float         m_fVRCockTravelCm;	// how far it goes back
+	bool          m_bVRDry;				// emptied by firing (a reload then needs a cock)
+	bool          m_bVRNeedsCock;
+	bool          m_bVRCocking;			// held by the left hand
+	bool          m_bVRPumpBack;		// (pump: has been pulled all the way back)
+	float         m_fVRCockPullCm;		// how far it's pulled back now
+	LTVector      m_vVRCockGrabStart;	// left hand when it took hold (camera space, from the gun)
+	LTVector      m_vVRCockOffset;		// the cocking part's pull (really-close space)
+	void          VR_SetupCock( HMODELNODE hPump );
+	void          VR_UpdateCock( float fUnitsPerMeter );
+	bool          VR_GetCockPoint( LTVector &vCamRel ) const;
+	static void   VR_CockNodeControl( const NodeControlData &data, void *pUser );
 	HOBJECT       VR_CreateMagObjectFrom( WEAPON const *pSource, bool bReallyClose );
 	HOBJECT       m_hVRMagHand;
 	HOBJECT       m_hVRMagDrop;

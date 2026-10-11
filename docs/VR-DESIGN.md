@@ -314,7 +314,9 @@ Next, in a suggested order:
 9. Comfort vignette (done; Tre has VR legs, it's for others).
 10. Menus: the parked mouse cursor no longer steals the selection (see
     "Menus: the mouse steps aside").
-11. Reloading by hand (first pass, see "Manual reloading").
+11. Reloading by hand (see "Manual reloading"); cocking by hand after
+    running dry (first pass, see "Cocking").
+Next: throwables (banana, grenades, ...).
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
@@ -521,6 +523,27 @@ the shutdown hang.
   half a metre, in a frame turned by the head's heading only. While the
   gun wants a magazine, a left grip there doesn't grab the gun or pick up
   a body.
+
+## Cocking (first pass)
+
+- Tre's picks: only after running dry (fired empty, then reloaded; a
+  reload with rounds still in needs none); grab and pull back; the
+  shotgun pumps (back under the barrel, then forward).
+- Until cocked the trigger clicks (a one-time hint). Grip the cocking part
+  with the left hand (within 10 cm) and pull back along the barrel (model
+  -Z), measured against the gun so moving the gun doesn't count; the part
+  follows the hand (a node control adds the pull to its bone).
+- Parts: a "slide" bone (Beretta, 4 cm) or "lever" (Tommy guns, Sterlings,
+  5 cm): cocks once pulled at least 80% of the way and let go. A pump: a
+  bone that slides straight back in the reload animation (found by the
+  same sampling as the magazines; the shotgun's "trigger", 0.41 units
+  straight back), 8 cm: cocks back then forward. No such bone (AK-47,
+  sniper): the same grab and pull at the "breach" socket (the ejection
+  port), nothing moving.
+- While the gun wants cocking, a left grip within 12 cm of the spot
+  doesn't grab the gun or pick up a body. Sound: the weapon's reload
+  sound 3 (falls back to 1). Logged: "Cock: <weapon> - <part> ...",
+  "took hold", "cocked".
 
 ## Menus: the mouse steps aside
 

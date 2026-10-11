@@ -206,6 +206,16 @@ CClientWeapon::CClientWeapon() :
 	, m_bVRMagDropLanded( false )
 	, m_bVRDryLast( false )
 	, m_nVRReloadLoggedId( -1 )
+	, m_eVRCockKind( VRCOCK_NONE )
+	, m_hVRCockNode( INVALID_MODEL_NODE )
+	, m_fVRCockTravelCm( 5.0f )
+	, m_bVRDry( false )
+	, m_bVRNeedsCock( false )
+	, m_bVRCocking( false )
+	, m_bVRPumpBack( false )
+	, m_fVRCockPullCm( 0.0f )
+	, m_vVRCockGrabStart( 0.0f, 0.0f, 0.0f )
+	, m_vVRCockOffset( 0.0f, 0.0f, 0.0f )
 	, m_hLoopSound( LTNULL )
 	, m_nLoopSoundId( PSI_INVALID )
 	, m_bFirstSelection( true )
@@ -1083,7 +1093,18 @@ WeaponState CClientWeapon::Update( bool bFire, FireType eFireType /*=FT_NORMAL_F
 						0, SMGR_DEFAULT_VOLUME, 1.0f, WEAPONS_SOUND_CLASS );
 				}
 				static bool s_bHinted = false;
-				if ( !s_bHinted )
+				static bool s_bCockHinted = false;
+				if ( m_bVRNeedsCock && VRMAG_IN == m_eVRMag && m_nAmmoInClip > 0 )
+				{
+					if ( !s_bCockHinted )
+					{
+						s_bCockHinted = true;
+						g_VRMgr.ShowHint( VRCOCK_PUMP == m_eVRCockKind ?
+							"Pump it: grip the pump under the barrel with your left hand, slide it back, then forward." :
+							"Cock it: grip the slide / cocking handle with your left hand and pull it back, then let go." );
+					}
+				}
+				else if ( !s_bHinted )
 				{
 					s_bHinted = true;
 					g_VRMgr.ShowHint( VRMAG_IN == m_eVRMag ?
@@ -1466,6 +1487,10 @@ void CClientWeapon::DecrementAmmo()
 			g_pPlayerStats->UpdateAmmo( m_nWeaponId, m_nAmmoId, nAmmo, LTFALSE, LTFALSE );
 		}
 	}
+
+	// (VR, reloading by hand: fired empty, so the next magazine needs a cock.)
+	if ( 0 < nShotsPerClip && 0 >= m_nAmmoInClip && VR_IsReloadGun() )
+		m_bVRDry = true;
 
 	// Check to see if we need to reload...
 	// (VR, reloading by hand: the gun stays empty until you reload it.)
@@ -6212,13 +6237,18 @@ bool CClientWeapon::VR_IsReloadGun() const
 
 bool CClientWeapon::VR_ReloadBlocksFire() const
 {
-	return m_bVRPlaced && VR_IsReloadGun() && ( VRMAG_IN != m_eVRMag || m_nAmmoInClip <= 0 );
+	return m_bVRPlaced && VR_IsReloadGun() && ( VRMAG_IN != m_eVRMag || m_nAmmoInClip <= 0 || m_bVRNeedsCock );
 }
 
 // A new model (or weapon): find its magazine bone, start with the magazine in.
 void CClientWeapon::VR_SetupReload()
 {
 	VR_RemoveMagObjects();
+	m_bVRDry = false;
+	m_bVRNeedsCock = false;
+	m_bVRCocking = false;
+	m_fVRCockPullCm = 0.0f;
+	m_vVRCockOffset.Init( 0.0f, 0.0f, 0.0f );
 	m_mVRMagHandBone.Identity();
 	m_mVRMagDropBone.Identity();
 	m_mVRClipTurn.Identity();
@@ -6234,7 +6264,9 @@ void CClientWeapon::VR_SetupReload()
 	if ( LT_OK != g_pModelLT->GetNode( m_hObject, "clip", hClip ) )
 		hClip = INVALID_MODEL_NODE;
 	LTVector vOut;
-	hClip = VR_FindMagBone( hClip, vOut );
+	HMODELNODE hPump = INVALID_MODEL_NODE;
+	hClip = VR_FindMagBone( hClip, vOut, hPump );
+	VR_SetupCock( hPump );
 	if ( INVALID_MODEL_NODE != hClip &&
 	     LT_OK == g_pModelLT->GetBindPoseNodeTransform( m_hObject, hClip, m_mVRClipBind ) )
 	{
@@ -6465,6 +6497,10 @@ void CClientWeapon::VR_UpdateReload()
 	if ( !VR_IsReloadGun() )
 	{
 		g_VRMgr.SetWantsMag( false );
+		g_VRMgr.SetCockPoint( false, LTVector( 0.0f, 0.0f, 0.0f ) );
+		m_bVRNeedsCock = false;
+		m_bVRCocking = false;
+		m_vVRCockOffset.Init( 0.0f, 0.0f, 0.0f );
 		if ( m_hVRMagHand )
 		{
 			g_pLTClient->RemoveObject( m_hVRMagHand );
@@ -6481,6 +6517,9 @@ void CClientWeapon::VR_UpdateReload()
 	if ( !m_bVRPlaced )
 	{
 		g_VRMgr.SetWantsMag( false );
+		g_VRMgr.SetCockPoint( false, LTVector( 0.0f, 0.0f, 0.0f ) );
+		m_bVRCocking = false;
+		m_vVRCockOffset.Init( 0.0f, 0.0f, 0.0f );
 		if ( m_hVRMagHand )
 		{
 			g_pLTClient->RemoveObject( m_hVRMagHand );
@@ -6493,9 +6532,14 @@ void CClientWeapon::VR_UpdateReload()
 
 	const float fUnitsPerMeter = g_VRMgr.GetUnitsPerMeter() > 0.0f ? g_VRMgr.GetUnitsPerMeter() : 60.0f;
 
+	// Cocking (after running dry and reloading).
+	VR_UpdateCock( fUnitsPerMeter );
+
 	// Filled some other way (switching weapons, a keyboard reload): it's in.
 	if ( VRMAG_IN != m_eVRMag && m_nAmmoInClip > 0 )
 	{
+		m_bVRDry = false;
+		m_bVRNeedsCock = false;
 		if ( m_hVRMagHand )
 		{
 			g_pLTClient->RemoveObject( m_hVRMagHand );
@@ -6654,6 +6698,12 @@ void CClientWeapon::VR_UpdateReload()
 		if ( g_pHUDMgr )
 			g_pHUDMgr->QueueUpdate( kHUDAmmo );
 		VR_PlayReloadSound( 1 );
+		// Run dry: nothing in the chamber until it's cocked.
+		if ( m_bVRDry )
+		{
+			m_bVRNeedsCock = true;
+			m_bVRDry = false;
+		}
 		CVRMgr::Log( "Reload: %s reloaded (%d in the gun)", m_pWeapon->szName, m_nAmmoInClip );
 	}
 }
@@ -6667,9 +6717,10 @@ void CClientWeapon::VR_UpdateReload()
 // magazine slides out along its length, so this is also its long axis);
 // straight down if the animation doesn't move it. Worked out once per
 // weapon; the candidates go to the log.
-HMODELNODE CClientWeapon::VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut )
+HMODELNODE CClientWeapon::VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut, HMODELNODE &hPump )
 {
 	static int s_anFound[256];		// per weapon id: -2 not yet, -1 none, else the bone
+	static int s_anPump[256];		// a pump (slides straight back in the reload), -1 none
 	static LTVector s_avOut[256];
 	static bool s_bInit = false;
 	if ( !s_bInit )
@@ -6677,17 +6728,21 @@ HMODELNODE CClientWeapon::VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut )
 		for ( int i = 0; i < 256; ++i )
 		{
 			s_anFound[i] = -2;
+			s_anPump[i] = -1;
 			s_avOut[i].Init( 0.0f, -1.0f, 0.0f );
 		}
 		s_bInit = true;
 	}
 	vOut.Init( 0.0f, -1.0f, 0.0f );
+	hPump = INVALID_MODEL_NODE;
 	if ( !m_pWeapon || !g_VRMgr.IsActive() )
 		return hKnown;
 	const int nId = m_nWeaponId;
 	if ( s_anFound[nId] != -2 )
 	{
 		vOut = s_avOut[nId];
+		if ( s_anPump[nId] >= 0 )
+			hPump = (HMODELNODE)s_anPump[nId];
 		if ( INVALID_MODEL_NODE != hKnown )
 			return hKnown;
 		return ( s_anFound[nId] >= 0 ) ? (HMODELNODE)s_anFound[nId] : INVALID_MODEL_NODE;
@@ -6787,7 +6842,7 @@ HMODELNODE CClientWeapon::VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut )
 	}
 	g_pLTClient->RemoveObject( hTemp );
 
-	int nBest = -1;
+	int nBest = -1, nPump = -1;
 	char szAll[512] = "";
 	for ( int c = 0; c < nCand; ++c )
 	{
@@ -6803,6 +6858,10 @@ HMODELNODE CClientWeapon::VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut )
 		bool bDown = ( INVALID_MODEL_NODE != hKnown ) || ( -avMost[c].y ) >= 0.5f * afTravel[c];
 		if ( bDown && ( nBest < 0 || afTravel[c] > afTravel[nBest] ) )
 			nBest = c;
+		// A pump: slides straight back along the barrel (the shotgun's).
+		bool bBack = afTravel[c] >= 0.25f && ( -avMost[c].z ) >= 0.8f * afTravel[c];
+		if ( bBack && ( nPump < 0 || afTravel[c] > afTravel[nPump] ) )
+			nPump = c;
 	}
 	// (Model units: the hand is 0.38 across, so 0.4 is about a hand's width.)
 	const float kMinTravel = 0.4f;
@@ -6814,9 +6873,15 @@ HMODELNODE CClientWeapon::VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut )
 		vOut = VR_Rotate( rGunStart, vDir );
 		vOut.Normalize();
 	}
-	CVRMgr::Log( "Reload: %s - bones moving in its reload (travel, most-moved offset; model units):%s -> %s, leaves along (%.2f %.2f %.2f)",
-		m_pWeapon->szName, nCand ? szAll : " none", bFound ? aszCand[nBest] : "no magazine", vOut.x, vOut.y, vOut.z );
+	CVRMgr::Log( "Reload: %s - bones moving in its reload (travel, most-moved offset; model units):%s -> %s, leaves along (%.2f %.2f %.2f)%s%s",
+		m_pWeapon->szName, nCand ? szAll : " none", bFound ? aszCand[nBest] : "no magazine", vOut.x, vOut.y, vOut.z,
+		nPump >= 0 ? "; pump: " : "", nPump >= 0 ? aszCand[nPump] : "" );
 	s_avOut[nId] = vOut;
+	if ( nPump >= 0 && nPump != nBest )
+	{
+		s_anPump[nId] = (int)ahCand[nPump];
+		hPump = ahCand[nPump];
+	}
 	if ( bFound )
 		s_anFound[nId] = (int)ahCand[nBest];
 	return bFound ? ahCand[nBest] : hKnown;
@@ -6832,3 +6897,172 @@ bool CClientWeapon::VR_GetMuzzlePos( LTVector *pvPos ) const
 	return true;
 }
 
+// ----------------------------------------------------------------------- //
+//
+//	VR: cocking by hand
+//
+//	Tre's design: a gun fired empty and then reloaded has nothing in the
+//	chamber until it's cocked; the trigger just clicks (one hint). A reload
+//	with rounds still in the gun needs none. Grip the cocking part with the
+//	left hand (within 10 cm) and pull it back along the barrel: a slide or
+//	cocking handle ("slide" / "lever" bone: Beretta, Tommy guns, Sterlings)
+//	cocks once pulled most of its way and let go; a pump (a bone that slides
+//	straight back in the reload: the shotgun's) cocks back and then forward
+//	again. The part moves with your hand. Guns with neither (AK-47, sniper)
+//	take the same grab and pull at their ejection port, nothing moving.
+//
+// ----------------------------------------------------------------------- //
+
+void CClientWeapon::VR_SetupCock( HMODELNODE hPump )
+{
+	m_eVRCockKind = VRCOCK_NONE;
+	m_hVRCockNode = INVALID_MODEL_NODE;
+	m_fVRCockTravelCm = 5.0f;
+	if ( !m_hObject )
+		return;
+	HMODELNODE hNode;
+	if ( LT_OK == g_pModelLT->GetNode( m_hObject, "slide", hNode ) )
+	{
+		m_eVRCockKind = VRCOCK_SLIDE;
+		m_hVRCockNode = hNode;
+		m_fVRCockTravelCm = 4.0f;
+	}
+	else if ( LT_OK == g_pModelLT->GetNode( m_hObject, "lever", hNode ) )
+	{
+		m_eVRCockKind = VRCOCK_SLIDE;
+		m_hVRCockNode = hNode;
+		m_fVRCockTravelCm = 5.0f;
+	}
+	else if ( INVALID_MODEL_NODE != hPump )
+	{
+		m_eVRCockKind = VRCOCK_PUMP;
+		m_hVRCockNode = hPump;
+		m_fVRCockTravelCm = 8.0f;
+	}
+	if ( INVALID_MODEL_NODE != m_hVRCockNode )
+	{
+		g_pModelLT->RemoveNodeControlFn( m_hObject, m_hVRCockNode, VR_CockNodeControl, this );
+		g_pModelLT->AddNodeControlFn( m_hObject, m_hVRCockNode, VR_CockNodeControl, this );
+	}
+	if ( g_VRMgr.IsActive() && m_pWeapon )
+	{
+		char szName[64] = "none: grab at the ejection port";
+		if ( INVALID_MODEL_NODE != m_hVRCockNode )
+			g_pModelLT->GetNodeName( m_hObject, m_hVRCockNode, szName, sizeof( szName ) );
+		CVRMgr::Log( "Cock: %s - %s (%s, %.0f cm)", m_pWeapon->szName, szName,
+			VRCOCK_PUMP == m_eVRCockKind ? "pump: back and forward" : "pull back and let go", m_fVRCockTravelCm );
+	}
+}
+
+// The cocking part follows your hand back along the barrel.
+void CClientWeapon::VR_CockNodeControl( const NodeControlData &data, void *pUser )
+{
+	CClientWeapon *p = (CClientWeapon*)pUser;
+	if ( !p || !data.m_pNodeTransform || data.m_hModel != p->m_hObject || data.m_hNode != p->m_hVRCockNode )
+		return;
+	if ( !p->m_bVRCocking )
+		return;
+	LTVector vPos;
+	data.m_pNodeTransform->GetTranslation( vPos );
+	vPos += p->m_vVRCockOffset;
+	data.m_pNodeTransform->SetTranslation( vPos );
+}
+
+// Where to grip to cock (camera space, game units): the cocking part, or
+// (none) the ejection port.
+bool CClientWeapon::VR_GetCockPoint( LTVector &vCamRel ) const
+{
+	if ( !m_hObject )
+		return false;
+	LTransform t;
+	bool bGot = false;
+	if ( INVALID_MODEL_NODE != m_hVRCockNode )
+	{
+		bGot = ( LT_OK == g_pModelLT->GetNodeTransform( m_hObject, m_hVRCockNode, t, LTFALSE ) );
+	}
+	else
+	{
+		HMODELSOCKET hBreach;
+		if ( LT_OK == g_pModelLT->GetSocket( m_hObject, "breach", hBreach ) ||
+		     LT_OK == g_pModelLT->GetSocket( m_hObject, "Breach", hBreach ) )
+			bGot = ( LT_OK == g_pModelLT->GetSocketTransform( m_hObject, hBreach, t, LTFALSE ) );
+	}
+	if ( !bGot )
+		return false;
+	vCamRel = ( m_vVRObjPos + VR_Rotate( m_rVRObjRot, t.m_Pos ) ) * g_VRMgr.GetGunScale();
+	return true;
+}
+
+void CClientWeapon::VR_UpdateCock( float fUnitsPerMeter )
+{
+	LTVector vPoint;
+	bool bPoint = VR_GetCockPoint( vPoint );
+	bool bWants = m_bVRNeedsCock && VRMAG_IN == m_eVRMag && bPoint;
+	g_VRMgr.SetCockPoint( bWants, vPoint );
+	if ( !bWants )
+	{
+		m_bVRCocking = false;
+		m_fVRCockPullCm = 0.0f;
+		m_vVRCockOffset.Init( 0.0f, 0.0f, 0.0f );
+		return;
+	}
+
+	LTVector vLeft;
+	LTRotation rLeft;
+	if ( !g_VRMgr.GetHandInCamera( LTVR_LEFT, vLeft, rLeft, false ) )
+		return;
+	// (Measured against the gun, so moving the gun doesn't count as a pull.)
+	const float fScale = g_VRMgr.GetGunScale();
+	LTVector vGun = m_vVRObjPos * fScale;
+	LTVector vBack = VR_Rotate( m_rVRObjRot, LTVector( 0.0f, 0.0f, -1.0f ) );
+
+	if ( !m_bVRCocking )
+	{
+		if ( g_VRMgr.GameButtonPressed( LTVR_LEFT, LTVR_BTN_GRIP ) && ( vLeft - vPoint ).Mag() / fUnitsPerMeter < 0.10f )
+		{
+			m_bVRCocking = true;
+			m_bVRPumpBack = false;
+			m_fVRCockPullCm = 0.0f;
+			m_vVRCockGrabStart = vLeft - vGun;
+			CVRMgr::Log( "Cock: %s - took hold", m_pWeapon->szName );
+		}
+		return;
+	}
+
+	bool bCocked = false;
+	if ( !g_VRMgr.ButtonHeld( LTVR_LEFT, LTVR_BTN_GRIP ) )
+	{
+		// Let go: a slide / handle cocks if it went most of the way back.
+		if ( VRCOCK_PUMP != m_eVRCockKind && m_fVRCockPullCm >= 0.8f * m_fVRCockTravelCm )
+			bCocked = true;
+		m_bVRCocking = false;
+		m_fVRCockPullCm = 0.0f;
+		m_vVRCockOffset.Init( 0.0f, 0.0f, 0.0f );
+	}
+	else
+	{
+		float fPull = ( ( vLeft - vGun ) - m_vVRCockGrabStart ).Dot( vBack ) / fUnitsPerMeter * 100.0f;
+		if ( fPull < 0.0f ) fPull = 0.0f;
+		if ( fPull > m_fVRCockTravelCm ) fPull = m_fVRCockTravelCm;
+		m_fVRCockPullCm = fPull;
+		// (Really-close space: game units / the gun's size.)
+		m_vVRCockOffset = vBack * ( fPull * fUnitsPerMeter / 100.0f / fScale );
+		if ( VRCOCK_PUMP == m_eVRCockKind )
+		{
+			if ( fPull >= 0.8f * m_fVRCockTravelCm )
+				m_bVRPumpBack = true;
+			else if ( m_bVRPumpBack && fPull <= 0.2f * m_fVRCockTravelCm )
+				bCocked = true;
+		}
+	}
+
+	if ( bCocked )
+	{
+		m_bVRNeedsCock = false;
+		m_bVRCocking = false;
+		m_fVRCockPullCm = 0.0f;
+		m_vVRCockOffset.Init( 0.0f, 0.0f, 0.0f );
+		VR_PlayReloadSound( 2 );
+		CVRMgr::Log( "Cock: %s - cocked", m_pWeapon->szName );
+	}
+}

@@ -155,6 +155,9 @@ public:
 	// The left hand holds a magazine (the weapon says, each frame); clicking
 	// the left stick then adjusts how it's held (per weapon, vr_guns.txt).
 	void		SetHoldingMag(bool bHolding)	{ m_bHoldingMag = bHolding; }
+	// The gun needs cocking, gripped at vCamPoint (camera space): a left grip
+	// there is cocking, not grabbing the gun or picking up a body.
+	void		SetCockPoint(bool bWants, const LTVector& vCamPoint)	{ m_bWantsCock = bWants; m_vCockPoint = vCamPoint; }
 	bool		IsAdjustingMag() const	{ return m_bAdjusting && m_bAdjustMag; }
 	// How this weapon's magazine sits in the left hand: slide (cm: right,
 	// up, forward along the hand) and turn (degrees: turn, tilt, roll).
@@ -256,6 +259,9 @@ private:
 	bool		m_bMoveBodyBound;		// left grip is bound to "move body" while held
 	bool		m_bMouseInUse;
 	bool		m_bWantsMag;
+	bool		m_bWantsCock;
+	LTVector	m_vCockPoint;
+	bool		IsLeftHandNearCock() const;
 	bool		m_bMouseKnown;
 	int			m_nLastMouseX, m_nLastMouseY;
 	bool		m_bSnapTriggerOff;		// left trigger unbound (snapshot) while the left grip is held
