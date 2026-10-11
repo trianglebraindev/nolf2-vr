@@ -317,8 +317,8 @@ Next, in a suggested order:
 11. Reloading by hand (see "Manual reloading"); cocking by hand after
     running dry (first pass, see "Cocking").
 12. Throwing by hand (done: "perfect", Tre; see "Throwing").
-13. Height, seated / standing and crouching for real (first pass, see
-    "Height and crouching").
+13. Height, seated / standing and crouching for real (done: "works
+    perfect", Tre; see "Height and crouching").
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
