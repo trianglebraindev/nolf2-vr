@@ -55,10 +55,17 @@ IF SOMETHING GOES WRONG
 
 CREDITS
 -------
-Built on the LithTech Jupiter EX engine source and the No One Lives
-Forever 2 game code from Monolith's SDK, with the OpenXR loader (Khronos
-Group, Apache 2.0). The Microsoft Visual C++ runtime and D3DX9 files are
-Microsoft redistributables.
+- No One Lives Forever 2, its game code (Monolith's SDK) and the LithTech
+  Jupiter EX engine: Monolith Productions.
+- The open-source engine project this builds on: James Lacey, Kyle
+  Repinski (MWisBest) and Sandy Carter (bwrsandman).
+- The fix for retail levels loading: the MatzeLoCal macOS port.
+- OpenXR loader: the Khronos Group (Apache 2.0), with jsoncpp (MIT).
+- DirectMusic headers: the Wine project (LGPL 2.1). zlib: Jean-loup Gailly
+  and Mark Adler.
+- The Microsoft Visual C++ runtime and D3DX9 files are Microsoft
+  redistributables.
+- NOLF2 VR: Tre (Triangle Brain Studio), with Claude.
 
-No One Lives Forever 2 is (c) Monolith Productions. This is an unofficial,
-free fan project, not affiliated with Monolith, Warner Bros. or Activision.
+This is an unofficial, free fan project, not affiliated with Monolith,
+Warner Bros. or Activision.
