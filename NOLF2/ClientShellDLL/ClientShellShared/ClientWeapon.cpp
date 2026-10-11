@@ -217,7 +217,6 @@ CClientWeapon::CClientWeapon() :
 	, m_vVRCockGrabStart( 0.0f, 0.0f, 0.0f )
 	, m_vVRCockOffset( 0.0f, 0.0f, 0.0f )
 	, m_bVRNoCock( false )
-	, m_fVRCockPumpStart( 0.0f )
 	, m_fVRCockMaxCm( 0.0f )
 	, m_hLoopSound( LTNULL )
 	, m_nLoopSoundId( PSI_INVALID )
@@ -6961,7 +6960,7 @@ void CClientWeapon::VR_SetupCock( HMODELNODE hPump )
 		if ( INVALID_MODEL_NODE != m_hVRCockNode )
 			g_pModelLT->GetNodeName( m_hObject, m_hVRCockNode, szName, sizeof( szName ) );
 		CVRMgr::Log( "Cock: %s - %s (%s, %.0f cm)", m_pWeapon->szName, m_bVRNoCock ? "cocks itself" : szName,
-			VRCOCK_PUMP == m_eVRCockKind ? "both hands on the gun: pump back and forward" : "pull back and let go", m_fVRCockTravelCm );
+			VRCOCK_PUMP == m_eVRCockKind ? "pump back and forward" : "pull back and let go", m_fVRCockTravelCm );
 	}
 }
 
@@ -7010,10 +7009,10 @@ void CClientWeapon::VR_UpdateCock( float fUnitsPerMeter )
 	bool bPoint = VR_GetCockPoint( vPoint );
 	bool bWants = m_bVRNeedsCock && VRMAG_IN == m_eVRMag && bPoint;
 	const bool bPump = ( VRCOCK_PUMP == m_eVRCockKind );
-	// (The pump is worked with both hands on the gun, so a grab there is the
-	// two-hand grip, not kept from it.)
-	g_VRMgr.SetCockPoint( bWants && !bPump, vPoint );
-	g_VRMgr.SetLeftHandNudge( LTVector( 0.0f, 0.0f, 0.0f ) );
+	// A left grip there is cocking: it doesn't take the gun in both hands
+	// (Tre: the shotgun's two-hand grip turned the gun while pumping; until
+	// it's pumped, the left hand only works the pump) or pick up a body.
+	g_VRMgr.SetCockPoint( bWants, vPoint );
 	if ( !bWants )
 	{
 		m_bVRCocking = false;
@@ -7029,21 +7028,20 @@ void CClientWeapon::VR_UpdateCock( float fUnitsPerMeter )
 		g_VRMgr.ShowMarker( m_vCamPos + VR_Rotate( m_rCamRot, vPoint ), 0.035f * fPulse );
 	}
 
-	LTVector vLeft, vRight;
-	LTRotation rLeft, rRight;
-	if ( !g_VRMgr.GetHandInCamera( LTVR_LEFT, vLeft, rLeft, false ) ||
-	     !g_VRMgr.GetHandInCamera( LTVR_RIGHT, vRight, rRight, false ) )
+	LTVector vLeft;
+	LTRotation rLeft;
+	if ( !g_VRMgr.GetHandInCamera( LTVR_LEFT, vLeft, rLeft, false ) )
 		return;
 	const float fScale = g_VRMgr.GetGunScale();
 	LTVector vGun = m_vVRObjPos * fScale;
 	LTVector vBack = VR_Rotate( m_rVRObjRot, LTVector( 0.0f, 0.0f, -1.0f ) );
 
-	// Taking hold: a pump when both hands go on the gun; a slide / handle (or
-	// the ejection port) with a left grip within 10 cm of it.
+	// Taking hold: a left grip within 10 cm of the part (the slide, handle,
+	// pump, or the ejection port).
 	if ( !m_bVRCocking )
 	{
-		bool bTake = bPump ? g_VRMgr.IsTwoHand() :
-			( g_VRMgr.GameButtonPressed( LTVR_LEFT, LTVR_BTN_GRIP ) && ( vLeft - vPoint ).Mag() / fUnitsPerMeter < 0.10f );
+		bool bTake = g_VRMgr.GameButtonPressed( LTVR_LEFT, LTVR_BTN_GRIP ) &&
+			( vLeft - vPoint ).Mag() / fUnitsPerMeter < 0.10f;
 		if ( bTake )
 		{
 			m_bVRCocking = true;
@@ -7051,14 +7049,13 @@ void CClientWeapon::VR_UpdateCock( float fUnitsPerMeter )
 			m_fVRCockPullCm = 0.0f;
 			m_fVRCockMaxCm = 0.0f;
 			m_vVRCockGrabStart = vLeft - vGun;
-			m_fVRCockPumpStart = ( vLeft - vRight ).Mag();
 			CVRMgr::Log( "Cock: %s - took hold", m_pWeapon->szName );
 		}
 		return;
 	}
 
 	bool bCocked = false;
-	bool bHeld = bPump ? g_VRMgr.IsTwoHand() : g_VRMgr.ButtonHeld( LTVR_LEFT, LTVR_BTN_GRIP );
+	bool bHeld = g_VRMgr.ButtonHeld( LTVR_LEFT, LTVR_BTN_GRIP );
 	if ( !bHeld )
 	{
 		// Let go: a slide / handle cocks if it went most of the way back.
@@ -7073,12 +7070,9 @@ void CClientWeapon::VR_UpdateCock( float fUnitsPerMeter )
 	}
 	else
 	{
-		// How far back: a slide / handle by the left hand along the barrel
-		// (against the gun, so moving the gun doesn't count); the pump by
-		// the hands drawing together (with both on the gun, the gun points
-		// from the right hand to the left).
-		float fPull = bPump ? ( m_fVRCockPumpStart - ( vLeft - vRight ).Mag() ) / fUnitsPerMeter * 100.0f :
-			( ( vLeft - vGun ) - m_vVRCockGrabStart ).Dot( vBack ) / fUnitsPerMeter * 100.0f;
+		// How far back: the left hand along the barrel, against the gun (so
+		// moving or turning the gun doesn't count).
+		float fPull = ( ( vLeft - vGun ) - m_vVRCockGrabStart ).Dot( vBack ) / fUnitsPerMeter * 100.0f;
 		if ( fPull < 0.0f ) fPull = 0.0f;
 		if ( fPull > m_fVRCockTravelCm ) fPull = m_fVRCockTravelCm;
 		m_fVRCockPullCm = fPull;
@@ -7088,7 +7082,6 @@ void CClientWeapon::VR_UpdateCock( float fUnitsPerMeter )
 		m_vVRCockOffset = vBack * ( fPull * fUnitsPerMeter / 100.0f / fScale );
 		if ( bPump )
 		{
-			g_VRMgr.SetLeftHandNudge( m_vVRCockOffset );
 			if ( fPull >= 0.6f * m_fVRCockTravelCm )
 				m_bVRPumpBack = true;
 			else if ( m_bVRPumpBack && fPull <= 0.25f * m_fVRCockTravelCm )
@@ -7102,7 +7095,6 @@ void CClientWeapon::VR_UpdateCock( float fUnitsPerMeter )
 		m_bVRCocking = false;
 		m_fVRCockPullCm = 0.0f;
 		m_vVRCockOffset.Init( 0.0f, 0.0f, 0.0f );
-		g_VRMgr.SetLeftHandNudge( LTVector( 0.0f, 0.0f, 0.0f ) );
 		VR_PlayReloadSound( 2 );
 		CVRMgr::Log( "Cock: %s - cocked", m_pWeapon->szName );
 	}

@@ -411,6 +411,15 @@ the shutdown hang.
   edge, because he sights with his right eye.
 - Cat eyes (angry kitty) on target after the effects fix (Tre); the
   sniper scope's measured offset "felt good, lines up" (Tre).
+- Re-aiming a gun (the gun adjust mode) left the sniper's scope picture a
+  little off center (Tre): the picture's line runs along the aim, so the
+  model's scope moved away from it. Now the gun adjust mode carries the
+  scope offset along (CVRMgr::MoveScopeWithGun): where the scope's line met
+  the eye before (about 38 cm behind the hand) is found on the model and
+  put back out with the new fit. Fits already re-aimed need their scope
+  set once more.
+- Tre's fits (aim and magazine holds, 2026-10-11) are the built-in
+  defaults (kDefaultGunFits).
 
 ## Manual reloading (first pass)
 
@@ -548,9 +557,11 @@ the shutdown hang.
   - A pulsing orange glow sits on the cocking part while the gun wants
     cocking (engine marker layer, LTVR_LAYER_MARKER, 64x64, drawn by the
     engine; LTVR_ShowMarker; LTVR_VERSION 10).
-  - The shotgun pumps with its normal two-hand grip: once the left hand
-    holds the fore-end, drawing the hands together counts as pulling the
-    pump back (the left hand and the pump follow); back at least 60% of
+  - The shotgun's pump: first tried as the two-hand grip (hands drawing
+    together = pump back), but the two-hand grip turned the gun while
+    pumping. Now (Tre's idea) like the other parts: until it's pumped, a
+    left grip at the pump only works the pump, not the gun; the pull is
+    the left hand along the barrel, against the gun. Back at least 60% of
     the 8 cm, then forward to 25% or less, cocks it.
   - The sniper rifle never needs cocking (it works its own bolt).
   - Every shot asks the HUD to redraw the ammo count (the Tommy gun's count

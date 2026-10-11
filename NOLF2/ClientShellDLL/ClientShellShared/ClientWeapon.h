@@ -499,7 +499,6 @@ protected:
 	LTVector      m_vVRCockGrabStart;	// left hand when it took hold (camera space, from the gun)
 	LTVector      m_vVRCockOffset;		// the cocking part's pull (really-close space)
 	bool          m_bVRNoCock;			// this gun cocks itself (the sniper rifle's bolt)
-	float         m_fVRCockPumpStart;	// pump: the hands' distance apart when it began (game units)
 	float         m_fVRCockMaxCm;		// furthest pulled this hold (for the log)
 	void          VR_SetupCock( HMODELNODE hPump );
 	void          VR_UpdateCock( float fUnitsPerMeter );

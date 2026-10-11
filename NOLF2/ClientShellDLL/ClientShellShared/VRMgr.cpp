@@ -236,7 +236,6 @@ CVRMgr::CVRMgr()
 	m_pfnTakeSnapshot	= NULL;
 	m_pfnSetMirrorEye	= NULL;
 	m_pfnShowMarker		= NULL;
-	m_vLeftNudge.Init(0.0f, 0.0f, 0.0f);
 	m_pfnSetVignette	= NULL;
 	m_fVignette			= 0.0f;
 	m_bSnapTriggerOff	= false;
@@ -932,21 +931,24 @@ void CVRMgr::SetCurrentGun(const char* pszName, HOBJECT hModel)
 static const struct { const char* pszName; float x, y, z, yaw, pitch, scale, scopeUp, scopeRight;
 	float magX, magY, magZ, magYaw, magPitch, magRoll; } kDefaultGunFits[] =
 {
-	{ "Crossbow",			0.10f, 0.00f, 0.25f,	5.62f, 1.39f,	12.0f,	0.0f, 0.0f,		0, 0, 0, 0, 0, 0 },
-	// (The magazine holds are Tre's, set by eye in the headset: held upright
-	// like a handle. The Sterlings share a magazine, as do the Tommy guns.
-	// A size of 0 means VRGunScale.)
-	{ "Sterling",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f,		4.1f, 3.8f, 8.0f,	-78.0f, 77.0f, 0.0f },
-	{ "SilencedSterling",	0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f,		4.1f, 3.8f, 8.0f,	-78.0f, 77.0f, 0.0f },
-	{ "AK-47",				0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	0.0f,	0.0f, 0.0f,		-1.6f, 2.3f, 6.2f,	-19.0f, 79.0f, 0.0f },
-	{ "Beretta",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	0.0f,	0.0f, 0.0f,		0.1f, -0.2f, 0.1f,	-2.0f, 10.0f, 0.0f },
-	{ "Tommygun",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	0.0f,	0.0f, 0.0f,		7.6f, -7.0f, -2.2f,	5.0f, 49.0f, 0.0f },
-	{ "TommygunInfinite",	0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	0.0f,	0.0f, 0.0f,		7.6f, -7.0f, -2.2f,	5.0f, 49.0f, 0.0f },
-	// The sniper's scope is part of its model. Measured from vr_game.log:
-	// sighting down its tube, the eye was 14.4 cm up (+-1) and 3 - 6 cm left
-	// of the aim line (15 samples, two sessions), against 8 / 0 for the
-	// crossbow's scope.
-	{ "Sniper Rifle",		0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	12.0f,	6.4f, -4.1f,	0.3f, 2.3f, 5.4f,	0.0f, -46.0f, 0.0f },
+	// Tre's, set by eye in the headset (vr_guns.txt, 2026-10-11): the aim
+	// (sights on the crosshair) and the magazine holds (held upright like a
+	// handle). The two Tommy guns are one model, so the plain one shares the
+	// infinite one's aim. The sniper rifle's scope is part of its model, so
+	// it has its own scope offset (the scope adjust mode).
+	{ "Crossbow",         0.10f, 0.00f, 0.25f,	5.62f, 1.39f,	12.00f,	0.00f, 0.00f,		0.00f, 0.00f, 0.00f,	0.00f, 0.00f, 0.00f },
+	{ "Tazer",            0.00f, 0.00f, 0.00f,	0.15f, 0.15f,	12.00f,	0.00f, 0.00f,		0.00f, 0.00f, 0.00f,	0.00f, 0.00f, 0.00f },
+	{ "Holster",          2.29f, 0.00f, 6.43f,	0.73f, 0.65f,	12.00f,	0.00f, 0.00f,		0.00f, 0.00f, 0.00f,	0.00f, 0.00f, 0.00f },
+	{ "Sterling",         -0.06f, 0.00f, 0.06f,	6.52f, 4.64f,	8.50f,	0.00f, 0.00f,		4.10f, 3.80f, 8.00f,	-78.00f, 77.00f, 0.00f },
+	{ "SilencedSterling", 0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.50f,	0.00f, 0.00f,		4.09f, 3.84f, 7.99f,	-78.00f, 77.40f, 0.00f },
+	{ "AK-47",            0.00f, 0.00f, 0.00f,	4.81f, 1.28f,	12.00f,	0.00f, 0.00f,		-1.58f, 2.26f, 6.25f,	-19.00f, 79.00f, 0.00f },
+	{ "Sniper Rifle",     0.00f, 0.00f, 0.00f,	1.50f, 0.60f,	12.00f,	6.40f, -4.10f,		0.28f, 2.34f, 5.35f,	-0.10f, -46.30f, 0.00f },
+	{ "Beretta",          0.00f, 0.00f, 0.00f,	7.17f, 0.82f,	12.00f,	0.00f, 0.00f,		0.12f, -0.21f, 0.09f,	-2.00f, 10.30f, 0.00f },
+	{ "Tommygun",         0.00f, 0.00f, 0.00f,	3.83f, -1.78f,	12.00f,	0.00f, 0.00f,		7.57f, -7.04f, -2.17f,	4.90f, 49.00f, 0.00f },
+	{ "TommygunInfinite", 0.00f, 0.00f, 0.00f,	3.83f, -1.78f,	12.00f,	0.00f, 0.00f,		7.60f, -7.00f, -2.20f,	5.00f, 49.00f, 0.00f },
+	{ "Utility Launcher", 0.00f, 0.00f, 0.00f,	3.10f, 5.07f,	12.00f,	0.00f, 0.00f,		0.00f, 0.00f, 0.00f,	0.00f, 0.00f, 0.00f },
+	{ "Shotgun",          0.00f, 0.00f, 0.00f,	4.39f, -1.93f,	12.00f,	0.00f, 0.00f,		0.00f, 0.00f, 0.00f,	0.00f, 0.00f, 0.00f },
+	{ "Purse",            0.00f, 0.00f, 0.00f,	5.40f, 2.19f,	12.00f,	0.00f, 0.00f,		0.00f, 0.00f, 0.00f,	0.00f, 0.00f, 0.00f },
 };
 
 // vr_guns.txt: one line per weapon:  "Name" x y z yaw pitch scale [scopeUp scopeRight
@@ -1157,6 +1159,14 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 		return;
 	}
 
+	// The scope picture stays on the gun's scope as the gun moves: where the
+	// scope's line met the eye before (VRScopeHeight + the scope offset
+	// above the aim line, about 38 cm behind the hand), in the gun's own
+	// terms, then back out with the new fit; the difference goes onto the
+	// scope offset. (Tre: re-aiming the sniper rifle left its scope picture
+	// off center, as the picture's line runs along the aim, not the model.)
+	const GunFit kBefore = *pFit;
+
 	pFit->fX += lx * kSlideCmPerSec * fFrameTime;
 	pFit->fZ += ly * kSlideCmPerSec * fFrameTime;
 	if (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_GRIP)
@@ -1177,6 +1187,45 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 		pFit->fScale /= 1.0f + 0.4f * fFrameTime;
 	if (pFit->fScale < 1.0f)	pFit->fScale = 1.0f;
 	if (pFit->fScale > 60.0f)	pFit->fScale = 60.0f;
+
+	if (CurrentGunHasScope())
+		MoveScopeWithGun(kBefore, *pFit);
+}
+
+bool CVRMgr::CurrentGunHasScope() const
+{
+	if (!g_pPlayerStats || !g_pWeaponMgr)
+		return false;
+	uint8 nScopeId = g_pPlayerStats->GetScope();
+	MOD const* pMod = (nScopeId != WMGR_INVALID_ID) ? g_pWeaponMgr->GetMod(nScopeId) : NULL;
+	return pMod && pMod->nZoomLevel > 0;
+}
+
+// The gun's fit went from "before" to "fit": shift fit's scope offset so the
+// scope's line still crosses the gun where it did, at an eye's distance
+// behind the hand. All in cm, in the aim's frame (x right, y up, z forward):
+// a point of the model sits at slide + turn * (point * size - natural).
+void CVRMgr::MoveScopeWithGun(const GunFit& before, GunFit& fit) const
+{
+	const float kEyeBehindCm = 38.0f;	// (the eye at the scope: 30 - 45 cm behind the hand in the logs)
+	const float fHeight = g_vtVRScopeHeight.GetFloat(8.0f);
+	const LTVector vNatural(g_vtVRGunHandX.GetFloat(), g_vtVRGunHandY.GetFloat(), g_vtVRGunHandZ.GetFloat());
+	const float fOldSize = (before.fScale > 0.05f) ? before.fScale : GetGunScale();
+	const float fNewSize = (fit.fScale > 0.05f) ? fit.fScale : GetGunScale();
+
+	const LTRotation rOld = LTRotation(LTVector(0.0f, 1.0f, 0.0f), DEG2RAD(before.fYaw)) *
+		LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(before.fPitch));
+	const LTRotation rNew = LTRotation(LTVector(0.0f, 1.0f, 0.0f), DEG2RAD(fit.fYaw)) *
+		LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(fit.fPitch));
+	const LTVector vOldSlide(before.fX, before.fY, before.fZ);
+	const LTVector vNewSlide(fit.fX, fit.fY, fit.fZ);
+
+	const LTVector vWas(before.fScopeRight, fHeight + before.fScopeUp, -kEyeBehindCm);
+	const LTVector vOnModel = (VR_Rotate(~rOld, vWas - vOldSlide) + vNatural) / fOldSize;
+	const LTVector vNow = vNewSlide + VR_Rotate(rNew, vOnModel * fNewSize - vNatural);
+
+	fit.fScopeRight = before.fScopeRight + (vNow.x - vWas.x);
+	fit.fScopeUp = before.fScopeUp + (vNow.y - vWas.y);
 }
 
 // ----------------------------------------------------------------------- //
@@ -1578,14 +1627,6 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 		{
 			*ppArm = NULL;
 			return;
-		}
-		else if (p->m_vLeftNudge.MagSqr() > 0.0f)
-		{
-			// On the gun, working a part (the shotgun's pump): the hand
-			// moves with it (the fingers hang off the wrist and follow).
-			LTVector vPos;
-			data.m_pNodeTransform->GetTranslation(vPos);
-			data.m_pNodeTransform->SetTranslation(vPos + p->m_vLeftNudge);
 		}
 	}
 	else if (hNode == p->m_hNodeWristR)
