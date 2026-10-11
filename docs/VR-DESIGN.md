@@ -316,7 +316,7 @@ Next, in a suggested order:
     "Menus: the mouse steps aside").
 11. Reloading by hand (see "Manual reloading"); cocking by hand after
     running dry (first pass, see "Cocking").
-Next: throwables (banana, grenades, ...).
+12. Throwing by hand (first pass, see "Throwing").
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
@@ -566,6 +566,36 @@ the shutdown hang.
   - The sniper rifle never needs cocking (it works its own bolt).
   - Every shot asks the HUD to redraw the ammo count (the Tommy gun's count
     was stuck at 50).
+
+## Throwing (first pass)
+
+- Tre's picks: hold the trigger, swing, let go; it flies the way the hand
+  was going, the harder the further (boosted, so a comfortable throw goes
+  the game's own distance); everything the game throws; the bear trap and
+  the Angry Kitty (which the game sets down on the floor, never throws:
+  CBearTrap / CKitty::Setup move straight to the floor) are set down below
+  your hand. Options > VR > Throwing: By hand (default) / Game original.
+- Which: a weapon that is its own ammo (bIsAmmo) firing a projectile.
+  Bear trap / kitty by the projectile class.
+- CClientWeapon::VR_UpdateThrow: the trigger never reaches the game (so its
+  throw animation never plays). Letting go throws, if one's in the hand
+  (W_IDLE: not while the next is coming up) and the game's fire delay has
+  passed; otherwise it says why in the log.
+- Speed: the right grip's path in tracking space (24 frames), fastest
+  3-frame speed in the last 1/8 s (people slow down as they let go), turned
+  into the world by the body's heading. factor = hand m/s / VRThrowSpeed
+  (5), 0.05 - 1.6 of the projectile's own speed (no gravity: 0.6 - 1.3, so
+  a shuriken never crawls). Barely moving (< 0.3 m/s): it drops. Your own
+  walking speed is added.
+- The throw is the game's own fire (m_bFire, as the throw animation's fire
+  key sets it): ammo, hiding the thrown one and the reload animation
+  bringing up the next, the server's projectile. Fire() uses the throw's
+  start (the hand, pulled back to this side of a wall between head and
+  hand), direction and no spread; the fire message gets a last field, the
+  speed, which CPlayerObj::HandleWeaponFireMessage puts in
+  WeaponFireInfo::fOverrideVelocity (the AI's grenades already use it).
+- Logged: "Throw: <weapon> - thrown by hand (projectile class, speed,
+  gravity)" once per weapon, then each throw's speed and angle.
 
 ## Menus: the mouse steps aside
 

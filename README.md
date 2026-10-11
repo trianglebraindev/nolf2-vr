@@ -58,6 +58,11 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   then your left hand works the pump, not the gun). An orange glow marks the part to pull. The sniper rifle needs
   no cocking.
 
+- **Throwing by hand** (default; Options > VR > Throwing: By hand / Game
+  original): grenades, the banana, coins, shuriken: hold the trigger, swing
+  your arm and let go. The harder you throw, the further it goes. The bear
+  trap and the Angry Kitty are set down on the floor below your hand.
+
 - **Swords**: swing the katana or tulwar and it hits what the blade passes
   through (the trigger still does the game's own slash). How hard a swing
   has to be, or off: Options > VR > Sword swings.
@@ -149,6 +154,8 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRScopeDist` / `VRScopeSize` | 8 / 5.5 | how far in front of that eye the lens sits, and how wide it looks (cm) |
 | `VRScopeZoom` | 4 | magnification of a basic scope; stronger scopes are 2x and 4x that |
 | `VRReload` | 1 | 1 = reload by hand (A drops the magazine, one from over your left shoulder); 0 = the game's reload on the right stick click |
+| `VRThrow` | 1 | 1 = throw by hand (hold the trigger, swing, let go); 0 = the game's own throw |
+| `VRThrowSpeed` | 5 | how fast a throw (m/s, at the hand) goes the game's own distance; faster goes further |
 | `VRSwing` / `VRSwingSpeed` | 1 / 2.5 | swinging a sword hits (0 = trigger only); how fast the blade's tip must move, m/s |
 | `VRVignette` / `VRVignetteWhen` | 0 / 3 | comfort vignette 0 off, 1 light, 2 medium, 3 strong; when: 1 moving, 2 turning, 3 both |
 | `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the game's flat camera |

@@ -57,6 +57,7 @@ namespace
 		kHelpArms,
 		kHelpSwing,
 		kHelpReload,
+		kHelpThrow,
 		kHelpReset,
 		kHelpGiveAll,
 		kHelpEnd
@@ -79,6 +80,7 @@ namespace
 		"Show just Cate's hands, or her full arms.",
 		"Swing a sword to hit with it: how hard a swing has to be, or off (then only the trigger slashes). The trigger works either way.",
 		"Manual: A drops the magazine, grip over your left shoulder for a new one and push it into the gun (stick click: next ammo). Game original: stick click reloads.",
+		"By hand: hold the trigger, swing your arm and let go to throw (the harder, the further). Game original: the trigger throws straight ahead.",
 		"Put every setting on this page back to how it started.",
 		"For testing: every weapon, gadget and piece of gear, with full ammo (single player, in a mission).",
 	};
@@ -115,6 +117,7 @@ CScreenVR::CScreenVR()
 	m_nArms = 0;
 	m_nSwing = 2;
 	m_nReload = 0;
+	m_nThrow = 0;
 	m_nVignette = 0;
 	m_nVignetteWhen = 2;
 }
@@ -228,6 +231,10 @@ LTBOOL CScreenVR::Build()
 	pCycle->AddString("Manual");
 	pCycle->AddString("Game original");
 
+	pCycle = AddCycle((char*)"Throwing", kHelpThrow, kGap, &m_nThrow);
+	pCycle->AddString("By hand");
+	pCycle->AddString("Game original");
+
 	pCycle = AddCycle((char*)"Sword swings", kHelpSwing, kGap, &m_nSwing);
 	pCycle->AddString("Off");
 	pCycle->AddString("Light");
@@ -280,7 +287,7 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 			const char* const aNames[] = { "VRSnapTurn", "VRTurnSpeed", "VRSnapAngle", "VRMoveWithHand",
 				"VRUnitsPerMeter", "VRHudDistance", "VRHudAngle", "VRHudFollow", "VRWristHud",
 				"VRWristHudWatch", "VRGunHud", "VRArms", "VRSwing", "VRSwingSpeed", "VRVignette",
-				"VRVignetteWhen", "VRReload" };
+				"VRVignetteWhen", "VRReload", "VRThrow" };
 			for (int i = 0; i < (int)(sizeof(aNames) / sizeof(aNames[0])); ++i)
 				CVRMgr::SetSetting(aNames[i], CVRMgr::GetSettingDefault(aNames[i]));
 			ReadSettings();
@@ -406,6 +413,7 @@ void CScreenVR::ReadSettings()
 	int nWhen = (int)(CVRMgr::GetSetting("VRVignetteWhen") + 0.5f);
 	m_nVignetteWhen = (uint8)((nWhen == 1) ? 0 : (nWhen == 2 ? 1 : 2));
 	m_nReload = (CVRMgr::GetSetting("VRReload") != 0.0f) ? 0 : 1;
+	m_nThrow = (CVRMgr::GetSetting("VRThrow") != 0.0f) ? 0 : 1;
 	if (CVRMgr::GetSetting("VRSwing") == 0.0f)
 		m_nSwing = 0;
 	else
@@ -434,6 +442,7 @@ void CScreenVR::WriteSettings()
 	CVRMgr::SetSetting("VRVignette",		(float)m_nVignette);
 	CVRMgr::SetSetting("VRVignetteWhen",	(float)(m_nVignetteWhen + 1));
 	CVRMgr::SetSetting("VRReload",			m_nReload == 0 ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRThrow",			m_nThrow == 0 ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRSwing",			m_nSwing ? 1.0f : 0.0f);
 	if (m_nSwing > 0 && m_nSwing <= kNumSwingSpeeds)
 		CVRMgr::SetSetting("VRSwingSpeed",	kSwingSpeeds[m_nSwing - 1]);

@@ -218,6 +218,17 @@ CClientWeapon::CClientWeapon() :
 	, m_vVRCockOffset( 0.0f, 0.0f, 0.0f )
 	, m_bVRNoCock( false )
 	, m_fVRCockMaxCm( 0.0f )
+	, m_bVRThrowReady( false )
+	, m_bVRThrowTrigLast( false )
+	, m_fVRThrowNext( 0.0f )
+	, m_nVRThrowHist( 0 )
+	, m_iVRThrowHist( 0 )
+	, m_bVRThrowNow( false )
+	, m_bVRThrowOverride( false )
+	, m_vVRThrowFrom( 0.0f, 0.0f, 0.0f )
+	, m_vVRThrowDir( 0.0f, 0.0f, 1.0f )
+	, m_fVRThrowSpeed( 0.0f )
+	, m_nVRThrowLoggedId( -1 )
 	, m_hLoopSound( LTNULL )
 	, m_nLoopSoundId( PSI_INVALID )
 	, m_bFirstSelection( true )
@@ -1118,6 +1129,10 @@ WeaponState CClientWeapon::Update( bool bFire, FireType eFireType /*=FT_NORMAL_F
 		}
 		m_bVRDryLast = bTrigger;
 	}
+
+	// VR: throwing by hand (the game doesn't see the trigger; a throw sets
+	// m_bFire itself, see VR_UpdateThrow).
+	bFire = VR_UpdateThrow( bFire );
 
 	// If the player is trying to fire and
 	// we are allowed to set the last fire
@@ -4835,7 +4850,22 @@ void CClientWeapon::Fire( bool bFire )
 	// Get the fire pos/rot
 	if ( !GetFireVectors( &vU, &vR, &vF, &vFirePos ) )
 	{
+		m_bVRThrowNow = false;
 		return;
+	}
+
+	// VR: a throw by hand leaves the hand the way it was going (see
+	// VR_UpdateThrow), with no spread of its own.
+	if ( m_bVRThrowNow )
+	{
+		vFirePos = m_vVRThrowFrom;
+		vF = m_vVRThrowDir;
+		vR = LTVector( 0.0f, 1.0f, 0.0f ).Cross( vF );
+		if ( vR.MagSqr() < 0.0001f )
+			vR.Init( 1.0f, 0.0f, 0.0f );
+		vR.Normalize();
+		vU = vF.Cross( vR );
+		fPerturb = 0.0f;
 	}
 
 	// Make sure we always ignore the fire sounds...
@@ -4885,6 +4915,7 @@ void CClientWeapon::Fire( bool bFire )
 
 	// send a fire message to the server
 	SendFireMessage( bFire, fPerturb, vFirePos, vF, vObjectImpactPos, hObjectImpact );
+	m_bVRThrowNow = false;
 }
 
 
@@ -4966,6 +4997,15 @@ void CClientWeapon::SendFireMessage( bool bFire,
 		float fTimeOfImpact = vDir.Dot(vImpactPos - vFirePos);
 		cMsg.Writefloat( fTimeOfImpact );
 		cMsg.WriteObject( hObject );
+	}
+
+	// VR: a throw by hand sets the projectile's speed (CPlayerObj::
+	// HandleWeaponFireMessage reads this last).
+	bool bVRSpeed = m_bVRThrowNow && m_bVRThrowOverride;
+	cMsg.Writebool( bVRSpeed );
+	if ( bVRSpeed )
+	{
+		cMsg.Writefloat( m_fVRThrowSpeed );
 	}
 
 	// send the message
@@ -6096,6 +6136,239 @@ bool CClientWeapon::VR_GetBlade( LTVector &vHilt, LTVector &vTip ) const
 	vHilt = m_vCamPos + VR_Rotate( m_rCamRot, vHiltClose * fScale );
 	vTip = m_vCamPos + VR_Rotate( m_rCamRot, vTipClose * fScale );
 	return true;
+}
+
+// ----------------------------------------------------------------------- //
+//
+//	VR: throwing by hand (Tre's picks). Hold the trigger, swing your arm and
+//	let go: it leaves your hand the way the hand was going, and the harder
+//	the throw the further: a throw of VRThrowSpeed m/s (5) goes the game's
+//	own speed, faster or slower in step (5% - 160% of it; things that fly
+//	straight, with no gravity, 60% - 130%). Your own walking or running
+//	carries into it. The bear trap and the Angry Kitty, which the game sets
+//	down rather than throws, are set down below your hand.
+//
+//	The throw goes through the game's own fire (m_bFire, as the throw
+//	animation's fire key would set it): the ammo count, the next one coming
+//	up (the reload animation) and the server's projectile, given the throw's
+//	start, direction and speed (the fire message's last field, read in
+//	CPlayerObj::HandleWeaponFireMessage). The trigger never reaches the game,
+//	so its own throw animation doesn't play.
+//
+// ----------------------------------------------------------------------- //
+
+int CClientWeapon::VR_ThrowKind() const
+{
+	if ( !g_VRMgr.IsThrowByHand() || !m_pWeapon || !m_pAmmo || !m_pWeapon->bIsAmmo ||
+	     PROJECTILE != m_pAmmo->eType || !m_pAmmo->pProjectileFX )
+		return VRTHROW_NONE;
+
+	char szClass[64];
+	strncpy( szClass, m_pAmmo->pProjectileFX->szClass, sizeof( szClass ) - 1 );
+	szClass[sizeof( szClass ) - 1] = '\0';
+	for ( char *p = szClass; *p; ++p )
+		*p = (char)toupper( (unsigned char)*p );
+	if ( strstr( szClass, "BEARTRAP" ) || strstr( szClass, "KITTY" ) )
+		return VRTHROW_SETDOWN;
+	return VRTHROW_THROW;
+}
+
+// The hand's fastest speed in the last eighth of a second (people slow down
+// as they let go), over 3 frames at a time to smooth out tracking jitter.
+// Tracking space, game units per second.
+float CClientWeapon::VR_GetThrowVelocity( LTVector &vVel ) const
+{
+	vVel.Init( 0.0f, 0.0f, 0.0f );
+	float fBest = 0.0f;
+	if ( m_nVRThrowHist < 4 )
+		return 0.0f;
+
+	const float fNow = g_pLTClient->GetTime();
+	for ( int k = 0; k + 3 < m_nVRThrowHist; ++k )
+	{
+		int i = ( m_iVRThrowHist - 1 - k + 2 * kVRThrowHist ) % kVRThrowHist;
+		int j = ( m_iVRThrowHist - 4 - k + 2 * kVRThrowHist ) % kVRThrowHist;
+		if ( fNow - m_afVRThrowTime[i] > 0.125f )
+			break;
+		float dt = m_afVRThrowTime[i] - m_afVRThrowTime[j];
+		if ( dt < 0.004f )
+			continue;
+		LTVector v = ( m_avVRThrowPos[i] - m_avVRThrowPos[j] ) / dt;
+		float f = v.Mag();
+		if ( f > fBest )
+		{
+			fBest = f;
+			vVel = v;
+		}
+	}
+	return fBest;
+}
+
+bool CClientWeapon::VR_UpdateThrow( bool bTrigger )
+{
+	const int eKind = VR_ThrowKind();
+
+	// (Once per weapon that fires something: what it does, for the log.)
+	if ( g_VRMgr.IsActive() && m_pWeapon && m_pAmmo && PROJECTILE == m_pAmmo->eType &&
+	     m_nVRThrowLoggedId != m_nWeaponId )
+	{
+		m_nVRThrowLoggedId = m_nWeaponId;
+		PROJECTILEFX const *pFX = m_pAmmo->pProjectileFX;
+		CVRMgr::Log( "Throw: %s - %s (projectile %s, %d units/s, %s gravity; is ammo %d)", m_pWeapon->szName,
+			VRTHROW_THROW == eKind ? "thrown by hand" : ( VRTHROW_SETDOWN == eKind ? "set down by hand" : "not thrown by hand" ),
+			pFX ? pFX->szClass : "?", pFX ? pFX->nVelocity : 0,
+			( pFX && ( pFX->dwObjectFlags & FLAG_GRAVITY ) ) ? "with" : "no", (int)m_pWeapon->bIsAmmo );
+	}
+
+	if ( VRTHROW_NONE == eKind )
+	{
+		m_bVRThrowReady = false;
+		m_bVRThrowNow = false;
+		m_nVRThrowHist = 0;
+		m_bVRThrowTrigLast = bTrigger;
+		return bTrigger;
+	}
+
+	// The hand's path (tracking space: the body turning doesn't move it).
+	const float fNow = g_pLTClient->GetTime();
+	LTVector vTrack;
+	if ( g_VRMgr.GetHandTracking( LTVR_RIGHT, vTrack ) )
+	{
+		m_avVRThrowPos[m_iVRThrowHist] = vTrack;
+		m_afVRThrowTime[m_iVRThrowHist] = fNow;
+		m_iVRThrowHist = ( m_iVRThrowHist + 1 ) % kVRThrowHist;
+		if ( m_nVRThrowHist < kVRThrowHist )
+			++m_nVRThrowHist;
+	}
+
+	const bool bPressed = bTrigger && !m_bVRThrowTrigLast;
+	const bool bReleased = !bTrigger && m_bVRThrowTrigLast;
+	m_bVRThrowTrigLast = bTrigger;
+
+	if ( bPressed )
+		m_bVRThrowReady = true;
+
+	if ( bReleased && m_bVRThrowReady )
+	{
+		m_bVRThrowReady = false;
+
+		// Only with one in the hand: not while the next is coming up (or
+		// the weapon is being put away), and not faster than the game allows.
+		int nAmmo = ( g_bInfiniteAmmo || m_pWeapon->bInfiniteAmmo ) ? INFINITE_AMMO_AMOUNT :
+			g_pPlayerStats->GetAmmoCount( m_nAmmoId );
+		if ( W_IDLE != GetState() || fNow < m_fVRThrowNext || nAmmo <= 0 )
+		{
+			CVRMgr::Log( "Throw: %s - let go, but %s", m_pWeapon->szName,
+				nAmmo <= 0 ? "none left" : ( W_IDLE != GetState() ? "the next one isn't up yet" : "too soon after the last" ) );
+		}
+		else
+		{
+			VR_Throw( eKind );
+		}
+	}
+
+	// The game's own throw never starts.
+	return false;
+}
+
+void CClientWeapon::VR_Throw( int eKind )
+{
+	LTVector vFrom;
+	LTRotation rAim;
+	const float fUnitsPerMeter = g_VRMgr.GetUnitsPerMeter();
+	HOBJECT hCamera = g_pPlayerMgr->GetCamera();
+	if ( !hCamera || fUnitsPerMeter <= 0.0f || !g_VRMgr.GetAimRay( vFrom, rAim ) )
+		return;
+
+	// Not through a wall: if there's one between your head and your hand,
+	// it starts just this side of it.
+	LTVector vHead;
+	g_pLTClient->GetObjectPos( hCamera, &vHead );
+	{
+		HOBJECT hClientHitBox = LTNULL;
+		CCharacterFX *pMe = g_pGameClientShell->GetSFXMgr()->GetCharacterFX( g_pLTClient->GetClientObject() );
+		if ( pMe )
+			hClientHitBox = pMe->GetHitBox();
+		HOBJECT ahFilter[] = { g_pLTClient->GetClientObject(), g_pPlayerMgr->GetMoveMgr()->GetObject(),
+			hClientHitBox, m_hObject, LTNULL };
+		IntersectQuery query;
+		IntersectInfo info;
+		query.m_From = vHead;
+		query.m_To = vFrom;
+		query.m_Flags = INTERSECT_OBJECTS | IGNORE_NONSOLID | INTERSECT_HPOLY;
+		query.m_FilterFn = ObjListFilterFn;
+		query.m_pUserData = ahFilter;
+		if ( g_pLTClient->IntersectSegment( &query, &info ) )
+		{
+			LTVector vBack = vHead - vFrom;
+			vBack.Normalize();
+			vFrom = info.m_Point + vBack * ( 0.05f * fUnitsPerMeter );
+		}
+	}
+
+	PROJECTILEFX const *pFX = m_pAmmo->pProjectileFX;
+	LTVector vDir = rAim.Forward();
+	float fSpeed = 0.0f;
+	bool bOverride = false;
+
+	if ( VRTHROW_THROW == eKind )
+	{
+		// The hand's speed, in the world (the body's heading turns tracking
+		// space into it), scaled against a comfortable throw.
+		LTVector vTrackVel;
+		VR_GetThrowVelocity( vTrackVel );
+		LTVector vHandVel = VR_Rotate( LTRotation( 0.0f, g_pPlayerMgr->GetYaw(), 0.0f ), vTrackVel );
+		float fHandMps = vHandVel.Mag() / fUnitsPerMeter;
+
+		const bool bGravity = ( pFX->dwObjectFlags & FLAG_GRAVITY ) != 0;
+		float fFactor = fHandMps / g_VRMgr.GetThrowSpeed();
+		const float fMin = bGravity ? 0.05f : 0.6f;
+		const float fMax = bGravity ? 1.6f : 1.3f;
+		if ( fFactor < fMin ) fFactor = fMin;
+		if ( fFactor > fMax ) fFactor = fMax;
+
+		// Barely moving: it drops (or, flying straight, goes where the hand points).
+		LTVector vGo;
+		if ( fHandMps > 0.3f )
+			vGo = vHandVel / vHandVel.Mag();
+		else
+			vGo = bGravity ? LTVector( 0.0f, -1.0f, 0.0f ) : rAim.Forward();
+
+		LTVector vVel = vGo * ( (float)pFX->nVelocity * fFactor );
+		if ( g_pPlayerMgr->GetMoveMgr() )
+			vVel += g_pPlayerMgr->GetMoveMgr()->GetVelocity();
+		fSpeed = vVel.Mag();
+		if ( fSpeed > 1.0f )
+			vDir = vVel / fSpeed;
+		else
+			vDir = vGo;
+		bOverride = true;
+
+		CVRMgr::Log( "Throw: %s - thrown at %.1f m/s (hand %.1f m/s = %.2f of the game's %.1f m/s), %.0f degrees %s level",
+			m_pWeapon->szName, fSpeed / fUnitsPerMeter, fHandMps, fFactor, (float)pFX->nVelocity / fUnitsPerMeter,
+			(float)fabs( asin( vDir.y < -1.0f ? -1.0f : ( vDir.y > 1.0f ? 1.0f : vDir.y ) ) ) * 180.0f / MATH_PI,
+			vDir.y >= 0.0f ? "above" : "below" );
+	}
+	else
+	{
+		// Set down: on the floor below your hand, facing the way the hand
+		// points (level).
+		vDir.y = 0.0f;
+		if ( vDir.MagSqr() < 0.0001f )
+			vDir = LTRotation( 0.0f, g_pPlayerMgr->GetYaw(), 0.0f ).Forward();
+		vDir.Normalize();
+		CVRMgr::Log( "Throw: %s - set down below the hand", m_pWeapon->szName );
+	}
+
+	m_bVRThrowNow = true;
+	m_bVRThrowOverride = bOverride;
+	m_vVRThrowFrom = vFrom;
+	m_vVRThrowDir = vDir;
+	m_fVRThrowSpeed = fSpeed;
+
+	// The game's fire, this update (UpdateModelState sees m_bFire).
+	m_bFire = true;
+	m_fVRThrowNext = g_pLTClient->GetTime() + (float)m_pWeapon->m_nFireDelay / 1000.0f + 0.05f;
 }
 
 static bool VR_SwingPolyFilterFn( HPOLY hPoly, void *pUserData )

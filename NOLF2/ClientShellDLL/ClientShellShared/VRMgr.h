@@ -143,6 +143,13 @@ public:
 	// there) and goes into the gun. VRReload 1 (default) = manual, 0 = the
 	// game's own reload on a button.
 	bool		IsManualReload() const;
+	// Throwing by hand (see CClientWeapon::VR_UpdateThrow): VRThrow 1
+	// (default) = hold the trigger, swing, let go; 0 = the game's own.
+	bool		IsThrowByHand() const;
+	float		GetThrowSpeed() const;		// m/s at the hand for the game's own distance
+	// A controller's grip, in tracking space (game units, before the body's
+	// heading turns it into the world).
+	bool		GetHandTracking(int nHand, LTVector& vPos) const;
 	// A button that went down this frame, for gameplay (not while adjusting
 	// the gun, choosing in a conversation or out of play); and one held now.
 	bool		GameButtonPressed(int nHand, unsigned nButton) const;

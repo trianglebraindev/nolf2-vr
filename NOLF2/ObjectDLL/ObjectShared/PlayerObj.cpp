@@ -6630,6 +6630,14 @@ void CPlayerObj::HandleWeaponFireMessage(ILTMessage_Read *pMsg)
 		weaponFireInfo.hClientObjImpact = pMsg->ReadObject();
 	}
 
+	// VR: a throw by hand sets its own speed (the client's
+	// CClientWeapon::SendFireMessage writes this last).
+	if ( pMsg->Readbool() )
+	{
+		weaponFireInfo.bOverrideVelocity = LTTRUE;
+		weaponFireInfo.fOverrideVelocity = pMsg->Readfloat();
+	}
+
 	// If this is a gadget, tell the activated object it was activated...
 
 	bool bChangedAmmoType = false;

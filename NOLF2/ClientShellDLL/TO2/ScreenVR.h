@@ -62,6 +62,7 @@ protected:
 	uint8	m_nArms;			// 0 hands only, 1 full arms
 	uint8	m_nSwing;			// 0 off, else 1 + index into kSwingSpeeds
 	uint8	m_nReload;			// 0 manual, 1 game original
+	uint8	m_nThrow;			// 0 by hand, 1 game original
 	uint8	m_nVignette;		// 0 off, 1 light, 2 medium, 3 strong
 	uint8	m_nVignetteWhen;	// 0 moving, 1 turning, 2 both
 };

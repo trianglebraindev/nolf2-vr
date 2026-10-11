@@ -468,6 +468,28 @@ protected:
 	float         m_fVRSwingReady;
 	int           m_nVRSwingLoggedId;	// weapon whose blade was last written to the log
 	void          VR_UpdateSwing();
+
+	// VR: throwing by hand (see VR_UpdateThrow). Hold the trigger, swing,
+	// let go: the fire goes through the game's own path (Fire) with the
+	// throw's start, direction and speed.
+	enum VRThrowKind { VRTHROW_NONE, VRTHROW_THROW, VRTHROW_SETDOWN };
+	enum { kVRThrowHist = 24 };
+	int           VR_ThrowKind() const;
+	bool          VR_UpdateThrow( bool bTrigger );
+	void          VR_Throw( int eKind );
+	float         VR_GetThrowVelocity( LTVector &vVel ) const;
+	bool          m_bVRThrowReady;		// trigger pressed: let go to throw
+	bool          m_bVRThrowTrigLast;
+	float         m_fVRThrowNext;		// (the game's fire delay between throws)
+	LTVector      m_avVRThrowPos[kVRThrowHist];	// the right hand's recent path (tracking space)
+	float         m_afVRThrowTime[kVRThrowHist];
+	int           m_nVRThrowHist, m_iVRThrowHist;
+	bool          m_bVRThrowNow;		// this fire is a throw: from / dir / speed below
+	bool          m_bVRThrowOverride;	// (the speed is the throw's, not the game's)
+	LTVector      m_vVRThrowFrom;
+	LTVector      m_vVRThrowDir;
+	float         m_fVRThrowSpeed;		// game units / s
+	int           m_nVRThrowLoggedId;
 	bool          VR_GetBlade( LTVector &vHilt, LTVector &vTip ) const;
 	void          VR_SwingFire( LTVector const &vFrom, LTVector const &vDir );
 

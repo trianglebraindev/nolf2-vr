@@ -108,6 +108,12 @@
 //                   the gun; the right stick click is "next ammo". 0 = the
 //                   game's own: right stick click reloads, A is next ammo.
 //
+//   Throwing (see CClientWeapon::VR_UpdateThrow):
+//   VRThrow         1 = by hand (default): hold the trigger, swing, let go.
+//                   0 = the game's own (the trigger throws along the aim).
+//   VRThrowSpeed    how fast a throw (m/s, at the hand) goes the game's own
+//                   distance; faster goes further (default 5).
+//
 //   Melee (see CClientWeapon::VR_UpdateSwing):
 //   VRSwing         1 = swinging a sword hits what the blade passes
 //                   through (default), 0 = only the trigger slashes
@@ -175,6 +181,8 @@ static VarTrack g_vtVRScopeSize;
 static VarTrack g_vtVRScopeEye;
 static VarTrack g_vtVRSwing;
 static VarTrack g_vtVRReload;
+static VarTrack g_vtVRThrow;
+static VarTrack g_vtVRThrowSpeed;
 static VarTrack g_vtVRVignette;
 static VarTrack g_vtVRVignetteWhen;
 static VarTrack g_vtVRSwingSpeed;
@@ -353,6 +361,8 @@ void CVRMgr::Init()
 	g_vtVRScopeEye.Init(g_pLTClient, "VRScopeEye", NULL, 5.0f);
 	g_vtVRSwing.Init(g_pLTClient, "VRSwing", NULL, 1.0f);
 	g_vtVRReload.Init(g_pLTClient, "VRReload", NULL, 1.0f);
+	g_vtVRThrow.Init(g_pLTClient, "VRThrow", NULL, 1.0f);
+	g_vtVRThrowSpeed.Init(g_pLTClient, "VRThrowSpeed", NULL, 5.0f);
 	g_vtVRVignette.Init(g_pLTClient, "VRVignette", NULL, 0.0f);
 	g_vtVRVignetteWhen.Init(g_pLTClient, "VRVignetteWhen", NULL, 3.0f);
 	g_vtVRSwingSpeed.Init(g_pLTClient, "VRSwingSpeed", NULL, 2.5f);
@@ -409,6 +419,8 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRScopeEye",			5.0f },
 	{ "VRSwing",			1.0f },
 	{ "VRReload",			1.0f },
+	{ "VRThrow",			1.0f },
+	{ "VRThrowSpeed",		5.0f },
 	{ "VRVignette",			0.0f },
 	{ "VRVignetteWhen",		3.0f },
 	{ "VRSwingSpeed",		2.5f },
@@ -451,6 +463,28 @@ void CVRMgr::GetMagHold(LTVector& vSlideCm, float& fYaw, float& fPitch, float& f
 bool CVRMgr::IsManualReload() const
 {
 	return IsActive() && g_vtVRReload.GetFloat(1.0f) != 0.0f;
+}
+
+bool CVRMgr::IsThrowByHand() const
+{
+	return IsActive() && g_vtVRThrow.GetFloat(1.0f) != 0.0f;
+}
+
+float CVRMgr::GetThrowSpeed() const
+{
+	float f = g_vtVRThrowSpeed.GetFloat(5.0f);
+	return (f > 0.5f) ? f : 0.5f;
+}
+
+bool CVRMgr::GetHandTracking(int nHand, LTVector& vPos) const
+{
+	if (!IsActive() || nHand < 0 || nHand > 1)
+		return false;
+	const LTVR_HandState& hand = m_State.hand[nHand];
+	if (!hand.active || !hand.grip.valid)
+		return false;
+	vPos.Init(hand.grip.pos[0], hand.grip.pos[1], hand.grip.pos[2]);
+	return true;
 }
 
 bool CVRMgr::GameButtonPressed(int nHand, unsigned nButton) const
