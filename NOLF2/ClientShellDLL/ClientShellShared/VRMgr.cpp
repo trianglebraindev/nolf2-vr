@@ -1196,6 +1196,7 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 			{
 				Message("ADJUST SNOWMOBILE: left stick slides the handlebars, right stick turns and tilts them.");
 				Message("Right grip + right stick up/down raises them. A / B: bigger / smaller. Left trigger: hide a part of the snowmobile.");
+				Message("Left grip + left stick up/down: your view (how high you sit).");
 				Message("Line them up with the snowmobile under you. Click the left stick when done.");
 			}
 			else if (m_bAdjustMag)
@@ -1241,9 +1242,10 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 			else if (m_bRiding)
 			{
 				const GunFit* pDone = GetCurrentFit();
-				_snprintf(szMsg, sizeof(szMsg), "Snowmobile fit saved (slide %.1f %.1f %.1f cm, turn %.1f tilt %.1f, size %.2f).",
+				_snprintf(szMsg, sizeof(szMsg), "Snowmobile fit saved (slide %.1f %.1f %.1f cm, turn %.1f tilt %.1f, size %.2f, view %.0f cm).",
 					pDone ? pDone->fX : 0.0f, pDone ? pDone->fY : 0.0f, pDone ? pDone->fZ : 0.0f,
-					pDone ? pDone->fYaw : 0.0f, pDone ? pDone->fPitch : 0.0f, pDone ? pDone->fScale : 0.0f);
+					pDone ? pDone->fYaw : 0.0f, pDone ? pDone->fPitch : 0.0f, pDone ? pDone->fScale : 0.0f,
+					pDone ? pDone->fScopeUp : 0.0f);
 				szMsg[sizeof(szMsg) - 1] = '\0';
 				Log("%s", szMsg);
 				SaveSettings();		// (the hidden part)
@@ -1326,6 +1328,14 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 	// scope offset. (Tre: re-aiming the sniper rifle left its scope picture
 	// off center, as the picture's line runs along the aim, not the model.)
 	const GunFit kBefore = *pFit;
+
+	// Riding, with the left grip held: the left stick up / down moves your
+	// view (how high you sit) instead.
+	if (m_bRiding && (m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP))
+	{
+		pFit->fScopeUp += ly * kSlideCmPerSec * fFrameTime;
+		lx = ly = 0.0f;
+	}
 
 	pFit->fX += lx * kSlideCmPerSec * fFrameTime;
 	pFit->fZ += ly * kSlideCmPerSec * fFrameTime;
@@ -2519,6 +2529,9 @@ void CVRMgr::UpdateVehicle(bool bPlaying)
 		{
 			m_hRiddenVehicle = LTNULL;
 			SetCurrentGun(m_szGunBeforeRiding, LTNULL);
+			// (The hands go back on the gun.)
+			IClientWeaponBase* pWeapon = g_pPlayerMgr ? g_pPlayerMgr->GetCurrentClientWeapon() : NULL;
+			AttachHands(pWeapon ? pWeapon->GetHandle() : LTNULL);
 		}
 	}
 	if (!m_bRiding || !bPlaying)
@@ -2623,6 +2636,7 @@ void CVRMgr::InitVehicleFit(const LTVector& vCm, float fYawDeg, float fPitchDeg,
 	fit.fYaw = fYawDeg;
 	fit.fPitch = fPitchDeg;
 	fit.fScale = fSize;
+	fit.fScopeUp = -30.0f;		// (the view, sitting: see GetVehicleViewHeightCm)
 	SaveGunFits();
 	// (The adjust mode finds it by name.)
 	m_nCurrentFit = -1;
@@ -2635,6 +2649,19 @@ void CVRMgr::InitVehicleFit(const LTVector& vCm, float fYawDeg, float fPitchDeg,
 		vCm.x, vCm.y, vCm.z, fYawDeg, fPitchDeg, fSize);
 }
 
+// Sitting on the snowmobile your eyes are lower than standing: the view
+// moves this much (cm, the "Snowmobile" fit's scope-up number, set in its
+// adjust mode with the left grip held). A new fit starts 30 cm down.
+float CVRMgr::GetVehicleViewHeightCm() const
+{
+	for (int i = 0; i < m_nGunFits; ++i)
+	{
+		if (!stricmp(m_aGunFits[i].szName, kVehicleFitName))
+			return m_aGunFits[i].fScopeUp;
+	}
+	return -30.0f;
+}
+
 int CVRMgr::GetVehicleHiddenPiece() const
 {
 	return (int)floor(g_vtVRVehiclePiece.GetFloat(-1.0f) + 0.5f);
@@ -2642,7 +2669,8 @@ int CVRMgr::GetVehicleHiddenPiece() const
 
 float CVRMgr::GetCloseScale() const
 {
-	return m_bRiding ? g_vtVRGunScale.GetFloat(12.0f) : GetGunScale();
+	// (Riding, the current fit is the snowmobile's, so its size.)
+	return GetGunScale();
 }
 
 void CVRMgr::LogModelOnce(HOBJECT hModel, const char* pszTag)

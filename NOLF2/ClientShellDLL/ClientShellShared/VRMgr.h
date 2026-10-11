@@ -88,6 +88,8 @@ public:
 	bool		GetVehicleFit(LTVector& vCm, float& fYawDeg, float& fPitchDeg, float& fSize) const;
 	void		InitVehicleFit(const LTVector& vCm, float fYawDeg, float fPitchDeg, float fSize);
 	int			GetVehicleHiddenPiece() const;		// the world model's piece hidden (-1 none)
+	float		GetVehicleViewHeightCm() const;		// riding: the view raised (+) / lowered (-) for sitting
+	HOBJECT		GetHandsModel() const				{ return m_hGunModel; }
 	float		GetCloseScale() const;		// really-close space's size this frame
 	void		LogModelOnce(HOBJECT hModel, const char* pszTag);	// (vr_models.log)
 	static const float kBarLockDeg;			// the handlebars' full lock, degrees

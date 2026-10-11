@@ -715,7 +715,20 @@ the shutdown hang.
   while riding (left stick click); the cockpit's own body and windshield
   are hidden; the left trigger in that mode hides one of the world model's
   two parts in turn (VRVehiclePiece), in case one is its fixed handlebars.
-- The model's own hands stay on the bars for now. Its bones are logged
+- Third test (Tre: "movement is great now"): the NaN came from the
+  snowmobile's slowing-down step normalizing a zero acceleration (no gas,
+  standing still): 0 / 0. This build's LTVector::Normalize has no guard;
+  the step now checks for zero itself. Still: the view felt too high (the
+  snowmobile too low), and lowering the bars ran the cockpit's arms back
+  into your head. Now: riding lowers the view for sitting (the
+  "Snowmobile" fit's scope-up number, cm; a new fit starts at -30; left
+  grip + left stick up / down in its adjust mode), and the cockpit gets
+  your VR hands like a gun (it has the same armL / wristL / forearmR /
+  wristR bones): hands only, the left one on the left controller, the
+  right on the bar (it's the bars' child, so it turns with them). The
+  really-close scale while riding is the snowmobile fit's size.
+- (Hands still to come: the right hand following its controller when it
+  lets go of the bar.) Its bones are logged
   once to vr_models.log ("Snowmobile"), to put your hands there (or on the
   bars) next.
 

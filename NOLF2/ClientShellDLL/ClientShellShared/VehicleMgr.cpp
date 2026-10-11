@@ -1045,8 +1045,15 @@ void CVehicleMgr::UpdateVehicleMotion()
 			// Don't let us go backwards, slow us down...
 
             LTVector vAccelDir = vAccel;
-			vAccelDir.Normalize();
             LTFLOAT fAccelMag = vAccel.Mag();
+			// (No acceleration at all, e.g. standing still with no gas:
+			// normalizing nothing divided 0 by 0, and the NaN froze the
+			// snowmobile in place in VR, Tre. This build's LTVector::Normalize
+			// doesn't guard against it.)
+			if (fAccelMag > 0.0001f)
+				vAccelDir /= fAccelMag;
+			else
+				vAccelDir.Init();
 
 			// Determine the acceleration to use...
 
@@ -2104,6 +2111,13 @@ void CVehicleMgr::VR_PlaceOnRiddenVehicle(LTVector &vClosePos, LTRotation &rClos
 	rCloseRot = (~rCam) * rOn;
 	LTVector vScale(fSize / s, fSize / s, fSize / s);
 	g_pLTClient->SetObjectScale(m_hVehicleModel, &vScale);
+
+	// Your hands, as on a gun (the cockpit has the same arm and hand bones):
+	// hands only, so the arms don't run back to your head, and the left
+	// hand on the left controller (see CVRMgr::HandsNodeControl).
+	if (g_VRMgr.GetHandsModel() != m_hVehicleModel)
+		g_VRMgr.AttachHands(m_hVehicleModel);
+	g_VRMgr.SetGunModelTransform(vClosePos, rCloseRot);
 }
 
 void CVehicleMgr::UpdateVehicleModel()

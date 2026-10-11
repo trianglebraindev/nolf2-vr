@@ -3564,6 +3564,11 @@ void CPlayerMgr::UpdateCameraPosition()
 			}
 			vPos.y	+= m_fVRDuck;
 
+			// Riding: sitting, your eyes are lower than standing (Tre: the
+			// snowmobile felt too low under you). Set in its adjust mode.
+			if (g_VRMgr.IsRiding())
+				vPos.y += g_VRMgr.GetVehicleViewHeightCm() * g_VRMgr.GetUnitsPerMeter() / 100.0f;
+
 			// Riding with "tilt with the vehicle" on: the body banks and
 			// climbs with the snowmobile (otherwise only its heading turns).
 			const bool bTilt = g_VRMgr.IsRiding() && g_VRMgr.IsVehicleTilt();
