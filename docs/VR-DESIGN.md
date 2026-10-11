@@ -108,7 +108,7 @@ needs. Not ordered within a group yet.
 | Left grip + left trigger | snapshot (the trigger doesn't activate while the grip is held) | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
-| Left stick click | adjust gun; while looking through a scope, adjust the scope (again: done, saves) | |
+| Left stick click | adjust gun; while looking through a scope, adjust the scope; while holding a magazine, adjust how it's held (again: done, saves) | |
 | Left grip (hand on the weapon) | hold the gun with both hands | |
 | Conversation choices | right stick up/down highlights, right trigger or A picks, B says nothing | |
 | Home key (keyboard) | recentre | recentre |
@@ -499,6 +499,18 @@ the shutdown hang.
   followed for "clip" bones too (VR_FindMagBone; logged as "leaves along
   (x y z)"), and VR_SetMagAlign turns that onto straight down (model
   space as the gun is held). The falling copy still keeps the gun's turn.
+- Fourth test (Tre): worse; the Beretta's was now wrong too. The reload
+  animation's most-moved direction isn't the magazine's length (the hand
+  swings it about), so that guess is withdrawn. Back to "as it sits in the
+  gun" (right for the Beretta), plus a per-weapon magazine hold set by eye:
+  click the left stick while holding a magazine (ADJUST MAGAZINE): left
+  stick slides it (right / forward), right grip + right stick raises it,
+  right stick turns / tilts it, A / B roll it; the grip can be let go
+  while adjusting, and it isn't loaded into the gun meanwhile. Saved per
+  weapon as six more numbers in vr_guns.txt (slide cm, turn / tilt / roll
+  degrees, about the hand's axes); Tre's settings for the AK-47,
+  Sterling, Tommy gun and sniper become the built-in defaults (Tre's
+  workup: held upright like a handle, the top just above the fist).
 - The shoulder (CVRMgr::IsLeftHandAtShoulder): left of the head's middle,
   no further forward than the face, from about chest height up, within
   half a metre, in a frame turned by the head's heading only. While the

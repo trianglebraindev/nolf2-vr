@@ -484,9 +484,7 @@ protected:
 	LTMatrix      m_mVRClipTurn;		// how the magazine sits in the gun as you hold it (rotation only)
 	HMODELNODE    m_hVRMagHandNode;		// the magazine bone in the hand copy (a stand-in gun's, for guns without one)
 	LTMatrix      m_mVRMagHandTurn;		// how that magazine sits in its gun (rotation only)
-	LTMatrix      m_mVRMagAlign;		// turns this gun's magazine to sit along your fist (see VR_SetMagAlign)
 	HMODELNODE    VR_FindMagBone( HMODELNODE hKnown, LTVector &vOut );
-	void          VR_SetMagAlign( LTVector const &vOut );
 	HOBJECT       VR_CreateMagObjectFrom( WEAPON const *pSource, bool bReallyClose );
 	HOBJECT       m_hVRMagHand;
 	HOBJECT       m_hVRMagDrop;

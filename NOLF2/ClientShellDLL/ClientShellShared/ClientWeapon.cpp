@@ -6235,7 +6235,6 @@ void CClientWeapon::VR_SetupReload()
 		hClip = INVALID_MODEL_NODE;
 	LTVector vOut;
 	hClip = VR_FindMagBone( hClip, vOut );
-	VR_SetMagAlign( vOut );
 	if ( INVALID_MODEL_NODE != hClip &&
 	     LT_OK == g_pModelLT->GetBindPoseNodeTransform( m_hObject, hClip, m_mVRClipBind ) )
 	{
@@ -6459,6 +6458,7 @@ void CClientWeapon::VR_UpdateMagDrop()
 void CClientWeapon::VR_UpdateReload()
 {
 	VR_UpdateMagDrop();
+	g_VRMgr.SetHoldingMag( false );
 
 	// Not a gun that reloads by hand (now): any magazine business ends, and
 	// a gun left without one gets its magazine back.
@@ -6553,8 +6553,9 @@ void CClientWeapon::VR_UpdateReload()
 		{
 			m_hVRMagHand = VR_CreateMagObject( true );
 			m_hVRMagHandNode = m_hVRClipNode;
-			// Held like the Beretta's: its long axis down out of your fist.
-			m_mVRMagHandTurn = m_mVRMagAlign * m_mVRClipTurn;
+			// As it sits in the gun; the weapon's magazine hold (the adjust
+			// mode) turns it from there.
+			m_mVRMagHandTurn = m_mVRClipTurn;
 		}
 		else
 		{
@@ -6584,11 +6585,14 @@ void CClientWeapon::VR_UpdateReload()
 
 	if ( VRMAG_HAND != m_eVRMag )
 		return;
+	g_VRMgr.SetHoldingMag( true );
 
-	// Holding it: in your left hand; let go and it's put away.
+	// Holding it: in your left hand; let go and it's put away (not while
+	// adjusting how it's held).
 	LTVector vLeft;
 	LTRotation rLeft;
-	if ( !g_VRMgr.ButtonHeld( LTVR_LEFT, LTVR_BTN_GRIP ) || !g_VRMgr.GetHandInCamera( LTVR_LEFT, vLeft, rLeft, false ) )
+	bool bHolding = g_VRMgr.ButtonHeld( LTVR_LEFT, LTVR_BTN_GRIP ) || g_VRMgr.IsAdjustingMag();
+	if ( !bHolding || !g_VRMgr.GetHandInCamera( LTVR_LEFT, vLeft, rLeft, false ) )
 	{
 		if ( m_hVRMagHand )
 		{
@@ -6598,15 +6602,25 @@ void CClientWeapon::VR_UpdateReload()
 		m_eVRMag = VRMAG_OUT;
 		return;
 	}
+	// The magazine: at the hand, turned as the hand is (as it would sit in a
+	// gun held in that hand), then this weapon's magazine hold (adjust mode,
+	// vr_guns.txt): a slide along the hand's axes and a turn (turn, tilt,
+	// roll) in the hand.
+	LTVector vSlideCm;
+	float fYaw, fPitch, fRoll;
+	g_VRMgr.GetMagHold( vSlideCm, fYaw, fPitch, fRoll );
+	const float fUnitsPerCm = fUnitsPerMeter / 100.0f;
+	const LTVector vMagPoint = vLeft + VR_Rotate( rLeft, vSlideCm * fUnitsPerCm );	// camera space
 	if ( m_hVRMagHand )
 	{
-		// The magazine's bone at the hand, turned as the hand is (it hangs
-		// below your fist as it would in a gun held in that hand). In
-		// really-close space: camera space / the gun's size.
-		LTVector vHand = vLeft / g_VRMgr.GetGunScale();
+		// (In really-close space: camera space / the gun's size.)
+		LTRotation rHold = rLeft * LTRotation( LTVector( 0.0f, 1.0f, 0.0f ), DEG2RAD( fYaw ) ) *
+			LTRotation( LTVector( 1.0f, 0.0f, 0.0f ), DEG2RAD( fPitch ) ) *
+			LTRotation( LTVector( 0.0f, 0.0f, 1.0f ), DEG2RAD( fRoll ) );
+		LTVector vHand = vMagPoint / g_VRMgr.GetGunScale();
 		LTMatrix mHand;
 		mHand.Identity();
-		rLeft.ConvertToMatrix( mHand );
+		rHold.ConvertToMatrix( mHand );
 		LTMatrix mBone = mHand * m_mVRMagHandTurn;
 		mBone.SetTranslation( vHand );
 		m_mVRMagHandBone = mBone;
@@ -6614,7 +6628,10 @@ void CClientWeapon::VR_UpdateReload()
 	}
 
 	// Into the gun: the magazine to the gun's magazine well, or (no magazine
-	// bone) the left hand to the gun in your right hand.
+	// bone) the left hand to the gun in your right hand. (Not while adjusting
+	// how it's held.)
+	if ( g_VRMgr.IsAdjustingMag() )
+		return;
 	LTVector vTarget;
 	float fNear = 0.10f;
 	if ( !VR_GetClipPoint( vTarget ) )
@@ -6624,7 +6641,7 @@ void CClientWeapon::VR_UpdateReload()
 			return;
 		fNear = 0.15f;
 	}
-	float fDist = ( vLeft - vTarget ).Mag() / fUnitsPerMeter;
+	float fDist = ( vMagPoint - vTarget ).Mag() / fUnitsPerMeter;
 	if ( fDist < fNear )
 	{
 		if ( m_hVRMagHand )
@@ -6815,37 +6832,3 @@ bool CClientWeapon::VR_GetMuzzlePos( LTVector *pvPos ) const
 	return true;
 }
 
-// The turn that points a magazine's way out of its gun (vOut, model space)
-// straight down, as a pistol's magazine sits in its grip: then every
-// magazine sits along your fist the way the Beretta's does (its way out is
-// about straight down already).
-void CClientWeapon::VR_SetMagAlign( LTVector const &vOut )
-{
-	m_mVRMagAlign.Identity();
-	LTVector vFrom = vOut;
-	float fLen = vFrom.Mag();
-	if ( fLen < 1e-4f )
-		return;
-	vFrom /= fLen;
-	const LTVector vTo( 0.0f, -1.0f, 0.0f );
-	// axis = from x to (written out: LTVector::Cross is reversed)
-	LTVector vAxis( vFrom.y * vTo.z - vFrom.z * vTo.y, vFrom.z * vTo.x - vFrom.x * vTo.z, vFrom.x * vTo.y - vFrom.y * vTo.x );
-	float fSin = vAxis.Mag();
-	float fCos = vFrom.Dot( vTo );
-	float fAngle = (float)atan2( fSin, fCos );
-	if ( fSin < 1e-4f )
-	{
-		if ( fCos > 0.0f )
-			return;					// already down
-		vAxis.Init( 0.0f, 0.0f, 1.0f );	// straight up: half a turn about forward
-		fAngle = 3.14159265f;
-	}
-	else
-		vAxis /= fSin;
-	// Rotation by fAngle about vAxis (turns vFrom onto vTo), written out.
-	float c = (float)cos( fAngle ), sn = (float)sin( fAngle ), t = 1.0f - c;
-	const LTVector &k = vAxis;
-	m_mVRMagAlign.m[0][0] = c + k.x * k.x * t;		m_mVRMagAlign.m[0][1] = k.x * k.y * t - k.z * sn;	m_mVRMagAlign.m[0][2] = k.x * k.z * t + k.y * sn;
-	m_mVRMagAlign.m[1][0] = k.y * k.x * t + k.z * sn;	m_mVRMagAlign.m[1][1] = c + k.y * k.y * t;		m_mVRMagAlign.m[1][2] = k.y * k.z * t - k.x * sn;
-	m_mVRMagAlign.m[2][0] = k.z * k.x * t - k.y * sn;	m_mVRMagAlign.m[2][1] = k.z * k.y * t + k.x * sn;	m_mVRMagAlign.m[2][2] = c + k.z * k.z * t;
-}

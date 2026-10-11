@@ -111,7 +111,7 @@ install stays untouched.
 | Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
-| Left stick click | adjust the gun's fit in your hand (looking through a scope: adjust the scope) | |
+| Left stick click | adjust the gun's fit in your hand (looking through a scope: adjust the scope; holding a magazine: adjust how it's held) | |
 | Conversation choices | right stick up / down, right trigger or A to pick, B to say nothing | |
 | Home key (keyboard) | recentre | recentre |
 
@@ -154,7 +154,7 @@ Files the game writes in `run\`:
 | File | What it is |
 |---|---|
 | `vr_settings.txt` | your VR settings (Options > VR, or edit by hand) |
-| `vr_guns.txt` | each weapon's fit in your hand and its scope offset (from the adjust mode) |
+| `vr_guns.txt` | each weapon's fit in your hand, its scope offset and how its magazine is held (from the adjust mode) |
 | `xrbridge.log`, `vr_game.log`, `vr_models.log` | headset, game and model logs |
 | `crash_*.txt`, `crash_*.dmp` | crash reports |
 | `Snapshots\vr_*.png` | snapshots (left grip + left trigger) |

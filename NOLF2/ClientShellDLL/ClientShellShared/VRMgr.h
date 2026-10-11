@@ -152,6 +152,13 @@ public:
 	// The gun is waiting for a magazine: a left grip over the shoulder is
 	// taking one, not grabbing the gun or picking up a body.
 	void		SetWantsMag(bool bWants)	{ m_bWantsMag = bWants; }
+	// The left hand holds a magazine (the weapon says, each frame); clicking
+	// the left stick then adjusts how it's held (per weapon, vr_guns.txt).
+	void		SetHoldingMag(bool bHolding)	{ m_bHoldingMag = bHolding; }
+	bool		IsAdjustingMag() const	{ return m_bAdjusting && m_bAdjustMag; }
+	// How this weapon's magazine sits in the left hand: slide (cm: right,
+	// up, forward along the hand) and turn (degrees: turn, tilt, roll).
+	void		GetMagHold(LTVector& vSlideCm, float& fYaw, float& fPitch, float& fRoll) const;
 	// A line of help text on the HUD.
 	void		ShowHint(const char* pszText)	{ Message(pszText); }
 
@@ -349,6 +356,8 @@ private:
 		float	fYaw, fPitch;		// turn / tilt, degrees (pitch positive = barrel down)
 		float	fScale;				// size; 0 = use VRGunScale
 		float	fScopeUp, fScopeRight;	// scope line, cm, on top of VRScopeHeight
+		float	fMagX, fMagY, fMagZ;	// a magazine in the left hand: slide, cm (right, up, forward)
+		float	fMagYaw, fMagPitch, fMagRoll;	// ... and turn, degrees
 	};
 	enum { kMaxGunFits = 64 };
 	GunFit		m_aGunFits[kMaxGunFits];
@@ -357,6 +366,8 @@ private:
 	char		m_szCurrentGun[64];
 	bool		m_bAdjusting;
 	bool		m_bAdjustScope;			// (adjusting the scope's line, not the gun)
+	bool		m_bAdjustMag;			// (adjusting how the left hand holds a magazine)
+	bool		m_bHoldingMag;			// the left hand holds a magazine (the weapon says, each frame)
 
 	const GunFit*	GetCurrentFit() const;
 	GunFit*		GetOrAddCurrentFit();
