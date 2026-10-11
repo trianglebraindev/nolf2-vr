@@ -570,7 +570,7 @@ static void VR_LevelFileName(const char* pszPath, char* pszOut, int nOutLen)
 
 bool CVRMgr::IsIntroCredits() const
 {
-	const float kZoomedDeg = 30.0f;
+	const float kZoomedDeg = 10.0f;		// (measured: the credits 2.4; other shots there 30 and up)
 	if (!g_pPlayerMgr || !g_pPlayerMgr->IsUsingExternalCamera() || g_pPlayerMgr->GetCutsceneFovX() >= kZoomedDeg)
 		return false;
 	if (!g_pMissionMgr || !g_pMissionButeMgr || g_pMissionButeMgr->GetNumMissions() < 3)

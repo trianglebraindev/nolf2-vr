@@ -783,7 +783,10 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
   intro only goes on the flat screen (other cutscenes as chosen).
   IsIntroCredits: chapter 2's last level or chapter 3's first (Tre: the
   credits play at the end of chapter 2, before chapter 3), and a camera
-  narrower than 30 degrees across. Every cutscene camera is logged ("Cutscene
+  narrower than 10 degrees across. Measured: the credits camera is in
+  c02s02 at 2.4 x 1.8 degrees; the other shots around it are 30 to 70
+  (one in c03 is exactly 30, so the first 30-degree cutoff was too close).
+  Tre: "exactly what was needed". Every cutscene camera is logged ("Cutscene
   camera:" world, type, field of view, position) to check those numbers.
 - Music guard, measured working: 12 of 12 samples at dmusic+18BFE before
   any music, at dmusic+18CA7 after; held for every load and unload.
