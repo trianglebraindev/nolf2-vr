@@ -66,6 +66,7 @@ protected:
 	uint8	m_nThrow;			// 0 by hand, 1 game original
 	uint8	m_nSeated;			// 0 standing, 1 seated
 	uint8	m_nVehicleTilt;		// 0 level horizon, 1 tilt with the vehicle
+	uint8	m_nCutscenes;		// 0 in 3D, 1 on a flat screen
 	uint8	m_nVignette;		// 0 off, 1 light, 2 medium, 3 strong
 	uint8	m_nVignetteWhen;	// 0 moving, 1 turning, 2 both
 };

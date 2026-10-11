@@ -187,6 +187,10 @@ public:
 	// (default) = hold the trigger, swing, let go; 0 = the game's own.
 	bool		IsThrowByHand() const;
 	float		GetThrowSpeed() const;		// m/s at the hand for the game's own distance
+	// Cutscenes on a flat screen in front of you instead of in 3D around
+	// you: VRCutsceneFlat 1 (0 = 3D, the default). True while one is on
+	// and shown that way.
+	bool		IsCutsceneFlat() const;
 	// A controller's grip, in tracking space (game units, before the body's
 	// heading turns it into the world).
 	bool		GetHandTracking(int nHand, LTVector& vPos) const;
@@ -312,6 +316,7 @@ private:
 	bool		m_bBarsHeld;			// both hands on the snowmobile's handlebars
 	float		m_fBarSteer;
 	LTVR_SetOriginRotFn		m_pfnSetOriginRot;
+	LTVR_SetFlatViewFn		m_pfnSetFlatView;
 	void		UpdateRealCrouch();
 	bool		m_bRealCrouch;
 	bool		m_bStickCombo;			// both stick clicks went down together (no single clicks then)

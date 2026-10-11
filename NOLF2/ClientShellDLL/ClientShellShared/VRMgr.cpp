@@ -122,6 +122,11 @@
 //                   banks and climbs, your view doesn't); 1 = the view
 //                   tilts with the snowmobile
 //
+//   Cutscenes (see IsCutsceneFlat):
+//   VRCutsceneFlat  0 = in 3D around you (default; you can look around the
+//                   scene), 1 = on a flat screen in front of you, framed
+//                   as the game's camera shot it (letterbox bars and all)
+//
 //   Cheats (Options > Cheats, see ScreenVRCheats; on until turned off, put
 //   back after every level or save loads, see UpdateCheats):
 //   VRCheatGod, VRCheatInvisible, VRCheatAmmo (infinite ammo), VRCheatBodies
@@ -206,6 +211,7 @@ static VarTrack g_vtVRThrow;
 static VarTrack g_vtVRSeated;
 static VarTrack g_vtVRVehicleTilt;
 static VarTrack g_vtVRVehiclePiece;
+static VarTrack g_vtVRCutsceneFlat;
 static VarTrack g_vtVRCheatGod;
 static VarTrack g_vtVRCheatInvisible;
 static VarTrack g_vtVRCheatAmmo;
@@ -254,6 +260,7 @@ CVRMgr::CVRMgr()
 	m_pfnGetState		= NULL;
 	m_pfnSetOrigin		= NULL;
 	m_pfnSetOriginRot	= NULL;
+	m_pfnSetFlatView	= NULL;
 	m_bBarsHeld			= false;
 	m_bRiding			= false;
 	m_hRiddenVehicle	= LTNULL;
@@ -353,6 +360,7 @@ void CVRMgr::Init()
 	m_pfnGetState		= (LTVR_GetStateFn)GetProcAddress(hEngine, "LTVR_GetState");
 	m_pfnSetOrigin		= (LTVR_SetOriginFn)GetProcAddress(hEngine, "LTVR_SetOrigin");
 	m_pfnSetOriginRot	= (LTVR_SetOriginRotFn)GetProcAddress(hEngine, "LTVR_SetOriginRot");
+	m_pfnSetFlatView	= (LTVR_SetFlatViewFn)GetProcAddress(hEngine, "LTVR_SetFlatView");
 	m_pfnSetBinding		= (LTVR_SetBindingFn)GetProcAddress(hEngine, "LTVR_SetBinding");
 	m_pfnClearBindings	= (LTVR_ClearBindingsFn)GetProcAddress(hEngine, "LTVR_ClearBindings");
 	m_pfnRecenter		= (LTVR_RecenterFn)GetProcAddress(hEngine, "LTVR_Recenter");
@@ -410,6 +418,7 @@ void CVRMgr::Init()
 	g_vtVRSeated.Init(g_pLTClient, "VRSeated", NULL, 0.0f);
 	g_vtVRVehicleTilt.Init(g_pLTClient, "VRVehicleTilt", NULL, 0.0f);
 	g_vtVRVehiclePiece.Init(g_pLTClient, "VRVehiclePiece", NULL, -1.0f);
+	g_vtVRCutsceneFlat.Init(g_pLTClient, "VRCutsceneFlat", NULL, 0.0f);
 	g_vtVRCheatGod.Init(g_pLTClient, "VRCheatGod", NULL, 0.0f);
 	g_vtVRCheatInvisible.Init(g_pLTClient, "VRCheatInvisible", NULL, 0.0f);
 	g_vtVRCheatAmmo.Init(g_pLTClient, "VRCheatAmmo", NULL, 0.0f);
@@ -476,6 +485,7 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRSeated",			0.0f },
 	{ "VRVehicleTilt",		0.0f },
 	{ "VRVehiclePiece",		-1.0f },
+	{ "VRCutsceneFlat",		0.0f },
 	{ "VRCheatGod",			0.0f },
 	{ "VRCheatInvisible",	0.0f },
 	{ "VRCheatAmmo",		0.0f },
@@ -529,6 +539,12 @@ bool CVRMgr::IsManualReload() const
 bool CVRMgr::IsThrowByHand() const
 {
 	return IsActive() && g_vtVRThrow.GetFloat(1.0f) != 0.0f;
+}
+
+bool CVRMgr::IsCutsceneFlat() const
+{
+	return IsActive() && m_pfnSetFlatView && g_pPlayerMgr && g_pPlayerMgr->IsUsingExternalCamera() &&
+		g_vtVRCutsceneFlat.GetFloat(0.0f) != 0.0f;
 }
 
 float CVRMgr::GetThrowSpeed() const
@@ -805,6 +821,12 @@ void CVRMgr::Update(float fFrameTime)
 	UpdateRealCrouch();
 
 	UpdateVignette(fFrameTime, bPlaying);
+
+	// A cutscene, and you'd rather watch it on a screen: this frame goes on
+	// the flat screen (the engine draws no eyes; the monitor's picture,
+	// the game's camera with its letterbox and subtitles, is shown instead).
+	if (IsCutsceneFlat())
+		m_pfnSetFlatView(1);
 
 	// (Riding: the snowmobile's model is made at the hands' size, as the
 	// guns are at VRGunScale.)

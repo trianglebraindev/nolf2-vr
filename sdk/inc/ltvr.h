@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	12
+#define LTVR_VERSION	13
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -90,6 +90,11 @@ typedef void (*LTVR_SetOriginFn)(const float pos[3], float fYaw);
 // LTRotation): riding a vehicle with the view tilting as it does (the
 // "tilt with the vehicle" option). This frame only.
 typedef void (*LTVR_SetOriginRotFn)(const float pos[3], const float rot[4]);
+
+// This frame goes on a flat screen in front of you (the monitor's picture,
+// as menus are) instead of in 3D around you. Set it again every frame you
+// want it; the screen is placed where you're looking when it starts.
+typedef void (*LTVR_SetFlatViewFn)(int bFlat);
 
 // Binds a controller button (hand + one LTVR_BTN_* bit) to an engine
 // command ID: while the button is held, the command reads as on, exactly

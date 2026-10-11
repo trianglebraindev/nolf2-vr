@@ -4939,8 +4939,9 @@ void CInterfaceMgr::AbortScreenFade()
 void CInterfaceMgr::UpdateLetterBox()
 {
 	// VR: no letterbox bars. In the headset they'd be two black strips
-	// floating in front of the scene rather than a frame around it.
-	if (g_VRMgr.IsActive())
+	// floating in front of the scene rather than a frame around it. (A
+	// cutscene on the flat screen keeps them: there they frame the shot.)
+	if (g_VRMgr.IsActive() && !g_VRMgr.IsCutsceneFlat())
 	{
 		m_bWasLetterBox = LTFALSE;
 		m_fLetterBoxAlpha = 0.0f;

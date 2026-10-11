@@ -322,7 +322,8 @@ Next, in a suggested order:
 14. Cheats page with level select, for testing (done; see "Cheats").
 15. The snowmobile (driving, view and hands working, see "Snowmobile").
 16. Finger sensing on the free hand (see "Finger sensing").
-Later: cutscene options, the shutdown hang, the Tommy gun's rare tracer
+17. Cutscenes in 3D or on a flat screen (see "Cutscenes").
+Later: the shutdown hang, the occasional crash loading, the Tommy gun's rare tracer
 streaks; from the backlog: left-handed play, grip hold vs toggle, the
 quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
 
@@ -755,6 +756,22 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
   the trigger, the thumb rests down.
 - Pointing dead straight looked too extreme (Tre): it now bends about
   halfway to the resting-on-trigger pose (14 / 14 / 9 degrees).
+
+## Cutscenes
+
+- In 3D (default): the cutscene camera is the body and your head moves
+  about it, so you see what the shot hid (Kate's feet, people standing in
+  their idle pose "off screen"). Tre likes it but wanted the choice.
+- Flat screen (VRCutsceneFlat 1, Options > VR > Cutscenes): while the
+  game is on its external camera (PlayerMgr::IsUsingExternalCamera),
+  VRMgr calls the engine's LTVR_SetFlatView(1) each frame (LTVR_VERSION
+  13). d3d_VR_RenderEyes then draws no eyes, so the frame ends as a menu
+  frame does: the monitor's picture (the game's camera at its own field
+  of view, with the interface: subtitles, fades) is copied to the screen
+  layer. The screen is placed in front of your head as the cutscene
+  starts (VRScreenDistance / VRScreenAngle, as menus) and stays there.
+- The letterbox bars are kept in flat mode (they frame the shot on a
+  screen; in 3D they'd float in front of the scene, so they stay off).
 
 ## Menus: the mouse steps aside
 

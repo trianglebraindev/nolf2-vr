@@ -194,6 +194,13 @@ static float				g_fVROriginYaw		= 0.0f;
 static bool					g_bVROriginRot		= false;	// (LTVR_SetOriginRot: turned every way)
 static LTRotation			g_rVROriginRot;
 
+// The game wants this frame on a flat screen in front of you instead of all
+// around you (LTVR_SetFlatView: cutscenes, if you chose that). Set again
+// each frame; the screen is placed in front of your head as it starts.
+static bool					g_bVRFlatView		= false;
+static bool					g_bVRFlatWas		= false;	// (last frame)
+static xrb::Pose			g_VRFlatPose;
+
 // Latest state handed to the game (LTVR_GetState).
 static LTVR_State			g_VRState;
 
@@ -617,6 +624,11 @@ extern "C" __declspec(dllexport) void LTVR_SetOriginRot(const float pos[3], cons
 	g_bVROriginRot = true;
 }
 
+extern "C" __declspec(dllexport) void LTVR_SetFlatView(int bFlat)
+{
+	g_bVRFlatView = (bFlat != 0);
+}
+
 extern "C" __declspec(dllexport) void LTVR_SetBinding(int hand, unsigned button, int commandId)
 {
 	// Replace an existing binding of the same button.
@@ -684,6 +696,11 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 		VR_EndHud();
 		g_bVREyesDrawn = false;
 	}
+
+	// On a flat screen this frame: no eyes, so it's shown like a menu (the
+	// monitor's picture, interface and all, on the screen).
+	if (g_bVRFlatView)
+		return;
 
 	if (g_bVREyesDrawn)
 		return;
@@ -2109,6 +2126,14 @@ void d3d_VR_OnSwapBuffers()
 			place.headLocked = false;
 			place.pose = VR_IdentityPose();
 			place.pose.position.z = -fScreenDistance;
+			if (g_bVRFlatView)
+			{
+				// (A cutscene: where you're looking as it starts, so it
+				// isn't behind you if you've turned.)
+				if (!g_bVRFlatWas)
+					g_VRFlatPose = VR_PoseInFrontOfHead(fScreenDistance);
+				place.pose = g_VRFlatPose;
+			}
 			place.widthMeters = fScreenWidth;
 			g_pVRBridge->EndFrame(false, &place);
 		}
@@ -2136,6 +2161,8 @@ void d3d_VR_OnSwapBuffers()
 	// The game sets the origin again each frame it draws the world.
 	g_bVROriginSet = false;
 	g_bVROriginRot = false;
+	g_bVRFlatWas = g_bVRFlatView;	// (and the flat screen)
+	g_bVRFlatView = false;
 
 	VR_UpdateCursorClip();
 

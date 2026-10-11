@@ -70,6 +70,10 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   gets off. Options > VR > Snowmobile view: keep the horizon level, or tilt
   with it.
 
+- **Cutscenes** play out in 3D around you (default), or on a flat screen
+  in front of you, framed as the game's camera shot them, letterbox and
+  all: Options > VR > Cutscenes.
+
 - **Throwing by hand** (default; Options > VR > Throwing: By hand / Game
   original): grenades, the banana, coins, shuriken: hold the trigger, swing
   your arm and let go. The harder you throw, the further it goes. The bear
@@ -170,6 +174,7 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRReload` | 1 | 1 = reload by hand (A drops the magazine, one from over your left shoulder); 0 = the game's reload on the right stick click |
 | `VRThrow` | 1 | 1 = throw by hand (hold the trigger, swing, let go); 0 = the game's own throw |
 | `VRThrowSpeed` | 5 | how fast a throw (m/s, at the hand) goes the game's own distance; faster goes further |
+| `VRCutsceneFlat` | 0 | cutscenes: 0 = in 3D around you; 1 = on a flat screen in front of you |
 | `VRVehicleTilt` | 0 | riding the snowmobile: 0 = the horizon stays level; 1 = the view banks and climbs with it |
 | `VRSeated` | 0 | 0 = standing (crouch for real); 1 = seated (the stick crouches). Options > VR > Play position |
 | `VRCrouchDepth` | 25 | standing: how far (cm) your head drops below your set height before Cate crouches; 0 = stick only |
