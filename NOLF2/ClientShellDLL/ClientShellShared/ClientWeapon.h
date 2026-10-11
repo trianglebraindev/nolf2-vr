@@ -481,6 +481,8 @@ protected:
 	bool          m_bVRThrowReady;		// trigger pressed: let go to throw
 	bool          m_bVRThrowTrigLast;
 	float         m_fVRThrowNext;		// (the game's fire delay between throws)
+	bool          m_bVRThrowShowNext;	// thrown: the next one comes up (DoSpecialEndFire) at m_fVRThrowShowAt
+	float         m_fVRThrowShowAt;
 	LTVector      m_avVRThrowPos[kVRThrowHist];	// the right hand's recent path (tracking space)
 	float         m_afVRThrowTime[kVRThrowHist];
 	int           m_nVRThrowHist, m_iVRThrowHist;

@@ -596,6 +596,16 @@ the shutdown hang.
   WeaponFireInfo::fOverrideVelocity (the AI's grenades already use it).
 - Logged: "Throw: <weapon> - thrown by hand (projectile class, speed,
   gravity)" once per weapon, then each throw's speed and angle.
+- Measured (Tre's first throws): game speeds grenades 40 m/s, coin 25,
+  banana 12 (all with gravity), shuriken 60 (CSpear, none); comfortable
+  throws 3.5 - 5 m/s at the hand, hard ones 6 - 7.
+- Second pass (Tre): after a grenade throw the hand stayed empty but for
+  the pin. The game shows the next one (and switches weapon after the
+  last) at the end of its throw animation (DoSpecialEndFire), which never
+  plays here; now VR_UpdateThrow calls it 0.35 s after the throw, once the
+  weapon is idle, and a throw before that "isn't up yet". The banana fell
+  short even thrown hard (7 m/s at the hand gave 17 m/s): it gets twice
+  the boost (Tre's pick, over one boost for everything).
 
 ## Menus: the mouse steps aside
 

@@ -221,6 +221,8 @@ CClientWeapon::CClientWeapon() :
 	, m_bVRThrowReady( false )
 	, m_bVRThrowTrigLast( false )
 	, m_fVRThrowNext( 0.0f )
+	, m_bVRThrowShowNext( false )
+	, m_fVRThrowShowAt( 0.0f )
 	, m_nVRThrowHist( 0 )
 	, m_iVRThrowHist( 0 )
 	, m_bVRThrowNow( false )
@@ -6224,6 +6226,7 @@ bool CClientWeapon::VR_UpdateThrow( bool bTrigger )
 	{
 		m_bVRThrowReady = false;
 		m_bVRThrowNow = false;
+		m_bVRThrowShowNext = false;
 		m_nVRThrowHist = 0;
 		m_bVRThrowTrigLast = bTrigger;
 		return bTrigger;
@@ -6241,6 +6244,16 @@ bool CClientWeapon::VR_UpdateThrow( bool bTrigger )
 			++m_nVRThrowHist;
 	}
 
+	// After a throw, the next one comes up in your hand. (The game does this
+	// at the end of its throw animation, which never plays here: without it
+	// the hand stayed empty but for the grenade's pin, Tre.) It also does
+	// the game's switch to another weapon when that was the last one.
+	if ( m_bVRThrowShowNext && fNow >= m_fVRThrowShowAt && W_IDLE == GetState() )
+	{
+		m_bVRThrowShowNext = false;
+		DoSpecialEndFire();
+	}
+
 	const bool bPressed = bTrigger && !m_bVRThrowTrigLast;
 	const bool bReleased = !bTrigger && m_bVRThrowTrigLast;
 	m_bVRThrowTrigLast = bTrigger;
@@ -6256,10 +6269,11 @@ bool CClientWeapon::VR_UpdateThrow( bool bTrigger )
 		// the weapon is being put away), and not faster than the game allows.
 		int nAmmo = ( g_bInfiniteAmmo || m_pWeapon->bInfiniteAmmo ) ? INFINITE_AMMO_AMOUNT :
 			g_pPlayerStats->GetAmmoCount( m_nAmmoId );
-		if ( W_IDLE != GetState() || fNow < m_fVRThrowNext || nAmmo <= 0 )
+		if ( W_IDLE != GetState() || m_bVRThrowShowNext || fNow < m_fVRThrowNext || nAmmo <= 0 )
 		{
 			CVRMgr::Log( "Throw: %s - let go, but %s", m_pWeapon->szName,
-				nAmmo <= 0 ? "none left" : ( W_IDLE != GetState() ? "the next one isn't up yet" : "too soon after the last" ) );
+				nAmmo <= 0 ? "none left" : ( ( W_IDLE != GetState() || m_bVRThrowShowNext ) ? "the next one isn't up yet" :
+				"too soon after the last" ) );
 		}
 		else
 		{
@@ -6321,9 +6335,12 @@ void CClientWeapon::VR_Throw( int eKind )
 		float fHandMps = vHandVel.Mag() / fUnitsPerMeter;
 
 		const bool bGravity = ( pFX->dwObjectFlags & FLAG_GRAVITY ) != 0;
-		float fFactor = fHandMps / g_VRMgr.GetThrowSpeed();
+		// The banana: the game's is slow (12 m/s against a grenade's 40), so
+		// even a hard throw fell short (Tre); it gets twice the boost.
+		const float fBoost = strstr( pFX->szClass, "Banana" ) ? 2.0f : 1.0f;
+		float fFactor = fHandMps / g_VRMgr.GetThrowSpeed() * fBoost;
 		const float fMin = bGravity ? 0.05f : 0.6f;
-		const float fMax = bGravity ? 1.6f : 1.3f;
+		const float fMax = ( bGravity ? 1.6f : 1.3f ) * fBoost;
 		if ( fFactor < fMin ) fFactor = fMin;
 		if ( fFactor > fMax ) fFactor = fMax;
 
@@ -6366,8 +6383,11 @@ void CClientWeapon::VR_Throw( int eKind )
 	m_vVRThrowDir = vDir;
 	m_fVRThrowSpeed = fSpeed;
 
-	// The game's fire, this update (UpdateModelState sees m_bFire).
+	// The game's fire, this update (UpdateModelState sees m_bFire). It hides
+	// the thrown one; the next shows a moment later (VR_UpdateThrow).
 	m_bFire = true;
+	m_bVRThrowShowNext = true;
+	m_fVRThrowShowAt = g_pLTClient->GetTime() + 0.35f;
 	m_fVRThrowNext = g_pLTClient->GetTime() + (float)m_pWeapon->m_nFireDelay / 1000.0f + 0.05f;
 }
 
