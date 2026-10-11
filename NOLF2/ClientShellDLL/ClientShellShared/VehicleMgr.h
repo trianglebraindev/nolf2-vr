@@ -216,6 +216,8 @@ class CVehicleMgr
 	float			m_fVRSelectStart;		// (VR: when the climb-on animation began, -1 none)
 	float			m_fVRNextLog;			// (VR: the riding log, once a second)
 	void			VR_LogRiding();
+	void			VR_CheckNaN(const char* pszWhere, LTVector* pPYR1 = LTNULL, LTVector* pPYR2 = LTNULL);
+	void			VR_PlaceOnRiddenVehicle(LTVector &vClosePos, LTRotation &rCloseRot);
 	float			m_fVRStopBrakeStart;	// (when the brake went on at a stop, -1 none)
     LTBOOL          m_bVehicleAtMaxSpeed;
     LTBOOL			m_bVehicleTurning;          // Are we turning (vehicle mode)

@@ -703,6 +703,18 @@ the shutdown hang.
   move, the climb-on animation, speed) to find why it doesn't move; and if
   the climb-on ("Select") animation never reports done, it goes after
   2.5 s (the game only lets you move once it's done).
+- Second test (Tre): the riding log showed the speed (and the base
+  acceleration) turn NaN the moment the snowmobile was free to move, so it
+  never moved; the engine sound worked. VR_CheckNaN now runs at each step
+  (rotation in, after banking, after contour, motion in / out, friction,
+  gear), logs where it first appears and resets it. And the cockpit and
+  the full model lined up badly and turned differently: the cockpit now
+  sits on the world model (VR_PlaceOnRiddenVehicle) at a "Snowmobile" fit
+  in vr_guns.txt (cm, turn, tilt in its frame, and size), started on the
+  first ride from where it was drawn and set by eye in the adjust mode
+  while riding (left stick click); the cockpit's own body and windshield
+  are hidden; the left trigger in that mode hides one of the world model's
+  two parts in turn (VRVehiclePiece), in case one is its fixed handlebars.
 - The model's own hands stay on the bars for now. Its bones are logged
   once to vr_models.log ("Snowmobile"), to put your hands there (or on the
   bars) next.

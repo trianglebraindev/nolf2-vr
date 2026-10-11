@@ -685,7 +685,9 @@ void CVehicleMgr::UpdateMotion()
 	switch (m_ePPhysicsModel)
 	{
 		case PPM_SNOWMOBILE :
+			VR_CheckNaN( "motion in" );
 			UpdateVehicleMotion();
+			VR_CheckNaN( "motion out" );
 		break;
 
 		case PPM_LURE :
@@ -1296,7 +1298,9 @@ void CVehicleMgr::UpdateFriction()
 	switch (m_ePPhysicsModel)
 	{
 		case PPM_SNOWMOBILE :
+			VR_CheckNaN( "friction in" );
 			UpdateVehicleFriction(SNOWMOBILE_SLIDE_TO_STOP_TIME);
+			VR_CheckNaN( "friction out" );
 		break;
 
 		case PPM_LURE :
@@ -1945,6 +1949,163 @@ void CVehicleMgr::VR_LogRiding()
 		(int)m_bVehicleStopped, (int)g_pMoveMgr->IsOnGround(), (int)m_bVRReverse);
 }
 
+// VR: where a NaN ("not a number", the result of e.g. 0 / 0) first gets
+// into the ride. Riding in VR, the speed turned NaN the moment the
+// snowmobile was free to move, so it never moved (Tre). Checked at each
+// step of a frame; the first few are logged with what was bad, and the bad
+// values are reset so it can still be driven.
+static bool VR_Bad(float f)
+{
+	return f != f || f > 1e30f || f < -1e30f;
+}
+
+static bool VR_BadVec(const LTVector &v)
+{
+	return VR_Bad(v.x) || VR_Bad(v.y) || VR_Bad(v.z);
+}
+
+void CVehicleMgr::VR_CheckNaN(const char* pszWhere, LTVector* pPYR1, LTVector* pPYR2)
+{
+	if (!g_VRMgr.IsActive())
+		return;
+	HOBJECT hObj = g_pMoveMgr->GetObject();
+	if (!hObj)
+		return;
+
+	LTVector vVel = g_pMoveMgr->GetVelocity();
+	LTVector vAccel;
+	g_pPhysicsLT->GetAcceleration(hObj, &vAccel);
+	LTRotation rObj;
+	g_pLTClient->GetObjectRotation(hObj, &rObj);
+	LTVector vPos;
+	g_pLTClient->GetObjectPos(hObj, &vPos);
+
+	const bool bVel = VR_BadVec(vVel);
+	const bool bAccel = VR_BadVec(vAccel);
+	const bool bBase = VR_Bad(m_fVehicleBaseMoveAccel) || VR_Bad(m_fAccelStart) || VR_Bad(m_fDecelStart);
+	const bool bYaw = VR_Bad(m_fYawDiff) || VR_Bad(m_fYawDelta) || VR_Bad(m_fHandlebarRoll) || VR_Bad(m_fContourRoll);
+	const bool bRot = VR_Bad(rObj.m_Quat[0]) || VR_Bad(rObj.m_Quat[1]) || VR_Bad(rObj.m_Quat[2]) || VR_Bad(rObj.m_Quat[3]);
+	const bool bPos = VR_BadVec(vPos);
+	const bool bPYR = (pPYR1 && VR_BadVec(*pPYR1)) || (pPYR2 && VR_BadVec(*pPYR2));
+	if (!(bVel || bAccel || bBase || bYaw || bRot || bPos || bPYR))
+		return;
+
+	static int s_nLogged = 0;
+	if (s_nLogged < 25)
+	{
+		++s_nLogged;
+		CVRMgr::Log("Vehicle NaN at %s:%s%s%s%s%s%s%s | vel %g %g %g accel %g %g %g base %g start %g/%g yawdiff %g yawdelta %g bars %g "
+			"contour %g | rot %g %g %g %g | pyr %g %g %g / %g %g %g",
+			pszWhere, bVel ? " velocity" : "", bAccel ? " acceleration" : "", bBase ? " base-accel" : "", bYaw ? " steering" : "",
+			bRot ? " rotation" : "", bPos ? " position" : "", bPYR ? " angles" : "",
+			vVel.x, vVel.y, vVel.z, vAccel.x, vAccel.y, vAccel.z, m_fVehicleBaseMoveAccel, m_fAccelStart, m_fDecelStart,
+			m_fYawDiff, m_fYawDelta, m_fHandlebarRoll, m_fContourRoll,
+			rObj.m_Quat[0], rObj.m_Quat[1], rObj.m_Quat[2], rObj.m_Quat[3],
+			pPYR1 ? pPYR1->x : 0.0f, pPYR1 ? pPYR1->y : 0.0f, pPYR1 ? pPYR1->z : 0.0f,
+			pPYR2 ? pPYR2->x : 0.0f, pPYR2 ? pPYR2->y : 0.0f, pPYR2 ? pPYR2->z : 0.0f);
+	}
+
+	// Reset what's bad.
+	LTVector vZero(0.0f, 0.0f, 0.0f);
+	if (bVel)	g_pMoveMgr->SetVelocity(vZero);
+	if (bAccel)	g_pPhysicsLT->SetAcceleration(hObj, &vZero);
+	if (bBase)
+	{
+		m_fVehicleBaseMoveAccel = 0.0f;
+		m_fAccelStart = -1.0f;
+		m_fDecelStart = -1.0f;
+	}
+	if (bYaw)
+	{
+		m_fYawDiff = 0.0f;
+		m_fYawDelta = 0.0f;
+		m_fHandlebarRoll = 0.0f;
+		m_fContourRoll = 0.0f;
+	}
+	if (pPYR1 && VR_BadVec(*pPYR1))
+	{
+		if (VR_Bad(pPYR1->x)) pPYR1->x = 0.0f;
+		if (VR_Bad(pPYR1->y)) pPYR1->y = 0.0f;
+		if (VR_Bad(pPYR1->z)) pPYR1->z = 0.0f;
+	}
+	if (pPYR2 && VR_BadVec(*pPYR2))
+	{
+		if (VR_Bad(pPYR2->x)) pPYR2->x = 0.0f;
+		if (VR_Bad(pPYR2->y)) pPYR2->y = 0.0f;
+		if (VR_Bad(pPYR2->z)) pPYR2->z = 0.0f;
+	}
+}
+
+// VR: the cockpit (handlebars, dash, hands) on the snowmobile you ride:
+// that's its world model, attached to you, which banks and climbs as the
+// snowmobile does. The cockpit sits at a fixed place on it (the
+// "Snowmobile" fit, set by eye in the adjust mode), so the two move as one
+// (Tre: drawn in front of the eyes, they lined up badly and turned
+// differently). The cockpit's own body and windshield are hidden (the
+// world model has them). Given the cockpit as it would be drawn in front of
+// the eyes (really-close camera space), which the first ride's fit starts
+// from; changed to where it sits on the snowmobile.
+void CVehicleMgr::VR_PlaceOnRiddenVehicle(LTVector &vClosePos, LTRotation &rCloseRot)
+{
+	HOBJECT hWorld = g_VRMgr.GetRiddenVehicleObject();
+	HOBJECT hCamera = g_pPlayerMgr->GetCamera();
+	const float fUpm = g_VRMgr.GetUnitsPerMeter();
+	const float s = g_VRMgr.GetCloseScale();
+	if (!hWorld || !hCamera || fUpm <= 0.0f || s <= 0.0f)
+		return;
+
+	LTVector vWorld, vCam;
+	LTRotation rWorld, rCam;
+	g_pLTClient->GetObjectPos(hWorld, &vWorld);
+	g_pLTClient->GetObjectRotation(hWorld, &rWorld);
+	g_pLTClient->GetObjectPos(hCamera, &vCam);
+	g_pLTClient->GetObjectRotation(hCamera, &rCam);
+	const float fUnitsPerCm = fUpm / 100.0f;
+
+	// (The cockpit's own body and windshield: the world model has them.)
+	static const char* const kHidden[] = { "bodyShape", "windshieldShape" };
+	for (int i = 0; i < 2; ++i)
+	{
+		HMODELPIECE hPiece;
+		if (LT_OK == g_pModelLT->GetPiece(m_hVehicleModel, const_cast<char*>(kHidden[i]), hPiece))
+			g_pModelLT->SetPieceHideStatus(m_hVehicleModel, hPiece, LTTRUE);
+	}
+
+	LTVector vCm;
+	float fYaw, fPitch, fSize;
+	if (!g_VRMgr.GetVehicleFit(vCm, fYaw, fPitch, fSize))
+	{
+		// The first ride: start from where it's drawn now.
+		LTVector vNow = vCam + rCam.Right() * (vClosePos.x * s) + rCam.Up() * (vClosePos.y * s) + rCam.Forward() * (vClosePos.z * s);
+		LTRotation rNow = rCam * rCloseRot;
+		LTVector vRel = vNow - vWorld;
+		vCm.Init(vRel.Dot(rWorld.Right()), vRel.Dot(rWorld.Up()), vRel.Dot(rWorld.Forward()));
+		vCm /= fUnitsPerCm;
+		LTVector vF = rNow.Forward();
+		LTVector vLocalF(vF.Dot(rWorld.Right()), vF.Dot(rWorld.Up()), vF.Dot(rWorld.Forward()));
+		fYaw = RAD2DEG((float)atan2(vLocalF.x, vLocalF.z));
+		float fY = vLocalF.y < -1.0f ? -1.0f : (vLocalF.y > 1.0f ? 1.0f : vLocalF.y);
+		// (Which way a positive tilt turns: whichever rebuilds this forward.)
+		float fTry = RAD2DEG((float)asin(fY));
+		LTRotation rTry = LTRotation(LTVector(0.0f, 1.0f, 0.0f), DEG2RAD(fYaw)) * LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(fTry));
+		fPitch = (rTry.Forward().y * fY >= 0.0f) ? fTry : -fTry;
+		fSize = s;
+		g_VRMgr.InitVehicleFit(vCm, fYaw, fPitch, fSize);
+	}
+
+	LTRotation rLocal = LTRotation(LTVector(0.0f, 1.0f, 0.0f), DEG2RAD(fYaw)) * LTRotation(LTVector(1.0f, 0.0f, 0.0f), DEG2RAD(fPitch));
+	LTRotation rOn = rWorld * rLocal;
+	LTVector vOn = vWorld + (rWorld.Right() * vCm.x + rWorld.Up() * vCm.y + rWorld.Forward() * vCm.z) * fUnitsPerCm;
+
+	// Into the camera's really-close space, at its size.
+	LTVector vRel = vOn - vCam;
+	vClosePos.Init(vRel.Dot(rCam.Right()), vRel.Dot(rCam.Up()), vRel.Dot(rCam.Forward()));
+	vClosePos /= s;
+	rCloseRot = (~rCam) * rOn;
+	LTVector vScale(fSize / s, fSize / s, fSize / s);
+	g_pLTClient->SetObjectScale(m_hVehicleModel, &vScale);
+}
+
 void CVehicleMgr::UpdateVehicleModel()
 {
 	VR_LogRiding();
@@ -2028,6 +2189,7 @@ void CVehicleMgr::UpdateVehicleModel()
 			vNewPos = rTilt.Right() * vNewPos.x + rTilt.Up() * vNewPos.y + rTilt.Forward() * vNewPos.z;
 		}
 		g_VRMgr.BodyToCloseCamera(vNewPos, rRot, g_VRMgr.GetCloseScale());
+		VR_PlaceOnRiddenVehicle(vNewPos, rRot);
 	}
 
 	g_pLTClient->SetObjectPosAndRotation(m_hVehicleModel, &vNewPos, &rRot);
@@ -3447,8 +3609,11 @@ void CVehicleMgr::CalculateVehicleRotation(LTVector & vPlayerPYR,
 	{
 		// These guys don't handle movement.
 		case PPM_SNOWMOBILE:
+			VR_CheckNaN( "rotation in", &vPlayerPYR, &vPYR );
 			CalculateBankingVehicleRotation( vPlayerPYR, vPYR, fYawDelta );
+			VR_CheckNaN( "after banking", &vPlayerPYR, &vPYR );
 			CalculateVehicleContourRotation( vPlayerPYR, vPYR );
+			VR_CheckNaN( "after contour", &vPlayerPYR, &vPYR );
 			break;
 
 		case PPM_LURE:
@@ -3836,6 +4001,7 @@ void CVehicleMgr::UpdateSnowmobileGear()
 	// Update the handlebars...
 
 	UpdateSnowmobileHandleBars();
+	VR_CheckNaN( "gear" );
 }
 
 // ----------------------------------------------------------------------- //

@@ -205,6 +205,7 @@ static VarTrack g_vtVRReload;
 static VarTrack g_vtVRThrow;
 static VarTrack g_vtVRSeated;
 static VarTrack g_vtVRVehicleTilt;
+static VarTrack g_vtVRVehiclePiece;
 static VarTrack g_vtVRCheatGod;
 static VarTrack g_vtVRCheatInvisible;
 static VarTrack g_vtVRCheatAmmo;
@@ -255,6 +256,8 @@ CVRMgr::CVRMgr()
 	m_pfnSetOriginRot	= NULL;
 	m_bBarsHeld			= false;
 	m_bRiding			= false;
+	m_hRiddenVehicle	= LTNULL;
+	m_szGunBeforeRiding[0] = '\0';
 	m_fBarSteer			= 0.0f;
 	m_bPlayingNow		= false;
 	m_pfnSetBinding		= NULL;
@@ -406,6 +409,7 @@ void CVRMgr::Init()
 	g_vtVRThrow.Init(g_pLTClient, "VRThrow", NULL, 1.0f);
 	g_vtVRSeated.Init(g_pLTClient, "VRSeated", NULL, 0.0f);
 	g_vtVRVehicleTilt.Init(g_pLTClient, "VRVehicleTilt", NULL, 0.0f);
+	g_vtVRVehiclePiece.Init(g_pLTClient, "VRVehiclePiece", NULL, -1.0f);
 	g_vtVRCheatGod.Init(g_pLTClient, "VRCheatGod", NULL, 0.0f);
 	g_vtVRCheatInvisible.Init(g_pLTClient, "VRCheatInvisible", NULL, 0.0f);
 	g_vtVRCheatAmmo.Init(g_pLTClient, "VRCheatAmmo", NULL, 0.0f);
@@ -471,6 +475,7 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRThrow",			1.0f },
 	{ "VRSeated",			0.0f },
 	{ "VRVehicleTilt",		0.0f },
+	{ "VRVehiclePiece",		-1.0f },
 	{ "VRCheatGod",			0.0f },
 	{ "VRCheatInvisible",	0.0f },
 	{ "VRCheatAmmo",		0.0f },
@@ -1185,9 +1190,15 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 			m_bAdjusting = true;
 			// Holding a magazine: adjust how it's held. Looking through the
 			// scope: adjust where the scope is.
-			m_bAdjustMag = m_bHoldingMag;
-			m_bAdjustScope = !m_bAdjustMag && m_bScoped;
-			if (m_bAdjustMag)
+			m_bAdjustMag = m_bHoldingMag && !m_bRiding;
+			m_bAdjustScope = !m_bAdjustMag && m_bScoped && !m_bRiding;
+			if (m_bRiding)
+			{
+				Message("ADJUST SNOWMOBILE: left stick slides the handlebars, right stick turns and tilts them.");
+				Message("Right grip + right stick up/down raises them. A / B: bigger / smaller. Left trigger: hide a part of the snowmobile.");
+				Message("Line them up with the snowmobile under you. Click the left stick when done.");
+			}
+			else if (m_bAdjustMag)
 			{
 				Message("ADJUST MAGAZINE: left stick slides it, right stick turns and tilts it.");
 				Message("Right grip + right stick up/down raises it. A / B: roll. (You can let go of the grip.)");
@@ -1227,6 +1238,16 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 				szMsg[sizeof(szMsg) - 1] = '\0';
 				Log("%s", szMsg);
 			}
+			else if (m_bRiding)
+			{
+				const GunFit* pDone = GetCurrentFit();
+				_snprintf(szMsg, sizeof(szMsg), "Snowmobile fit saved (slide %.1f %.1f %.1f cm, turn %.1f tilt %.1f, size %.2f).",
+					pDone ? pDone->fX : 0.0f, pDone ? pDone->fY : 0.0f, pDone ? pDone->fZ : 0.0f,
+					pDone ? pDone->fYaw : 0.0f, pDone ? pDone->fPitch : 0.0f, pDone ? pDone->fScale : 0.0f);
+				szMsg[sizeof(szMsg) - 1] = '\0';
+				Log("%s", szMsg);
+				SaveSettings();		// (the hidden part)
+			}
 			else
 				_snprintf(szMsg, sizeof(szMsg), "Gun fit saved (%s).", m_szCurrentGun);
 			szMsg[sizeof(szMsg) - 1] = '\0';
@@ -1245,6 +1266,24 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 
 	const float kSlideCmPerSec = 6.0f;
 	const float kTurnDegPerSec = 15.0f;
+
+	// Riding: the left trigger hides one part of the snowmobile under you
+	// (its world model has two; one may be handlebars that don't turn).
+	if (m_bRiding && Pressed(LTVR_LEFT, LTVR_BTN_TRIGGER))
+	{
+		int nPiece = GetVehicleHiddenPiece() + 1;
+		if (nPiece > 1)
+			nPiece = -1;
+		SetSetting("VRVehiclePiece", (float)nPiece);
+		char szMsg[96];
+		if (nPiece < 0)
+			_snprintf(szMsg, sizeof(szMsg), "Snowmobile: all of it shown.");
+		else
+			_snprintf(szMsg, sizeof(szMsg), "Snowmobile: part %d hidden.", nPiece + 1);
+		szMsg[sizeof(szMsg) - 1] = '\0';
+		Message(szMsg);
+		Log("Vehicle: world model piece %d hidden", nPiece);
+	}
 
 	float lx = m_State.hand[LTVR_LEFT].stick[0], ly = m_State.hand[LTVR_LEFT].stick[1];
 	float rx = m_State.hand[LTVR_RIGHT].stick[0], ry = m_State.hand[LTVR_RIGHT].stick[1];
@@ -1309,7 +1348,7 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 	if (pFit->fScale < 1.0f)	pFit->fScale = 1.0f;
 	if (pFit->fScale > 60.0f)	pFit->fScale = 60.0f;
 
-	if (CurrentGunHasScope())
+	if (!m_bRiding && CurrentGunHasScope())
 		MoveScopeWithGun(kBefore, *pFit);
 }
 
@@ -2423,7 +2462,7 @@ static bool VR_IsRidingNow()
 
 float CVRMgr::GetVehicleThrottle() const
 {
-	if (!IsActive() || !m_bRiding || !m_bPlayingNow)
+	if (!IsActive() || !m_bRiding || !m_bPlayingNow || m_bAdjusting)
 		return 0.0f;
 	float f = m_State.hand[LTVR_RIGHT].trigger;
 	return (f < 0.05f) ? 0.0f : (f > 1.0f ? 1.0f : f);
@@ -2431,7 +2470,7 @@ float CVRMgr::GetVehicleThrottle() const
 
 float CVRMgr::GetVehicleBrake() const
 {
-	if (!IsActive() || !m_bRiding || !m_bPlayingNow)
+	if (!IsActive() || !m_bRiding || !m_bPlayingNow || m_bAdjusting)
 		return 0.0f;
 	float f = m_State.hand[LTVR_LEFT].trigger;
 	return (f < 0.05f) ? 0.0f : (f > 1.0f ? 1.0f : f);
@@ -2440,7 +2479,7 @@ float CVRMgr::GetVehicleBrake() const
 // -1 full left .. 1 full right.
 float CVRMgr::GetVehicleSteer() const
 {
-	if (!IsActive() || !m_bRiding || !m_bPlayingNow)
+	if (!IsActive() || !m_bRiding || !m_bPlayingNow || m_bAdjusting)
 		return 0.0f;
 	if (m_bBarsHeld)
 		return m_fBarSteer;
@@ -2468,6 +2507,19 @@ void CVRMgr::UpdateVehicle(bool bPlaying)
 		m_bBarsHeld = false;
 		m_fBarSteer = 0.0f;
 		Log("Vehicle: %s", m_bRiding ? "on the snowmobile" : "off the snowmobile");
+
+		// While riding, the adjust mode (left stick click) fits the cockpit
+		// onto the snowmobile; afterwards, back to the gun.
+		if (m_bRiding)
+		{
+			SAFE_STRCPY(m_szGunBeforeRiding, m_szCurrentGun);
+			SetCurrentGun(kVehicleFitName, LTNULL);
+		}
+		else
+		{
+			m_hRiddenVehicle = LTNULL;
+			SetCurrentGun(m_szGunBeforeRiding, LTNULL);
+		}
 	}
 	if (!m_bRiding || !bPlaying)
 	{
@@ -2515,8 +2567,8 @@ void CVRMgr::UpdateVehicle(bool bPlaying)
 		m_fBarSteer = (fSteer < -1.0f) ? -1.0f : (fSteer > 1.0f ? 1.0f : fSteer);
 	}
 
-	// B gets off (as "use" does on foot).
-	if (Pressed(LTVR_RIGHT, LTVR_BTN_SECONDARY))
+	// B gets off (as "use" does on foot; while adjusting, B sizes).
+	if (Pressed(LTVR_RIGHT, LTVR_BTN_SECONDARY) && !m_bAdjusting)
 	{
 		Log("Vehicle: B - getting off");
 		SendCommandClick(COMMAND_ID_ACTIVATE);
@@ -2533,6 +2585,59 @@ void CVRMgr::SendCommandClick(int nCommand)
 		g_pPlayerMgr->OnCommandOn(nCommand);
 	if (!g_pInterfaceMgr->OnCommandOff(nCommand))
 		g_pPlayerMgr->OnCommandOff(nCommand);
+}
+
+const char* const CVRMgr::kVehicleFitName = "Snowmobile";
+
+bool CVRMgr::GetVehicleFit(LTVector& vCm, float& fYawDeg, float& fPitchDeg, float& fSize) const
+{
+	for (int i = 0; i < m_nGunFits; ++i)
+	{
+		if (!stricmp(m_aGunFits[i].szName, kVehicleFitName))
+		{
+			const GunFit& fit = m_aGunFits[i];
+			vCm.Init(fit.fX, fit.fY, fit.fZ);
+			fYawDeg = fit.fYaw;
+			fPitchDeg = fit.fPitch;
+			fSize = (fit.fScale > 0.05f) ? fit.fScale : g_vtVRGunScale.GetFloat(12.0f);
+			return true;
+		}
+	}
+	return false;
+}
+
+// The first ride: the cockpit's fit starts where it was drawn (in front of
+// your eyes), measured against the snowmobile under you.
+void CVRMgr::InitVehicleFit(const LTVector& vCm, float fYawDeg, float fPitchDeg, float fSize)
+{
+	LTVector v;
+	float a, b, c;
+	if (GetVehicleFit(v, a, b, c) || m_nGunFits >= kMaxGunFits)
+		return;
+	GunFit& fit = m_aGunFits[m_nGunFits++];
+	memset(&fit, 0, sizeof(fit));
+	SAFE_STRCPY(fit.szName, kVehicleFitName);
+	fit.fX = vCm.x;
+	fit.fY = vCm.y;
+	fit.fZ = vCm.z;
+	fit.fYaw = fYawDeg;
+	fit.fPitch = fPitchDeg;
+	fit.fScale = fSize;
+	SaveGunFits();
+	// (The adjust mode finds it by name.)
+	m_nCurrentFit = -1;
+	for (int i = 0; i < m_nGunFits; ++i)
+	{
+		if (!stricmp(m_aGunFits[i].szName, m_szCurrentGun))
+			m_nCurrentFit = i;
+	}
+	Log("Vehicle: cockpit fit started at %.1f %.1f %.1f cm, turn %.1f tilt %.1f, size %.2f (from where it was drawn)",
+		vCm.x, vCm.y, vCm.z, fYawDeg, fPitchDeg, fSize);
+}
+
+int CVRMgr::GetVehicleHiddenPiece() const
+{
+	return (int)floor(g_vtVRVehiclePiece.GetFloat(-1.0f) + 0.5f);
 }
 
 float CVRMgr::GetCloseScale() const

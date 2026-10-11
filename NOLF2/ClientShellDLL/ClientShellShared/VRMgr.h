@@ -80,9 +80,18 @@ public:
 	float		GetVehicleSteer() const;
 	void		BodyToCloseCamera(LTVector& vPos, LTRotation& rRot, float fCloseScale) const;
 	void		SendCommandClick(int nCommand);
+	// The snowmobile you ride (its world model, attached to you): the
+	// cockpit model sits on it at the "Snowmobile" fit (cm and degrees in
+	// its frame, and size), set by eye in the adjust mode while riding.
+	void		SetRiddenVehicleObject(HOBJECT hObj)	{ m_hRiddenVehicle = hObj; }
+	HOBJECT		GetRiddenVehicleObject() const		{ return m_bRiding ? m_hRiddenVehicle : LTNULL; }
+	bool		GetVehicleFit(LTVector& vCm, float& fYawDeg, float& fPitchDeg, float& fSize) const;
+	void		InitVehicleFit(const LTVector& vCm, float fYawDeg, float fPitchDeg, float fSize);
+	int			GetVehicleHiddenPiece() const;		// the world model's piece hidden (-1 none)
 	float		GetCloseScale() const;		// really-close space's size this frame
 	void		LogModelOnce(HOBJECT hModel, const char* pszTag);	// (vr_models.log)
 	static const float kBarLockDeg;			// the handlebars' full lock, degrees
+	static const char* const kVehicleFitName;	// "Snowmobile" (its fit in vr_guns.txt)
 
 	// How much to turn the body this frame (radians), from the turn
 	// stick: smooth by default, snap turns if VRSnapTurn is 1.
@@ -295,6 +304,8 @@ private:
 	void		UpdateStickClicks(bool bPlay);
 	void		UpdateVehicle(bool bPlaying);
 	bool		m_bRiding;
+	HOBJECT		m_hRiddenVehicle;
+	char		m_szGunBeforeRiding[64];
 	bool		m_bPlayingNow;
 	bool		m_bBarsHeld;			// both hands on the snowmobile's handlebars
 	float		m_fBarSteer;

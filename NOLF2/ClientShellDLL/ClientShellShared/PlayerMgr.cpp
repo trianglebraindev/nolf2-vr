@@ -5342,6 +5342,13 @@ void CPlayerMgr::HideShowAttachments(HOBJECT hObj)
         if (bVRVehicle)
 		{
 			g_pCommonLT->SetObjectFlags(attachList[i], OFT_Flags, FLAG_VISIBLE, FLAG_VISIBLE);
+			g_VRMgr.SetRiddenVehicleObject(attachList[i]);
+
+			// (A part of it can be hidden, from the snowmobile adjust mode.)
+			int nHide = g_VRMgr.GetVehicleHiddenPiece();
+			for (int nPiece = 0; nPiece < 2; ++nPiece)
+				g_pModelLT->SetPieceHideStatus(attachList[i], (HMODELPIECE)nPiece, nPiece == nHide);
+
 			static HOBJECT s_hLogged = LTNULL;
 			if (s_hLogged != attachList[i])
 			{
