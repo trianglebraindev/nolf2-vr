@@ -76,6 +76,9 @@ struct HandInput
 	bool	primary;		// A (right) / X (left)
 	bool	secondary;		// B (right) / Y (left)
 	bool	menu;			// left menu button
+	bool	touchValid;		// the controller reports the touches below
+	bool	triggerTouch;	// index finger on the trigger
+	bool	thumbTouch;		// thumb on the stick, a button or the thumb rest
 };
 
 struct ScreenDesc

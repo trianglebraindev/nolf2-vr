@@ -564,6 +564,9 @@ static void VR_BuildState()
 		if (in.primary)			nBits |= LTVR_BTN_PRIMARY;
 		if (in.secondary)		nBits |= LTVR_BTN_SECONDARY;
 		if (in.menu)			nBits |= LTVR_BTN_MENU;
+		if (in.touchValid)		nBits |= LTVR_BTN_TOUCH_VALID;
+		if (in.triggerTouch)	nBits |= LTVR_BTN_TRIGGER_TOUCH;
+		if (in.thumbTouch)		nBits |= LTVR_BTN_THUMB_TOUCH;
 		nBits |= VR_StickBits(in.stickX, in.stickY, prev.hand[h].buttons);
 		out.buttons = nBits;
 	}

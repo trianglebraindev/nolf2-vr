@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	11
+#define LTVR_VERSION	12
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -42,6 +42,10 @@
 #define LTVR_BTN_STICK_DOWN		(1 << 7)	//   direction (for using the stick
 #define LTVR_BTN_STICK_LEFT		(1 << 8)	//   as buttons, e.g. jump/crouch)
 #define LTVR_BTN_STICK_RIGHT	(1 << 9)
+// Finger sensing (the controllers feel where your fingers rest):
+#define LTVR_BTN_TRIGGER_TOUCH	(1 << 10)	// index finger on the trigger
+#define LTVR_BTN_THUMB_TOUCH	(1 << 11)	// thumb on the stick, a button or the thumb rest
+#define LTVR_BTN_TOUCH_VALID	(1 << 12)	// the two above are reported
 
 typedef struct LTVR_Pose
 {

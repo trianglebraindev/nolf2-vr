@@ -736,6 +736,22 @@ the shutdown hang.
   once to vr_models.log ("Snowmobile"), to put your hands there (or on the
   bars) next.
 
+## Finger sensing (first pass)
+
+- Tre: index finger and thumb moving on their own, like Quest's own hands.
+  Picks: the empty hand only (the free left hand; a holstered right hand
+  has no hand model at all, "Holster" is an empty model); Quest style.
+- The bridge reads the controllers' capacitive touches: trigger/touch,
+  and the thumb on thumbstick / x / y / a / b / thumbrest (one action,
+  any of them). They're the last bindings: if a runtime refuses them, the
+  rest is bound again without. LTVR_BTN_TRIGGER_TOUCH / THUMB_TOUCH /
+  TOUCH_VALID (LTVR_VERSION 12).
+- VR_FingerClose: index off the trigger points (straighter than relaxed),
+  on it bends a quarter, then closes with the trigger; thumb up when
+  lifted, down on a button / stick / rest (tighter with the grip); the
+  other three follow the grip. Without touch reports: the index follows
+  the trigger, the thumb rests down.
+
 ## Menus: the mouse steps aside
 
 - Problem (Tre): in menus the mouse cursor sat in the middle of the screen

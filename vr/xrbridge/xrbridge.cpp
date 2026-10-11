@@ -311,6 +311,7 @@ struct Bridge::Impl
 	XrAction				m_hGripPose, m_hAimPose;
 	XrAction				m_hTrigger, m_hSqueeze, m_hStick;
 	XrAction				m_hStickClick, m_hPrimary, m_hSecondary, m_hMenu;
+	XrAction				m_hTriggerTouch, m_hThumbTouch;		// (finger sensing)
 	XrPath					m_aHandPath[HAND_COUNT];
 	XrSpace					m_aGripSpace[HAND_COUNT];
 	XrSpace					m_aAimSpace[HAND_COUNT];
@@ -341,6 +342,7 @@ struct Bridge::Impl
 		m_hActionSet = XR_NULL_HANDLE;
 		m_hGripPose = m_hAimPose = m_hTrigger = m_hSqueeze = m_hStick = XR_NULL_HANDLE;
 		m_hStickClick = m_hPrimary = m_hSecondary = m_hMenu = XR_NULL_HANDLE;
+		m_hTriggerTouch = m_hThumbTouch = XR_NULL_HANDLE;
 		for (int h = 0; h < HAND_COUNT; ++h)
 		{
 			m_aHandPath[h] = XR_NULL_PATH;
@@ -791,6 +793,8 @@ bool Bridge::Impl::CreateInput()
 	m_hPrimary		= CreateAction("primary",		"A / X button",		XR_ACTION_TYPE_BOOLEAN_INPUT,	true);
 	m_hSecondary	= CreateAction("secondary",		"B / Y button",		XR_ACTION_TYPE_BOOLEAN_INPUT,	true);
 	m_hMenu			= CreateAction("menu",			"Menu button",		XR_ACTION_TYPE_BOOLEAN_INPUT,	false);
+	m_hTriggerTouch	= CreateAction("trigger_touch",	"Finger on trigger", XR_ACTION_TYPE_BOOLEAN_INPUT,	true);
+	m_hThumbTouch	= CreateAction("thumb_touch",	"Thumb resting",	XR_ACTION_TYPE_BOOLEAN_INPUT,	true);
 
 	// Meta Quest Touch controllers (what Virtual Desktop presents).
 	struct { XrAction a; const char* psz; } aBind[] = {
@@ -811,7 +815,21 @@ bool Bridge::Impl::CreateInput()
 		{ m_hSecondary,		"/user/hand/left/input/y/click" },
 		{ m_hSecondary,		"/user/hand/right/input/b/click" },
 		{ m_hMenu,			"/user/hand/left/input/menu/click" },
+		// Finger sensing (capacitive), for the hands' index finger and
+		// thumb. (Kept last: if the runtime refuses them, they're dropped
+		// and the rest bound again.)
+		{ m_hTriggerTouch,	"/user/hand/left/input/trigger/touch" },
+		{ m_hTriggerTouch,	"/user/hand/right/input/trigger/touch" },
+		{ m_hThumbTouch,	"/user/hand/left/input/thumbstick/touch" },
+		{ m_hThumbTouch,	"/user/hand/right/input/thumbstick/touch" },
+		{ m_hThumbTouch,	"/user/hand/left/input/x/touch" },
+		{ m_hThumbTouch,	"/user/hand/left/input/y/touch" },
+		{ m_hThumbTouch,	"/user/hand/right/input/a/touch" },
+		{ m_hThumbTouch,	"/user/hand/right/input/b/touch" },
+		{ m_hThumbTouch,	"/user/hand/left/input/thumbrest/touch" },
+		{ m_hThumbTouch,	"/user/hand/right/input/thumbrest/touch" },
 	};
+	const uint32_t kTouchBindings = 10;
 	const uint32_t nBind = sizeof(aBind) / sizeof(aBind[0]);
 	XrActionSuggestedBinding aSuggested[sizeof(aBind) / sizeof(aBind[0])];
 	for (uint32_t i = 0; i < nBind; ++i)
@@ -825,8 +843,14 @@ bool Bridge::Impl::CreateInput()
 	sb.interactionProfile = Path("/interaction_profiles/oculus/touch_controller");
 	sb.countSuggestedBindings = nBind;
 	sb.suggestedBindings = aSuggested;
-	if (!Check(xrSuggestInteractionProfileBindings(m_hInstance, &sb), "xrSuggestInteractionProfileBindings(touch)"))
-		return false;
+	if (XR_FAILED(xrSuggestInteractionProfileBindings(m_hInstance, &sb)))
+	{
+		// Without the finger sensing, then.
+		Log("Controller bindings with finger sensing refused; binding without it");
+		sb.countSuggestedBindings = nBind - kTouchBindings;
+		if (!Check(xrSuggestInteractionProfileBindings(m_hInstance, &sb), "xrSuggestInteractionProfileBindings(touch)"))
+			return false;
+	}
 
 	XrSessionActionSetsAttachInfo ai;
 	ZeroMemory(&ai, sizeof(ai));
@@ -952,6 +976,15 @@ void Bridge::Impl::UpdateInput()
 			gi.action = m_hMenu;
 			if (XR_SUCCEEDED(xrGetActionStateBoolean(m_hSession, &gi, &bs)) && bs.isActive) hand.menu = bs.currentState != 0;
 		}
+		gi.action = m_hTriggerTouch;
+		if (m_hTriggerTouch != XR_NULL_HANDLE && XR_SUCCEEDED(xrGetActionStateBoolean(m_hSession, &gi, &bs)) && bs.isActive)
+		{
+			hand.touchValid = true;
+			hand.triggerTouch = bs.currentState != 0;
+		}
+		gi.action = m_hThumbTouch;
+		if (m_hThumbTouch != XR_NULL_HANDLE && XR_SUCCEEDED(xrGetActionStateBoolean(m_hSession, &gi, &bs)) && bs.isActive)
+			hand.thumbTouch = bs.currentState != 0;
 	}
 }
 

@@ -1877,6 +1877,39 @@ static const float kFingerClosed[5]	= { 0.0f, 0.0f, 75.0f, 90.0f, 55.0f };
 // (The thumb: index 1 is its base swinging over the palm.)
 static const float kThumbOpen[5]	= { 0.0f, 0.0f, 5.0f, 5.0f, 0.0f };
 static const float kThumbClosed[5]	= { 0.0f, 25.0f, 25.0f, 35.0f, 0.0f };
+// The index finger pointing (off the trigger): straighter than relaxed.
+static const float kPointOpen[5]	= { 0.0f, 0.0f, 0.0f, 2.0f, 2.0f };
+
+// How far each finger of the free left hand is closed, 0 open .. 1 fist,
+// Quest style (Tre): the index finger off the trigger points, resting on
+// it bends a little, and closes as the trigger is pulled; the thumb is up
+// when lifted, down when on the stick, a button or the thumb rest (and
+// tighter with the grip); the other three follow the grip. Controllers or
+// runtimes that don't report the touches: the index follows the trigger,
+// the thumb rests down.
+static float VR_FingerClose(const LTVR_HandState& hand, int nFinger, bool* pbPoint)
+{
+	float fGrip = (hand.squeeze < 0.0f) ? 0.0f : (hand.squeeze > 1.0f ? 1.0f : hand.squeeze);
+	float fTrigger = (hand.trigger < 0.0f) ? 0.0f : (hand.trigger > 1.0f ? 1.0f : hand.trigger);
+	const bool bKnown = (hand.buttons & LTVR_BTN_TOUCH_VALID) != 0;
+	*pbPoint = false;
+	if (nFinger == 1)
+	{
+		bool bOn = bKnown ? ((hand.buttons & LTVR_BTN_TRIGGER_TOUCH) != 0 || fTrigger > 0.05f) : (fTrigger > 0.02f);
+		if (!bOn)
+		{
+			*pbPoint = true;
+			return 0.0f;
+		}
+		return 0.25f + 0.75f * fTrigger;
+	}
+	if (nFinger == 0)
+	{
+		bool bOn = bKnown ? ((hand.buttons & LTVR_BTN_THUMB_TOUCH) != 0) : true;
+		return bOn ? 0.55f + 0.45f * fGrip : 0.0f;
+	}
+	return fGrip;
+}
 
 // Rotation by fAngle radians about a unit axis (written out, so it doesn't
 // depend on which way round LithTech's own helpers turn): R * v turns v
@@ -2203,11 +2236,10 @@ void CVRMgr::CurlFinger(const FingerJoint& joint, LTMatrix& mNode, const LTMatri
 		return;
 
 	// This joint's angle from the base bone: the angles of the joints up to
-	// here, from open to closed with the grip.
-	float fGrip = m_State.hand[LTVR_LEFT].squeeze;
-	if (fGrip < 0.0f) fGrip = 0.0f;
-	if (fGrip > 1.0f) fGrip = 1.0f;
-	const float* pOpen = (f == 0) ? kThumbOpen : kFingerOpen;
+	// here, from open to closed (see VR_FingerClose).
+	bool bPoint = false;
+	float fGrip = VR_FingerClose(m_State.hand[LTVR_LEFT], f, &bPoint);
+	const float* pOpen = (f == 0) ? kThumbOpen : (bPoint ? kPointOpen : kFingerOpen);
 	const float* pClosed = (f == 0) ? kThumbClosed : kFingerClosed;
 	float fWant = 0.0f;
 	for (int n = 1; n <= joint.nSeg; ++n)
