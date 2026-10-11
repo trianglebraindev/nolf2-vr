@@ -727,8 +727,12 @@ the shutdown hang.
   wristR bones): hands only, the left one on the left controller, the
   right on the bar (it's the bars' child, so it turns with them). The
   really-close scale while riding is the snowmobile fit's size.
-- (Hands still to come: the right hand following its controller when it
-  lets go of the bar.) Its bones are logged
+- Tre liked both hands on the bars: riding, the left hand goes back to
+  the bar (the cockpit's own pose) whenever the left grip is held, and
+  follows the controller otherwise.
+- (Still to come if wanted: the right hand following its controller when
+  it lets go of the bar; shooting one-handed while riding - Tre: "the
+  game doesn't really need it".) Its bones are logged
   once to vr_models.log ("Snowmobile"), to put your hands there (or on the
   bars) next.
 

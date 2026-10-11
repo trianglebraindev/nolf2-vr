@@ -1777,7 +1777,10 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 		// (see CurlFinger), so it's the same hand whatever the weapon.
 		LTMatrix mT;
 		LTVector vPalm;
-		if (p->IsActive() && !p->m_bTwoHand && p->GetFreeHandTransform(mT, vPalm))
+		// (Riding, with the left grip held: the hand stays on the snowmobile's
+		// bar, as its animation has it - Tre liked both hands on the bars.)
+		const bool bOnBar = p->m_bRiding && (p->m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) != 0;
+		if (p->IsActive() && !p->m_bTwoHand && !bOnBar && p->GetFreeHandTransform(mT, vPalm))
 		{
 			p->m_mFreeHand = mT;
 			p->m_vPalmNormal = vPalm;
