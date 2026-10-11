@@ -511,6 +511,11 @@ the shutdown hang.
   degrees, about the hand's axes); Tre's settings for the AK-47,
   Sterling, Tommy gun and sniper become the built-in defaults (Tre's
   workup: held upright like a handle, the top just above the fist).
+- Tre's holds (slide right / up / forward cm; turn / tilt / roll deg),
+  now built in: AK-47 -1.6 2.3 6.2 / -19 79 0; Sterlings 4.1 3.8 8.0 /
+  -78 77 0; Tommy guns 7.6 -7.0 -2.2 / 5 49 0; sniper 0.3 2.3 5.4 / 0
+  -46 0; Beretta 0.1 -0.2 0.1 / -2 10 0. A gun in vr_guns.txt whose hold
+  is all 0 (never set) gets the built-in one.
 - The shoulder (CVRMgr::IsLeftHandAtShoulder): left of the head's middle,
   no further forward than the face, from about chest height up, within
   half a metre, in a frame turned by the head's heading only. While the

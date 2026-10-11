@@ -906,13 +906,20 @@ static const struct { const char* pszName; float x, y, z, yaw, pitch, scale, sco
 	float magX, magY, magZ, magYaw, magPitch, magRoll; } kDefaultGunFits[] =
 {
 	{ "Crossbow",			0.10f, 0.00f, 0.25f,	5.62f, 1.39f,	12.0f,	0.0f, 0.0f,		0, 0, 0, 0, 0, 0 },
-	{ "Sterling",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f,		0, 0, 0, 0, 0, 0 },
-	{ "SilencedSterling",	0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f,		0, 0, 0, 0, 0, 0 },
+	// (The magazine holds are Tre's, set by eye in the headset: held upright
+	// like a handle. The Sterlings share a magazine, as do the Tommy guns.
+	// A size of 0 means VRGunScale.)
+	{ "Sterling",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f,		4.1f, 3.8f, 8.0f,	-78.0f, 77.0f, 0.0f },
+	{ "SilencedSterling",	0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	8.5f,	0.0f, 0.0f,		4.1f, 3.8f, 8.0f,	-78.0f, 77.0f, 0.0f },
+	{ "AK-47",				0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	0.0f,	0.0f, 0.0f,		-1.6f, 2.3f, 6.2f,	-19.0f, 79.0f, 0.0f },
+	{ "Beretta",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	0.0f,	0.0f, 0.0f,		0.1f, -0.2f, 0.1f,	-2.0f, 10.0f, 0.0f },
+	{ "Tommygun",			0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	0.0f,	0.0f, 0.0f,		7.6f, -7.0f, -2.2f,	5.0f, 49.0f, 0.0f },
+	{ "TommygunInfinite",	0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	0.0f,	0.0f, 0.0f,		7.6f, -7.0f, -2.2f,	5.0f, 49.0f, 0.0f },
 	// The sniper's scope is part of its model. Measured from vr_game.log:
 	// sighting down its tube, the eye was 14.4 cm up (+-1) and 3 - 6 cm left
 	// of the aim line (15 samples, two sessions), against 8 / 0 for the
 	// crossbow's scope.
-	{ "Sniper Rifle",		0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	12.0f,	6.4f, -4.1f,	0, 0, 0, 0, 0, 0 },
+	{ "Sniper Rifle",		0.00f, 0.00f, 0.00f,	0.00f, 0.00f,	12.0f,	6.4f, -4.1f,	0.3f, 2.3f, 5.4f,	0.0f, -46.0f, 0.0f },
 };
 
 // vr_guns.txt: one line per weapon:  "Name" x y z yaw pitch scale [scopeUp scopeRight
@@ -952,7 +959,22 @@ void CVRMgr::LoadGunFits()
 		for (int i = 0; i < m_nGunFits; ++i)
 		{
 			if (!stricmp(m_aGunFits[i].szName, kDefaultGunFits[d].pszName))
+			{
 				bHave = true;
+				// In the file but its magazine hold never set (all 0, e.g.
+				// a file from before there were holds): the built-in hold.
+				GunFit& have = m_aGunFits[i];
+				if (have.fMagX == 0.0f && have.fMagY == 0.0f && have.fMagZ == 0.0f &&
+					have.fMagYaw == 0.0f && have.fMagPitch == 0.0f && have.fMagRoll == 0.0f)
+				{
+					have.fMagX = kDefaultGunFits[d].magX;
+					have.fMagY = kDefaultGunFits[d].magY;
+					have.fMagZ = kDefaultGunFits[d].magZ;
+					have.fMagYaw = kDefaultGunFits[d].magYaw;
+					have.fMagPitch = kDefaultGunFits[d].magPitch;
+					have.fMagRoll = kDefaultGunFits[d].magRoll;
+				}
+			}
 		}
 		if (bHave)
 			continue;
