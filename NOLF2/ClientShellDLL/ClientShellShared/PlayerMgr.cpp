@@ -243,6 +243,9 @@ CPlayerMgr::CPlayerMgr()
 	m_fCamDuck				= 0.0f;
 	m_fVRDuck				= 0.0f;
 	m_fVRLureTurn			= 0.0f;
+	m_fVRCutsceneFovX		= 90.0f;
+	m_hVRCutsceneCam		= LTNULL;
+	m_fVRCutsceneFovLogged	= 0.0f;
 	m_fDuckDownV			= -75.0f;
 	m_fDuckUpV				= 75.0f;
 	m_fMaxDuckDistance		= -20.0f;
@@ -1929,6 +1932,19 @@ LTBOOL CPlayerMgr::UpdateAlternativeCamera()
 
 					float	fFovX = pCamFX->GetFovX();
 					float	fFovY = pCamFX->GetFovY();
+
+					// VR: remembered (a very zoomed-in shot can't be framed in
+					// 3D; see CVRMgr::IsCutsceneFlat), and each camera logged
+					// as it comes on or zooms.
+					m_fVRCutsceneFovX = fFovX;
+					if (g_VRMgr.IsActive() && (hObj != m_hVRCutsceneCam || fabs(fFovX - m_fVRCutsceneFovLogged) > 2.0f))
+					{
+						m_hVRCutsceneCam = hObj;
+						m_fVRCutsceneFovLogged = fFovX;
+						CVRMgr::Log("Cutscene camera: world %s, type %d, view %.1f x %.1f degrees, at %.0f %.0f %.0f",
+							g_pMissionMgr ? g_pMissionMgr->GetCurrentWorldName() : "?", (int)s_nLastCamType,
+							fFovX, fFovY, vPos.x, vPos.y, vPos.z);
+					}
 
 					TurnOnAlternativeCamera(s_nLastCamType, fFovX, fFovY);
 

@@ -92,6 +92,7 @@ public:
 	HLOCALOBJ	GetCamera()	const					{ return m_hCamera; }
 
     LTBOOL		IsUsingExternalCamera()	const	{ return m_bUsingExternalCamera; }
+	float		GetCutsceneFovX()		const	{ return m_fVRCutsceneFovX; }	// the cutscene camera's field of view across, degrees
 	LTBOOL		IsCameraListener()		const	{ return m_bCamIsListener; }
 	LTBOOL		InCameraGadgetRange(HOBJECT hObj);
 	void		AllowPlayerMovement(LTBOOL bAllowPlayerMovement);
@@ -426,6 +427,9 @@ protected:
     LTBOOL   m_bStartedDuckingUp;        // Have we started back up
     float	 m_fCamDuck;                 // How far to move camera
 	float		m_fVRDuck;			// VR: the game's own crouch lowering of the view (see UpdateCameraPosition)
+	float		m_fVRCutsceneFovX;	// (see GetCutsceneFovX)
+	HOBJECT		m_hVRCutsceneCam;	// (the one last logged)
+	float		m_fVRCutsceneFovLogged;
 	float		m_fVRLureTurn;		// VR: how far the turn stick has turned you on a scripted ride (see CalculateCameraRotation)
     float	 m_fDuckDownV;               // Ducking down velocity
     float	 m_fDuckUpV;                 // Ducking up velocity

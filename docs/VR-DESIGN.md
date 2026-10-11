@@ -778,6 +778,14 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
   of view, with the interface: subtitles, fades) is copied to the screen
   layer. The screen is placed in front of your head as the cutscene
   starts (VRScreenDistance / VRScreenAngle, as menus) and stays there.
+- The opening credits (after the cold open) are drawn by a far-off,
+  very zoomed-in camera: in 3D they came out tiny and distant. Tre: the
+  intro only goes on the flat screen (other cutscenes as chosen).
+  IsIntroCredits: the first mission's first level, and a camera narrower
+  than 30 degrees across. Every cutscene camera is logged ("Cutscene
+  camera:" world, type, field of view, position) to check those numbers.
+- Music guard, measured working: 12 of 12 samples at dmusic+18BFE before
+  any music, at dmusic+18CA7 after; held for every load and unload.
 - During a cutscene our own hand controls are off (stick clicks, gun
   adjusting, weapon ring, two-hand grip, the hand reload and throw
   buttons); the game's bindings stay, as the left trigger ("activate")

@@ -169,6 +169,8 @@
 #include "ltquaduvutils.h"
 #include "CheatMgr.h"
 #include "VehicleMgr.h"
+#include "MissionMgr.h"
+#include "MissionButeMgr.h"
 #include <stdarg.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -543,8 +545,43 @@ bool CVRMgr::IsThrowByHand() const
 
 bool CVRMgr::IsCutsceneFlat() const
 {
-	return IsActive() && m_pfnSetFlatView && g_pPlayerMgr && g_pPlayerMgr->IsUsingExternalCamera() &&
-		g_vtVRCutsceneFlat.GetFloat(0.0f) != 0.0f;
+	if (!IsActive() || !m_pfnSetFlatView || !g_pPlayerMgr || !g_pPlayerMgr->IsUsingExternalCamera())
+		return false;
+	return g_vtVRCutsceneFlat.GetFloat(0.0f) != 0.0f || IsIntroCredits();
+}
+
+// The credits: in the game's first level (the first mission's first), a
+// camera zoomed in far past any normal shot. (Every cutscene camera is
+// logged, "Cutscene camera:", to check the numbers.)
+bool CVRMgr::IsIntroCredits() const
+{
+	const float kZoomedDeg = 30.0f;
+	if (!g_pPlayerMgr || !g_pPlayerMgr->IsUsingExternalCamera() || g_pPlayerMgr->GetCutsceneFovX() >= kZoomedDeg)
+		return false;
+	if (!g_pMissionMgr || !g_pMissionButeMgr || g_pMissionButeMgr->GetNumMissions() < 1)
+		return false;
+	const MISSION* pMission = g_pMissionButeMgr->GetMission(0);
+	if (!pMission || pMission->nNumLevels < 1)
+		return false;
+
+	// (Compared without folders or ".dat".)
+	char szFirst[128];
+	char szNow[128];
+	const char* apszIn[2] = { pMission->aLevels[0].szLevel, g_pMissionMgr->GetCurrentWorldName() };
+	char* apszOut[2] = { szFirst, szNow };
+	for (int i = 0; i < 2; ++i)
+	{
+		const char* psz = apszIn[i] ? apszIn[i] : "";
+		const char* pszSlash = strrchr(psz, '\\');
+		const char* pszSlash2 = strrchr(psz, '/');
+		if (pszSlash2 > pszSlash)
+			pszSlash = pszSlash2;
+		SAFE_STRCPY(apszOut[i], pszSlash ? pszSlash + 1 : psz);
+		char* pszDot = strrchr(apszOut[i], '.');
+		if (pszDot)
+			*pszDot = '\0';
+	}
+	return szFirst[0] && stricmp(szFirst, szNow) == 0;
 }
 
 float CVRMgr::GetThrowSpeed() const

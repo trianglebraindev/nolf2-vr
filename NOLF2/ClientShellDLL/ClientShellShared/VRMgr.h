@@ -191,6 +191,10 @@ public:
 	// you: VRCutsceneFlat 1 (0 = 3D, the default). True while one is on
 	// and shown that way.
 	bool		IsCutsceneFlat() const;
+	// The game's opening credits (after the cold open): a far-off, very
+	// zoomed-in camera that can't be framed in 3D, so always on the flat
+	// screen (Tre: the intro only, other cutscenes as chosen).
+	bool		IsIntroCredits() const;
 	// A controller's grip, in tracking space (game units, before the body's
 	// heading turns it into the world).
 	bool		GetHandTracking(int nHand, LTVector& vPos) const;
