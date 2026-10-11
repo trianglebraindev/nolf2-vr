@@ -2,149 +2,85 @@
 
 A virtual reality conversion of **No One Lives Forever 2: A Spy in H.A.R.M.'s Way**
 (Monolith, 2002), built to feel as close to a native VR game as possible:
-full 6DoF head tracking, motion controllers with the gun in your hand, aiming
-where the gun points, and the game's own interface brought into the headset.
-It is not a "head-aimed" injector mod. It's a source-level port built on the
-open Jupiter EX (LithTech) engine release and the NOLF2 game code.
+full 6DoF head tracking, motion controllers with the gun in your hand,
+aiming where the gun points, and the game's own interface brought into the
+headset. It isn't a head-aimed injector mod: it's a source-level port built
+on the Jupiter EX (LithTech) engine source and Monolith's NOLF2 game code.
 
-> **Private repository.** The NOLF2 game code is covered by Monolith's
-> original SDK license, and the licensing of the engine release is unclear.
-> Don't make this repository public. No retail game data is stored here:
-> you need your own retail copy of NOLF2, patched to 1.3.
+> **Unofficial fan project.** No game data is included or stored here: you
+> need your own copy of NOLF2, patched to 1.3. Not affiliated with
+> Monolith, Warner Bros. or Activision.
 
-## What works
+## Playing
 
-- **Stereo 3D with 6DoF head tracking**, at the headset's own frame rate
-  (tested at 90 Hz on Quest 3 through Virtual Desktop / VDXR), with true
-  world scale.
-- **Motion controllers**: walk where you look (or where your left hand
-  points), smooth or snap turning, all game actions on the controllers,
-  menus navigable with the sticks.
-- **The gun in your hand**: the game's own weapon models, at real size and
-  depth in your right hand, with a per-weapon fit you can adjust in the
-  headset. Shots leave from your hand along the barrel.
-- **Hands**: forearms trimmed to gloved hands; the left hand follows your left
-  controller and opens and closes with the left grip; grip the weapon with
-  your left hand for a steadier two-handed aim.
-- **Crosshair on the target**: the game's own crosshair, accuracy spread
-  included, placed on whatever the gun points at. Searching, picking up and
-  using things work where the crosshair is.
-- **Weapon ring**: hold the right grip, reach for a weapon, let go.
-- **Interface in the headset**: the HUD, subtitles, conversation choices,
-  in-game menus and the console are drawn into their own layer. Health and
-  armour sit on your left wrist like a watch (turn it toward you to read
-  it) and ammo on the gun; the rest of the HUD
-  stays in front of you, menus appear on a panel where you're looking,
-  screen fades darken your whole view, and the main menus and movies play on
-  a big floating screen.
-- **Crash reports**: a crash writes a readable report and a minidump to
-  `run\`.
+### What you need
 
-- **VR settings in the game**: Options > VR (turning, walking direction,
-  world size, HUD distance and size, wrist and gun read-outs, hands or arms).
+- Windows 10 or 11, and a PC VR headset with an **OpenXR** runtime
+  (Virtual Desktop, SteamVR or Meta Quest Link) set as the active one.
+  Developed and tested on Quest 3 with Virtual Desktop (VDXR).
+- **No One Lives Forever 2, patched to 1.3.** This mod was built on the
+  English (UK) CD release with the official 1.3 patch; any retail copy
+  updated to 1.3 should work. Copies are available from
+  [My Abandonware](https://www.myabandonware.com/game/no-one-lives-forever-2-a-spy-in-h-a-r-m-s-way-3nv#download).
 
+### Installing
+
+1. Download the latest `NOLF2-VR-<version>.zip` from
+   [Releases](../../releases) and unzip it. You get a folder called `VR`.
+2. Put the `VR` folder inside your NOLF2 folder, next to `GAME.REZ`
+   (for example `C:\Games\No One Lives Forever 2\VR`).
+3. Start your VR runtime and put the headset on.
+4. Double-click **`Play NOLF2 VR.bat`** in the `VR` folder.
+
+Nothing else needs installing: the Visual C++ runtime and the one DirectX
+file the game needs come with it. Your normal NOLF2 isn't changed; the VR
+version keeps its own settings, saves and logs in the `VR` folder.
+
+Once in: stand (or sit) as you'll play, look ahead, and hold both stick
+clicks for a second to set your height. Settings are in **Options > VR**.
+
+### If something goes wrong
+
+- **`Check VR.bat`** tests the headset connection without the game.
+- Logs are in the `VR` folder: `vr_game.log`, `xrbridge.log`, and after a
+  crash `crash_<date>_<time>.txt` and `.dmp`. Please attach them when you
+  report a problem.
+
+## Features
+
+- **Real VR**: stereo 3D with 6DoF head tracking at the headset's own frame
+  rate, true world scale (adjustable), standing or seated play, crouching
+  for real, and height calibration with one button hold.
+- **The gun in your hand**: the game's own weapon models at real size,
+  aiming where the gun points; each weapon's fit is tuned and adjustable in
+  the headset. The crosshair sits on whatever the gun points at, and
+  searching, picking up and using things work there.
+- **Hands**: gloved hands; the free hand follows its controller, with the
+  index finger and thumb sensed separately; grip the weapon with both hands
+  for a steadier aim.
+- **Reloading by hand**: drop the magazine, take a fresh one from over your
+  shoulder, push it in; rack the slide or work the shotgun's pump when you
+  run dry. (Or the game's own reload.)
+- **Throwing by hand**: grenades, the banana, coins, shuriken: the harder
+  you throw, the further they go. The bear trap and the Angry Kitty are set
+  down where you put them.
+- **Swords** hit what the blade passes through.
 - **Scopes**: raise a scoped weapon (or the camera gadget) to your eye and
-  the lens shows the magnified view. If a scope's picture doesn't sit on
-  the scope, click the left stick while looking through it and move it
-  with the left stick (saved per weapon).
-
-- **Reloading by hand** (default; Options > VR > Reloading: Manual / Game
-  original): when the gun's empty, A drops the magazine, reach over your
-  left shoulder and grip to take a new one, and push it into the gun.
-  Guns without a separate magazine in their model (the shotgun) reload by
-  bringing your left hand to the gun. Fired empty, a gun then needs
-  cocking: grip the slide / cocking handle with your left hand and pull
-  it back (the shotgun: grip the pump and slide it back and forward; until
-  then your left hand works the pump, not the gun). An orange glow marks the part to pull. The sniper rifle needs
-  no cocking.
-
-- **Cheats** (Options > Cheats): god mode, invisible to enemies, infinite
-  ammo and flying bodies (these stay on through levels and loading until
-  you turn them off), all weapons / gear / mods, full ammo / health /
-  armor, skill points, finish the level or mission, a snowmobile, unlock
-  the chapter list, and Level select (any level of any mission; levels
-  with a scripted ride or a vehicle are marked [ride] / [vehicle]).
-
-- **The snowmobile**: right trigger is the gas (squeeze harder to go
-  faster), left trigger the brake; hold the brake at a stop to reverse.
-  Steer with both hands on the handlebars (grip them) or the left stick. B
-  gets off. Options > VR > Snowmobile view: keep the horizon level, or tilt
-  with it.
-
-- **Cutscenes** play out in 3D around you (default), or on a flat screen
-  in front of you, framed as the game's camera shot them, letterbox and
-  all: Options > VR > Cutscenes.
-
-- **Throwing by hand** (default; Options > VR > Throwing: By hand / Game
-  original): grenades, the banana, coins, shuriken: hold the trigger, swing
-  your arm and let go. The harder you throw, the further it goes. The bear
-  trap and the Angry Kitty are set down on the floor below your hand.
-
-- **Swords**: swing the katana or tulwar and it hits what the blade passes
-  through (the trigger still does the game's own slash). How hard a swing
-  has to be, or off: Options > VR > Sword swings.
-
-- **Snapshots**: left grip + left trigger saves what the headset shows to
-  `run\Snapshots`; the monitor shows the same picture.
-
-- **Comfort vignette** (off by default): the edges of the view darken
-  while you move or turn with the sticks. Options > VR > Comfort vignette
-  (Off / Light / Medium / Strong) and Vignette when (moving, turning or
-  both).
-
-Still to come (see `docs/VR-DESIGN.md`): height and real crouch, vehicles,
-cutscene options.
-
-## Requirements
-
-- Retail **NOLF2 patched to 1.3**, by default at `D:\Games\No One Lives Forever 2`
-  (change `NOLF2DIR` in `setup_run_dir.bat` if yours is elsewhere)
-- A PC VR headset with an **OpenXR** runtime that supports Direct3D 11 and
-  32-bit programs. Developed on Quest 3 with Virtual Desktop and VDXR.
-- **Visual Studio 2022** with *Desktop development with C++*, *C++ CMake tools*
-  and *C++ ATL*
-- **DirectX SDK (June 2010)**. The S1023 error at the end of its installer
-  is harmless.
-
-## Building and playing
-
-| Command | What it does |
-|---|---|
-| `update.bat` | Pull the latest changes from GitHub, then build |
-| `build_vs2022.bat` | Build only (`clean` as an argument rebuilds from scratch) |
-| `run_nolf2_vr.bat` | Play in VR |
-| `run_nolf2.bat` | Play on the monitor, windowed |
-| `run_vrprobe.bat` | Headset test: a floating test picture, no game |
-
-The game runs from the `run\` folder, never from the retail install. It's
-made by `setup_run_dir.bat` with links to the retail data, so the retail
-install stays untouched.
-
-## Making a release for players
-
-`make_release.bat` builds, then makes `release\NOLF2-VR-<version>.zip`
-(the version is in the `VERSION` file). The zip holds one `VR` folder that
-players put inside their own NOLF2 folder, next to `GAME.REZ`, and start
-with `Play NOLF2 VR.bat`. No game files are in it; the player's readme is
-`tools\release\README.txt`.
-
-- In the `VR` folder: the engine and its DLLs, the game code (`gamedll`),
-  the launcher, `Check VR.bat` (VRProbe), the Visual C++ runtime and
-  `d3dx9_43.dll` (so players install nothing else), and the starting gun
-  fits (`defaults\vr_guns.txt`, copied to `vr_guns.txt` on first run;
-  they're `tools\release\vr_guns.txt`, Tre's tuned fits).
-- The launcher runs the engine from the `VR` folder with `-rez ..\Game.rez`
-  and so on, so settings, saves, logs and crash reports stay in `VR` and
-  the player's own install is untouched. On first run it copies
-  `Engine.REZ`, `binkw32.dll`, the profile and `autoexec.cfg` from the game
-  folder and links `Movies`.
-- It also makes `release\NOLF2-VR-<version>-symbols.zip`, the `.pdb` files
-  of that exact build: keep it, don't publish it. It's what turns a
-  player's crash `.dmp` into function names and lines.
-- Players need NOLF2 patched to 1.3. Built and tested on the English (UK)
-  CD release with the 1.3 patch; any retail copy updated to 1.3 should
-  work. The readme points to
-  <https://www.myabandonware.com/game/no-one-lives-forever-2-a-spy-in-h-a-r-m-s-way-3nv#download>.
+  look through a magnified lens.
+- **Weapon ring**: hold the grip, reach for a weapon, let go.
+- **Interface in the headset**: health and armour on your wrist like a
+  watch, ammo on the gun, the HUD and subtitles on a floating panel, menus
+  and conversations driven by the controllers.
+- **The snowmobile**: drive with both hands on the handlebars (or the
+  stick); on the scripted rides, look and turn freely.
+- **Cutscenes** in 3D around you, or on a flat screen; the opening credits
+  always play on the screen, framed as intended.
+- **Comfort and accessibility**: smooth or snap turning, an optional
+  comfort vignette, left-handed play (gun, hands and every button swap
+  sides, with mirrored models), and a choice of walking stick.
+- **Cheats page** with level select, for jumping to any level.
+- **Stability**: fixes for a crash on exit and an occasional crash while
+  loading a level, and readable crash reports.
 
 ## Controls
 
@@ -161,7 +97,7 @@ with `Play NOLF2 VR.bat`. No game files are in it; the player's readme is
 | Right stick click | next ammo (manual reloading) or reload (game original) | |
 | Left grip over your left shoulder | take a magazine (manual reloading, gun without one); push it into the gun to reload | |
 | Left trigger | use, search, pick up (at the crosshair) | select |
-| Left grip + left trigger | snapshot of what the headset shows (`run\Snapshots`) | |
+| Left grip + left trigger | snapshot of what the headset shows (the `Snapshots` folder) | |
 | Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
@@ -178,10 +114,9 @@ setting (Options > VR > Walk with).
 ## Settings
 
 The everyday ones are on the **Options > VR** page in the game. Everything
-below is kept in `run\vr_settings.txt` (written when you leave that page),
-which you can also edit by hand: one `Name value` per line, read when the
-game starts. Values in that file win over the same setting given on the
-launch line in `run_nolf2_vr.bat` as `+Name value`.
+below is kept in `vr_settings.txt` (in the `VR` folder; `run\` for a
+source build), written when you leave that page. You can also edit it by
+hand: one `Name value` per line, read when the game starts.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -217,7 +152,7 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRVignette` / `VRVignetteWhen` | 0 / 3 | comfort vignette 0 off, 1 light, 2 medium, 3 strong; when: 1 moving, 2 turning, 3 both |
 | `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the game's flat camera |
 
-Files the game writes in `run\`:
+Files the game writes (in the `VR` folder, or `run\` for a source build):
 
 | File | What it is |
 |---|---|
@@ -226,6 +161,50 @@ Files the game writes in `run\`:
 | `xrbridge.log`, `vr_game.log`, `vr_models.log` | headset, game and model logs |
 | `crash_*.txt`, `crash_*.dmp` | crash reports |
 | `Snapshots\vr_*.png` | snapshots (left grip + left trigger) |
+
+## Building from source
+
+### Requirements
+
+- Your own NOLF2 patched to 1.3, by default at
+  `D:\Games\No One Lives Forever 2` (change `NOLF2DIR` in
+  `setup_run_dir.bat` if yours is elsewhere).
+- **Visual Studio 2022** with *Desktop development with C++*, *C++ CMake
+  tools* and *C++ ATL*.
+- **DirectX SDK (June 2010)**. The S1023 error at the end of its installer
+  is harmless.
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `update.bat` | Pull the latest changes, then build (the game must be closed) |
+| `build_vs2022.bat` | Build only (`clean` as an argument rebuilds from scratch) |
+| `run_nolf2_vr.bat` | Play in VR |
+| `run_nolf2.bat` | Play on the monitor, windowed |
+| `run_vrprobe.bat` | Headset test: a floating test picture, no game |
+| `make_release.bat` | Build and package a release (see below) |
+
+A source build runs from the `run\` folder, made by `setup_run_dir.bat`
+with links to your NOLF2 data, so your install stays untouched.
+
+### Making a release
+
+`make_release.bat` builds, then makes `release\NOLF2-VR-<version>.zip`
+(the version is in the `VERSION` file): one `VR` folder holding the engine
+and its DLLs, the game code (`gamedll`), the launcher
+(`tools\release\Play NOLF2 VR.bat`), `Check VR.bat`, the player readme
+(`tools\release\README.txt`), the Visual C++ runtime, `d3dx9_43.dll`, and
+the tuned starting gun fits (`tools\release\vr_guns.txt`, copied to
+`vr_guns.txt` on first run). No game files.
+
+The launcher runs the engine from the `VR` folder with `-rez ..\Game.rez`
+and so on. On first run it copies `Engine.REZ`, `binkw32.dll`, the profile
+and `autoexec.cfg` from the game folder and links `Movies`.
+
+It also makes `release\NOLF2-VR-<version>-symbols.zip`, the `.pdb` files
+of that exact build. Keep it with the release (it needn't be published):
+it's what turns a player's crash `.dmp` into function names and lines.
 
 ## How it works
 
@@ -260,16 +239,22 @@ Design notes, decisions and the roadmap: [`docs/VR-DESIGN.md`](docs/VR-DESIGN.md
   IDs in `runtime/kernel/src/sys/win/dmusic_guids.cpp`.
 - **Direct3D 9Ex**: no managed texture pool, so textures upload through a
   staging copy and the few small lockable ones are dynamic textures.
+- **A crash on exit**: object references left by the unloaded game DLL are
+  cut loose before the objects are removed (`clientmgr.cpp`).
+- **An occasional crash loading a level**: a race inside Windows'
+  DirectMusic while music loads; its service thread is held still while
+  it's parked, for the load (`ltdirectmusic_impl.cpp`).
 
 ## Credits
 
 - *No One Lives Forever 2* and its game code: Monolith Productions.
-- The engine source: the GPL release of the Jupiter EX engine (LithTech PC
-  Enterprise Edition build 69), via the
+- The engine source: the Jupiter EX engine release (LithTech PC Enterprise
+  Edition build 69), via the
   [lithtech project](https://github.com/bwrsandman/lithtech), whose history
   this repository continues.
 - OpenXR SDK: the Khronos Group (Apache 2.0), in `external/OpenXR-SDK`.
 - DirectMusic headers: the Wine project (LGPL 2.1).
+- The fix for retail levels loading: the MatzeLoCal macOS port.
 
-This is an unofficial fan project, not affiliated with Monolith, Warner
-Bros. or Activision.
+This is an unofficial, free fan project, not affiliated with Monolith,
+Warner Bros. or Activision.
