@@ -785,6 +785,16 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
 - The letterbox bars are kept in flat mode (they frame the shot on a
   screen; in 3D they'd float in front of the scene, so they stay off).
 
+## Scripted rides (the lure)
+
+- On a ride (PPM_LURE: the unicycle and the like) the ride sets your
+  heading and the game holds the view within its limits of that; the head
+  already looks anywhere. Tre: turning round with the stick too. The
+  stick's turn is kept apart from the game's yaw (PlayerMgr m_fVRLureTurn,
+  which the lure's limits would clamp back) and added where the VR view is
+  built (origin, camera rotation, GetVRBodyYaw for throws). Back to 0 off
+  the ride.
+
 ## Crashes: on exit and loading
 
 Measured from the crash reports and minidumps (crash_*.txt / .dmp in run\,
@@ -812,7 +822,10 @@ symbols from the build's .pdb files):
   First try learnt the wrong spot: the first pointer into dmusic's code
   on the stack was the thread's own start address (a stored value, not a
   call). Now only return addresses count (the bytes before are a call),
-  and the samples are logged.
+  and the samples are logged. Measured next: it waits at dmusic+18BFE
+  (12 of 12) before any music has played, elsewhere once music has, so the
+  spot learnt first never matched again ("never caught waiting"). It's
+  learnt afresh each time now.
 
 ## Menus: the mouse steps aside
 

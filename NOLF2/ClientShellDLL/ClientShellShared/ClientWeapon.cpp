@@ -6331,7 +6331,7 @@ void CClientWeapon::VR_Throw( int eKind )
 		// space into it), scaled against a comfortable throw.
 		LTVector vTrackVel;
 		VR_GetThrowVelocity( vTrackVel );
-		LTVector vHandVel = VR_Rotate( LTRotation( 0.0f, g_pPlayerMgr->GetYaw(), 0.0f ), vTrackVel );
+		LTVector vHandVel = VR_Rotate( LTRotation( 0.0f, g_pPlayerMgr->GetVRBodyYaw(), 0.0f ), vTrackVel );
 		float fHandMps = vHandVel.Mag() / fUnitsPerMeter;
 
 		const bool bGravity = ( pFX->dwObjectFlags & FLAG_GRAVITY ) != 0;
@@ -6372,7 +6372,7 @@ void CClientWeapon::VR_Throw( int eKind )
 		// points (level).
 		vDir.y = 0.0f;
 		if ( vDir.MagSqr() < 0.0001f )
-			vDir = LTRotation( 0.0f, g_pPlayerMgr->GetYaw(), 0.0f ).Forward();
+			vDir = LTRotation( 0.0f, g_pPlayerMgr->GetVRBodyYaw(), 0.0f ).Forward();
 		vDir.Normalize();
 		CVRMgr::Log( "Throw: %s - set down below the hand", m_pWeapon->szName );
 	}

@@ -136,6 +136,7 @@ public:
 
 	float		GetPitch()  const { return m_fPitch; }
     float		GetYaw()    const { return m_fYaw; }
+	float		GetVRBodyYaw() const { return m_fYaw + m_fVRLureTurn; }	// VR: the body's heading (with stick turning on a scripted ride)
     float		GetRoll()   const { return m_fRoll; }
 
     float		GetPlayerPitch()    const { return m_fPlayerPitch; }
@@ -425,6 +426,7 @@ protected:
     LTBOOL   m_bStartedDuckingUp;        // Have we started back up
     float	 m_fCamDuck;                 // How far to move camera
 	float		m_fVRDuck;			// VR: the game's own crouch lowering of the view (see UpdateCameraPosition)
+	float		m_fVRLureTurn;		// VR: how far the turn stick has turned you on a scripted ride (see CalculateCameraRotation)
     float	 m_fDuckDownV;               // Ducking down velocity
     float	 m_fDuckUpV;                 // Ducking up velocity
     float	 m_fMaxDuckDistance;         // Max distance we can duck

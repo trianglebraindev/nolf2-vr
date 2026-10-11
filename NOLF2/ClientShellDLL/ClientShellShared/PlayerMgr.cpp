@@ -242,6 +242,7 @@ CPlayerMgr::CPlayerMgr()
 	m_bStartedDuckingUp     = LTFALSE;
 	m_fCamDuck				= 0.0f;
 	m_fVRDuck				= 0.0f;
+	m_fVRLureTurn			= 0.0f;
 	m_fDuckDownV			= -75.0f;
 	m_fDuckUpV				= 75.0f;
 	m_fMaxDuckDistance		= -20.0f;
@@ -3571,12 +3572,14 @@ void CPlayerMgr::UpdateCameraPosition()
 
 			// Riding with "tilt with the vehicle" on: the body banks and
 			// climbs with the snowmobile (otherwise only its heading turns).
+			// (Plus any stick turning on a scripted ride.)
 			const bool bTilt = g_VRMgr.IsRiding() && g_VRMgr.IsVehicleTilt();
-			LTRotation rBody = bTilt ? LTRotation(m_fPitch, m_fYaw, m_fRoll) : LTRotation(0.0f, m_fYaw, 0.0f);
+			const float fBodyYaw = m_fYaw + m_fVRLureTurn;
+			LTRotation rBody = bTilt ? LTRotation(m_fPitch, m_fYaw, m_fRoll) : LTRotation(0.0f, fBodyYaw, 0.0f);
 			if (bTilt)
 				g_VRMgr.SetOriginRot(vPos, rBody);
 			else
-				g_VRMgr.SetOrigin(vPos, m_fYaw);
+				g_VRMgr.SetOrigin(vPos, fBodyYaw);
 
 			LTVector vHead = g_VRMgr.GetHeadOffset();
 			vPos += rBody.Right() * vHead.x + rBody.Up() * vHead.y + rBody.Forward() * vHead.z;
@@ -3866,9 +3869,25 @@ void CPlayerMgr::CalculateCameraRotation()
 		m_fPitch		= vPYR.x;
 		m_fYaw			= vPYR.y;
 		m_fRoll			= vPYR.z;
+
+		// VR, on a scripted ride (the unicycle and the like): the ride sets
+		// your heading and the game holds the view within its limits of it,
+		// but your real body can turn all the way round, so the turn stick
+		// can too. Kept apart from the game's yaw (which it would clamp
+		// back) and added where the VR view is built.
+		if (g_VRMgr.IsActive() && PPM_LURE == m_pMoveMgr->GetVehicleMgr()->GetPhysicsModel())
+		{
+			m_fVRLureTurn += g_VRMgr.GetTurnDelta(g_pGameClientShell->GetFrameTime());
+			m_fVRLureTurn = (float)fmod(m_fVRLureTurn, MATH_CIRCLE);
+		}
+		else
+		{
+			m_fVRLureTurn = 0.0f;
+		}
 	}
 	else  // Not vehicle...
 	{
+		m_fVRLureTurn = 0.0f;
 		m_fPlayerPitch	= 0.0f;
 		m_fPlayerYaw	= m_fYaw;
 		m_fPlayerRoll	= m_fRoll;
@@ -3911,7 +3930,7 @@ LTBOOL CPlayerMgr::UpdateCameraRotation()
 				if (g_VRMgr.IsRiding() && g_VRMgr.IsVehicleTilt())
 					m_rRotation = LTRotation(m_fPitch, m_fYaw, m_fRoll) * g_VRMgr.GetHeadRotation();
 				else
-					m_rRotation = LTRotation(0.0f, m_fYaw, 0.0f) * g_VRMgr.GetHeadRotation();
+					m_rRotation = LTRotation(0.0f, m_fYaw + m_fVRLureTurn, 0.0f) * g_VRMgr.GetHeadRotation();
 			}
 			else
 			{

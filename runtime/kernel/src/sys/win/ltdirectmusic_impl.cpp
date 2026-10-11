@@ -215,24 +215,15 @@ namespace
 		return DMGuard_ReadStack(ctx.Esp, code);
 	}
 
-	// Where each thread waits, once learnt (thread id -> spot).
-	struct DMHome { DWORD dwThreadId; DWORD dwSpot; };
-	DMHome	g_aDMHomes[8];
-	int		g_nDMHomes = 0;
-
 	// Suspends the thread if (and once) it's parked where it waits. False:
 	// left running.
 	bool DMGuard_SuspendParked(HANDLE hThread, DWORD dwThreadId, const DMCode& code, DWORD& dwHome)
 	{
+		// Learn where it waits, every time: where it's found most often.
+		// (Not remembered: it waits in one place before any music has
+		// played and in another once it has, measured.)
 		dwHome = 0;
-		for (int i = 0; i < g_nDMHomes; ++i)
 		{
-			if (g_aDMHomes[i].dwThreadId == dwThreadId)
-				dwHome = g_aDMHomes[i].dwSpot;
-		}
-		if (!dwHome)
-		{
-			// Learn it: where it's found most often.
 			const int kSamples = 12;
 			DWORD aSpot[kSamples];
 			for (int i = 0; i < kSamples; ++i)
@@ -279,12 +270,6 @@ namespace
 				DMGuard_Log("thread %lu: no steady waiting spot (%d of %d), left running", dwThreadId, nBest, kSamples);
 				dwHome = 0;
 				return false;
-			}
-			if (g_nDMHomes < (int)(sizeof(g_aDMHomes) / sizeof(g_aDMHomes[0])))
-			{
-				g_aDMHomes[g_nDMHomes].dwThreadId = dwThreadId;
-				g_aDMHomes[g_nDMHomes].dwSpot = dwHome;
-				++g_nDMHomes;
 			}
 		}
 
