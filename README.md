@@ -120,6 +120,32 @@ The game runs from the `run\` folder, never from the retail install. It's
 made by `setup_run_dir.bat` with links to the retail data, so the retail
 install stays untouched.
 
+## Making a release for players
+
+`make_release.bat` builds, then makes `release\NOLF2-VR-<version>.zip`
+(the version is in the `VERSION` file). The zip holds one `VR` folder that
+players put inside their own NOLF2 folder, next to `GAME.REZ`, and start
+with `Play NOLF2 VR.bat`. No game files are in it; the player's readme is
+`tools\release\README.txt`.
+
+- In the `VR` folder: the engine and its DLLs, the game code (`gamedll`),
+  the launcher, `Check VR.bat` (VRProbe), the Visual C++ runtime and
+  `d3dx9_43.dll` (so players install nothing else), and the starting gun
+  fits (`defaults\vr_guns.txt`, copied to `vr_guns.txt` on first run;
+  they're `tools\release\vr_guns.txt`, Tre's tuned fits).
+- The launcher runs the engine from the `VR` folder with `-rez ..\Game.rez`
+  and so on, so settings, saves, logs and crash reports stay in `VR` and
+  the player's own install is untouched. On first run it copies
+  `Engine.REZ`, `binkw32.dll`, the profile and `autoexec.cfg` from the game
+  folder and links `Movies`.
+- It also makes `release\NOLF2-VR-<version>-symbols.zip`, the `.pdb` files
+  of that exact build: keep it, don't publish it. It's what turns a
+  player's crash `.dmp` into function names and lines.
+- Players need NOLF2 patched to 1.3. Built and tested on the English (UK)
+  CD release with the 1.3 patch; any retail copy updated to 1.3 should
+  work. The readme points to
+  <https://www.myabandonware.com/game/no-one-lives-forever-2-a-spy-in-h-a-r-m-s-way-3nv#download>.
+
 ## Controls
 
 | Control | In play | In menus |

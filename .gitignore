@@ -16,3 +16,6 @@ build_configure_log.txt
 # VR test log
 xrbridge.log
 vr_game.log
+
+# Release packages (make_release.bat)
+release/

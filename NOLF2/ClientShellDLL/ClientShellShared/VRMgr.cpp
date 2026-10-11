@@ -1118,7 +1118,7 @@ float CVRMgr::GetSmoothTurnAmount() const
 void CVRMgr::UpdateSnapshot()
 {
 	if (m_nSnapMsgFrames > 0 && --m_nSnapMsgFrames == 0)
-		Message("Snapshot saved (run\\Snapshots).");
+		Message("Snapshot saved (the Snapshots folder).");
 
 	if (!(m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_GRIP) || !Pressed(LTVR_LEFT, LTVR_BTN_TRIGGER))
 		return;
