@@ -320,9 +320,11 @@ Next, in a suggested order:
 13. Height, seated / standing and crouching for real (done: "works
     perfect", Tre; see "Height and crouching").
 14. Cheats page with level select, for testing (done; see "Cheats").
-15. The snowmobile (first pass, see "Snowmobile").
-Later: height calibration and real crouch, vehicles, cutscene options,
-the shutdown hang.
+15. The snowmobile (driving, view and hands working, see "Snowmobile").
+16. Finger sensing on the free hand (see "Finger sensing").
+Later: cutscene options, the shutdown hang, the Tommy gun's rare tracer
+streaks; from the backlog: left-handed play, grip hold vs toggle, the
+quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
 
 ## VR settings page (first pass)
 
@@ -751,6 +753,8 @@ the shutdown hang.
   lifted, down on a button / stick / rest (tighter with the grip); the
   other three follow the grip. Without touch reports: the index follows
   the trigger, the thumb rests down.
+- Pointing dead straight looked too extreme (Tre): it now bends about
+  halfway to the resting-on-trigger pose (14 / 14 / 9 degrees).
 
 ## Menus: the mouse steps aside
 

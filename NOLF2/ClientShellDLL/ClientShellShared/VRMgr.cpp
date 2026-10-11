@@ -1877,8 +1877,9 @@ static const float kFingerClosed[5]	= { 0.0f, 0.0f, 75.0f, 90.0f, 55.0f };
 // (The thumb: index 1 is its base swinging over the palm.)
 static const float kThumbOpen[5]	= { 0.0f, 0.0f, 5.0f, 5.0f, 0.0f };
 static const float kThumbClosed[5]	= { 0.0f, 25.0f, 25.0f, 35.0f, 0.0f };
-// The index finger pointing (off the trigger): straighter than relaxed.
-static const float kPointOpen[5]	= { 0.0f, 0.0f, 0.0f, 2.0f, 2.0f };
+// The index finger pointing (off the trigger): about halfway between dead
+// straight and resting on the trigger (Tre: straight looked too extreme).
+static const float kPointOpen[5]	= { 0.0f, 0.0f, 14.0f, 14.0f, 9.0f };
 
 // How far each finger of the free left hand is closed, 0 open .. 1 fist,
 // Quest style (Tre): the index finger off the trigger points, resting on
