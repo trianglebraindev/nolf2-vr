@@ -18,4 +18,4 @@ xrbridge.log
 vr_game.log
 
 # Release packages (make_release.bat)
-release/
+/release/
