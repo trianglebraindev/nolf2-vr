@@ -110,6 +110,8 @@ install stays untouched.
 | Left stick | walk (push fully to run) | navigate |
 | Right stick left / right | turn | navigate |
 | Right stick up / down | jump / crouch toggle | navigate |
+| Crouch for real (standing) | Cate crouches once your head is 25 cm below your set height | |
+| Both stick clicks (hold 1 s) | set your height: your head now is Cate standing, facing forward | same |
 | Right trigger | fire | select |
 | Right grip (hold) | weapon ring: reach for a weapon, let go | |
 | Right A / B | drop the magazine (manual reloading) or next ammo (game original) / holster | select / back |
@@ -156,6 +158,8 @@ launch line in `run_nolf2_vr.bat` as `+Name value`.
 | `VRReload` | 1 | 1 = reload by hand (A drops the magazine, one from over your left shoulder); 0 = the game's reload on the right stick click |
 | `VRThrow` | 1 | 1 = throw by hand (hold the trigger, swing, let go); 0 = the game's own throw |
 | `VRThrowSpeed` | 5 | how fast a throw (m/s, at the hand) goes the game's own distance; faster goes further |
+| `VRSeated` | 0 | 0 = standing (crouch for real); 1 = seated (the stick crouches). Options > VR > Play position |
+| `VRCrouchDepth` | 25 | standing: how far (cm) your head drops below your set height before Cate crouches; 0 = stick only |
 | `VRSwing` / `VRSwingSpeed` | 1 / 2.5 | swinging a sword hits (0 = trigger only); how fast the blade's tip must move, m/s |
 | `VRVignette` / `VRVignetteWhen` | 0 / 3 | comfort vignette 0 off, 1 light, 2 medium, 3 strong; when: 1 moving, 2 turning, 3 both |
 | `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the game's flat camera |

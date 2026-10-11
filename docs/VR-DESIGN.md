@@ -317,6 +317,8 @@ Next, in a suggested order:
 11. Reloading by hand (see "Manual reloading"); cocking by hand after
     running dry (first pass, see "Cocking").
 12. Throwing by hand (done: "perfect", Tre; see "Throwing").
+13. Height, seated / standing and crouching for real (first pass, see
+    "Height and crouching").
 Later: height calibration and real crouch, vehicles, cutscene options,
 the shutdown hang.
 
@@ -606,6 +608,31 @@ the shutdown hang.
   weapon is idle, and a throw before that "isn't up yet". The banana fell
   short even thrown hard (7 m/s at the hand gave 17 m/s): it gets twice
   the boost (Tre's pick, over one boost for everything).
+
+## Height and crouching (first pass)
+
+- Tre's picks: set your height by holding both stick clicks for a second
+  (or Options > VR > Set my height now): where your head is then becomes
+  Cate standing, facing forward, seated or standing alike. Options > VR >
+  Play position: Standing / Seated. Standing: crouch for real and Cate
+  crouches, the view following your real head. Seated: the stick crouches.
+  The stick's crouch toggle stays in both ("keep control options").
+- Setting the height is the bridge's recentre (the LOCAL space re-based on
+  the head, yaw only), which already happens when VR starts and on the Home
+  key or the runtime's own recentre. Head height is then relative to it.
+- Real crouch (CVRMgr::UpdateRealCrouch): standing, head more than
+  VRCrouchDepth (25 cm) below the set height crouches Cate (CMoveMgr adds
+  it to the duck command, so the game still keeps her down where there's
+  no room to stand); 7 cm back up stands her. Starting a real crouch
+  clears a stick crouch, so standing up for real stands up.
+- The view (CPlayerMgr::UpdateCameraPosition): the game lowers the eyes
+  for a crouch (m_fCamDuck). In VR that lowering (m_fVRDuck, eased at the
+  game's duck speed) only applies to a stick crouch or a forced one (no
+  room to stand); a real crouch is your own head already, so it's left out.
+- Stick clicks now act when let go (so the two held together don't also
+  reload or open the adjust mode): the left one starts / ends the adjust
+  mode, the right one is sent to the game as a key press (next ammo, or
+  reload with the game's reloading) instead of being bound.
 
 ## Menus: the mouse steps aside
 

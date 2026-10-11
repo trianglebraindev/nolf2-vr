@@ -46,6 +46,8 @@ namespace
 		kHelpTurnSpeed,
 		kHelpSnapAngle,
 		kHelpMoveDir,
+		kHelpSeated,
+		kHelpSetHeight,
 		kHelpVignette,
 		kHelpVignetteWhen,
 		kHelpWorldSize,
@@ -69,6 +71,8 @@ namespace
 		"How fast smooth turning turns you, in degrees per second.",
 		"How far each snap turn turns you, in degrees.",
 		"Walk where your head faces, or where your left controller points.",
+		"Standing: crouch for real and Cate crouches (the right stick still crouches too). Seated: the right stick crouches. Then set your height.",
+		"Sit or stand as you'll play and look ahead: your head becomes Cate standing up. In play: hold both stick clicks for a second.",
 		"Darken the edges of your view while you move or turn with the sticks, for comfort. Stronger narrows the view more.",
 		"What brings the comfort vignette on: moving with the stick, smooth turning, or both.",
 		"How big the world feels. Higher makes everything larger around you.",
@@ -118,6 +122,7 @@ CScreenVR::CScreenVR()
 	m_nSwing = 2;
 	m_nReload = 0;
 	m_nThrow = 0;
+	m_nSeated = 0;
 	m_nVignette = 0;
 	m_nVignetteWhen = 2;
 }
@@ -176,6 +181,12 @@ LTBOOL CScreenVR::Build()
 	pCycle = AddCycle((char*)"Walk toward", kHelpMoveDir, kGap, &m_nMoveDir);
 	pCycle->AddString("Head");
 	pCycle->AddString("Left hand");
+
+	pCycle = AddCycle((char*)"Play position", kHelpSeated, kGap, &m_nSeated);
+	pCycle->AddString("Standing");
+	pCycle->AddString("Seated");
+
+	AddTextItem((char*)"Set my height now", CMD_VR_SETHEIGHT, kHelpSetHeight);
 
 	pCycle = AddCycle((char*)"Comfort vignette", kHelpVignette, kGap, &m_nVignette);
 	pCycle->AddString("Off");
@@ -287,11 +298,20 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 			const char* const aNames[] = { "VRSnapTurn", "VRTurnSpeed", "VRSnapAngle", "VRMoveWithHand",
 				"VRUnitsPerMeter", "VRHudDistance", "VRHudAngle", "VRHudFollow", "VRWristHud",
 				"VRWristHudWatch", "VRGunHud", "VRArms", "VRSwing", "VRSwingSpeed", "VRVignette",
-				"VRVignetteWhen", "VRReload", "VRThrow" };
+				"VRVignetteWhen", "VRReload", "VRThrow", "VRSeated" };
 			for (int i = 0; i < (int)(sizeof(aNames) / sizeof(aNames[0])); ++i)
 				CVRMgr::SetSetting(aNames[i], CVRMgr::GetSettingDefault(aNames[i]));
 			ReadSettings();
 			UpdateData(LTFALSE);
+			break;
+		}
+	case CMD_VR_SETHEIGHT:
+		{
+			// (Standing / seated as picked on this page, before it's left.)
+			UpdateData();
+			WriteSettings();
+			g_VRMgr.SetHeightNow();
+			g_pClientSoundMgr->PlayInterfaceSound((char*)g_pInterfaceResMgr->GetSoundSelect());
 			break;
 		}
 	case CMD_VR_GIVEALL:
@@ -414,6 +434,7 @@ void CScreenVR::ReadSettings()
 	m_nVignetteWhen = (uint8)((nWhen == 1) ? 0 : (nWhen == 2 ? 1 : 2));
 	m_nReload = (CVRMgr::GetSetting("VRReload") != 0.0f) ? 0 : 1;
 	m_nThrow = (CVRMgr::GetSetting("VRThrow") != 0.0f) ? 0 : 1;
+	m_nSeated = (CVRMgr::GetSetting("VRSeated") != 0.0f) ? 1 : 0;
 	if (CVRMgr::GetSetting("VRSwing") == 0.0f)
 		m_nSwing = 0;
 	else
@@ -443,6 +464,7 @@ void CScreenVR::WriteSettings()
 	CVRMgr::SetSetting("VRVignetteWhen",	(float)(m_nVignetteWhen + 1));
 	CVRMgr::SetSetting("VRReload",			m_nReload == 0 ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRThrow",			m_nThrow == 0 ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRSeated",			m_nSeated ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRSwing",			m_nSwing ? 1.0f : 0.0f);
 	if (m_nSwing > 0 && m_nSwing <= kNumSwingSpeeds)
 		CVRMgr::SetSetting("VRSwingSpeed",	kSwingSpeeds[m_nSwing - 1]);

@@ -464,7 +464,8 @@ void CMoveMgr::UpdateNormalControlFlags()
 	// Use the player's user flags instead of checking this flag directly
 	// (this insures that the camera will be moved accurately...)
 
-	if (g_pLTClient->IsCommandOn(COMMAND_ID_DUCK) || m_bDuckLock)
+	// (VR, standing: crouching for real crouches Cate, see CVRMgr::UpdateRealCrouch.)
+	if (g_pLTClient->IsCommandOn(COMMAND_ID_DUCK) || m_bDuckLock || g_VRMgr.IsRealCrouching())
 	{
 		m_dwControlFlags |= BC_CFLG_DUCK;
 	}

@@ -14,7 +14,9 @@
 //   Right trigger   fire
 //   Right A         next ammo type
 //   Right B         holster
-//   Right stick     click = reload
+//   Right stick     click = reload (on letting go)
+//   Both stick clicks held 1 s: set your height and face forward (where
+//                   your head is now becomes Cate standing up)
 //   Right grip      hold: weapon ring (move your hand to one, let go)
 //   Left grip       on the weapon: hold it with both hands;
 //                   anywhere else: pick up / drop a body (where the
@@ -108,6 +110,13 @@
 //                   the gun; the right stick click is "next ammo". 0 = the
 //                   game's own: right stick click reloads, A is next ammo.
 //
+//   Height and crouching (see UpdateRealCrouch):
+//   VRSeated        0 = standing (default): crouch for real and Cate
+//                   crouches; 1 = seated: the stick crouches only.
+//   VRCrouchDepth   standing: how far (cm) your head drops below where you
+//                   set your height before Cate crouches (default 25;
+//                   0 = never, the stick only).
+//
 //   Throwing (see CClientWeapon::VR_UpdateThrow):
 //   VRThrow         1 = by hand (default): hold the trigger, swing, let go.
 //                   0 = the game's own (the trigger throws along the aim).
@@ -182,6 +191,8 @@ static VarTrack g_vtVRScopeEye;
 static VarTrack g_vtVRSwing;
 static VarTrack g_vtVRReload;
 static VarTrack g_vtVRThrow;
+static VarTrack g_vtVRSeated;
+static VarTrack g_vtVRCrouchDepth;
 static VarTrack g_vtVRThrowSpeed;
 static VarTrack g_vtVRVignette;
 static VarTrack g_vtVRVignetteWhen;
@@ -258,6 +269,12 @@ CVRMgr::CVRMgr()
 	m_bScoped			= false;
 	m_bRingOpen			= false;
 	m_bMoveBodyBound	= false;
+	m_bRealCrouch		= false;
+	m_bStickCombo		= false;
+	m_bComboHeld		= false;
+	m_bComboDone		= false;
+	m_fComboStart		= 0.0f;
+	m_bLeftStickClick	= false;
 	m_vRingOffset.Init(0.0f, 0.0f, 0.0f);
 	m_vRingRight.Init(1.0f, 0.0f, 0.0f);
 	m_vRingUp.Init(0.0f, 1.0f, 0.0f);
@@ -362,6 +379,8 @@ void CVRMgr::Init()
 	g_vtVRSwing.Init(g_pLTClient, "VRSwing", NULL, 1.0f);
 	g_vtVRReload.Init(g_pLTClient, "VRReload", NULL, 1.0f);
 	g_vtVRThrow.Init(g_pLTClient, "VRThrow", NULL, 1.0f);
+	g_vtVRSeated.Init(g_pLTClient, "VRSeated", NULL, 0.0f);
+	g_vtVRCrouchDepth.Init(g_pLTClient, "VRCrouchDepth", NULL, 25.0f);
 	g_vtVRThrowSpeed.Init(g_pLTClient, "VRThrowSpeed", NULL, 5.0f);
 	g_vtVRVignette.Init(g_pLTClient, "VRVignette", NULL, 0.0f);
 	g_vtVRVignetteWhen.Init(g_pLTClient, "VRVignetteWhen", NULL, 3.0f);
@@ -420,6 +439,8 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRSwing",			1.0f },
 	{ "VRReload",			1.0f },
 	{ "VRThrow",			1.0f },
+	{ "VRSeated",			0.0f },
+	{ "VRCrouchDepth",		25.0f },
 	{ "VRThrowSpeed",		5.0f },
 	{ "VRVignette",			0.0f },
 	{ "VRVignetteWhen",		3.0f },
@@ -610,17 +631,13 @@ void CVRMgr::SetDefaultBindings()
 
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_TRIGGER,		COMMAND_ID_FIRING);
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_SECONDARY,		COMMAND_ID_HOLSTER);
-	if (g_vtVRReload.GetFloat(1.0f) != 0.0f)
-	{
-		// Reloading by hand: A drops the magazine (the weapon does that, see
-		// CClientWeapon::VR_UpdateReload), the stick click is next ammo.
-		m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK,		COMMAND_ID_NEXT_AMMO);
-	}
-	else
-	{
+	// (Reloading by hand: A drops the magazine, see CClientWeapon::
+	// VR_UpdateReload, and the right stick click is next ammo; otherwise A
+	// is next ammo and the click reloads. The click isn't bound: it acts
+	// when let go, so holding both stick clicks to set your height doesn't
+	// also reload; see UpdateStickClicks.)
+	if (g_vtVRReload.GetFloat(1.0f) == 0.0f)
 		m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_PRIMARY,	COMMAND_ID_NEXT_AMMO);
-		m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK,		COMMAND_ID_RELOAD);
-	}
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK_UP,		COMMAND_ID_JUMP);
 	m_pfnSetBinding(LTVR_RIGHT, LTVR_BTN_STICK_DOWN,	COMMAND_ID_DUCKLOCK);
 }
@@ -705,6 +722,7 @@ void CVRMgr::Update(float fFrameTime)
 			}
 		}
 		UpdateSnapshot();
+		UpdateStickClicks(nWantSet == 1);
 		UpdateGunAdjust(fFrameTime);
 		UpdateTwoHand();
 		UpdateMoveBody();
@@ -715,7 +733,9 @@ void CVRMgr::Update(float fFrameTime)
 		m_bTwoHand = false;
 		if (m_bRingOpen)
 			CloseWeaponRing(false);
+		UpdateStickClicks(false);	// (setting your height works in menus too)
 	}
+	UpdateRealCrouch();
 
 	UpdateVignette(fFrameTime, bPlaying);
 
@@ -1088,8 +1108,9 @@ void CVRMgr::Message(const char* pszText)
 
 void CVRMgr::UpdateGunAdjust(float fFrameTime)
 {
-	// Click the left stick: start / finish adjusting.
-	if (Pressed(LTVR_LEFT, LTVR_BTN_STICK) && !IsDecisionOpen())
+	// Click the left stick: start / finish adjusting (on letting go, see
+	// UpdateStickClicks).
+	if (m_bLeftStickClick && !IsDecisionOpen())
 	{
 		if (!m_bAdjusting)
 		{
@@ -2369,6 +2390,111 @@ void CVRMgr::Recenter()
 {
 	if (m_pfnRecenter)
 		m_pfnRecenter();
+}
+
+// ----------------------------------------------------------------------- //
+// Height, seated / standing, crouching for real
+// ----------------------------------------------------------------------- //
+
+// Where your head is now becomes Cate's standing eyes, facing forward (the
+// engine re-centres the headset there). Seated or standing alike: sit and
+// your seated head is Cate standing up.
+void CVRMgr::SetHeightNow()
+{
+	Recenter();
+	m_bRealCrouch = false;
+	const bool bSeated = IsSeated();
+	Log("Height set (%s): head was %.2f m above the old centre", bSeated ? "seated" : "standing",
+		m_State.unitsPerMeter > 0.0f ? m_State.head.pos[1] / m_State.unitsPerMeter : 0.0f);
+	Message(bSeated ? "Height set (seated): this is Cate standing. The right stick crouches." :
+		"Height set (standing): this is Cate standing. Crouch for real to crouch.");
+}
+
+bool CVRMgr::IsSeated() const
+{
+	return g_vtVRSeated.GetFloat(0.0f) != 0.0f;
+}
+
+// Standing: your head well below where you set your height crouches Cate
+// (collision, sneaking, fitting under things); the view just follows your
+// head (see CPlayerMgr, where the game's own crouch lowering is left out
+// then). Coming up 7 cm stands her again (if there's room).
+void CVRMgr::UpdateRealCrouch()
+{
+	bool bWas = m_bRealCrouch;
+	float fDepthCm = g_vtVRCrouchDepth.GetFloat(25.0f);
+	if (!IsActive() || IsSeated() || fDepthCm <= 0.0f || m_State.unitsPerMeter <= 0.0f || !m_State.head.valid)
+	{
+		m_bRealCrouch = false;
+	}
+	else
+	{
+		float fDropCm = -m_State.head.pos[1] / m_State.unitsPerMeter * 100.0f;
+		if (!m_bRealCrouch && fDropCm > fDepthCm)
+			m_bRealCrouch = true;
+		else if (m_bRealCrouch && fDropCm < fDepthCm - 7.0f)
+			m_bRealCrouch = false;
+	}
+
+	if (m_bRealCrouch != bWas)
+	{
+		// Standing up for real also stands up from a stick crouch.
+		if (m_bRealCrouch && g_pPlayerMgr && g_pPlayerMgr->GetMoveMgr())
+			g_pPlayerMgr->GetMoveMgr()->SetDuckLock(LTFALSE);
+		Log("Crouch: %s (head %.0f cm below your standing height)", m_bRealCrouch ? "down" : "up",
+			m_State.unitsPerMeter > 0.0f ? -m_State.head.pos[1] / m_State.unitsPerMeter * 100.0f : 0.0f);
+	}
+}
+
+// Stick clicks act when let go, unless both were held together: held for a
+// second, that sets your height. (Left click: the adjust mode, see
+// UpdateGunAdjust. Right click: next ammo, or reload with the game's own
+// reloading, sent to the game as a key press.)
+void CVRMgr::UpdateStickClicks(bool bPlay)
+{
+	m_bLeftStickClick = false;
+	const bool bL = (m_State.hand[LTVR_LEFT].buttons & LTVR_BTN_STICK) != 0;
+	const bool bR = (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_STICK) != 0;
+	const bool bLWas = (m_aPrevButtons[LTVR_LEFT] & LTVR_BTN_STICK) != 0;
+	const bool bRWas = (m_aPrevButtons[LTVR_RIGHT] & LTVR_BTN_STICK) != 0;
+	const float fNow = g_pLTClient->GetTime();
+
+	if (bL && bR)
+	{
+		if (!m_bComboHeld)
+		{
+			m_bComboHeld = true;
+			m_bComboDone = false;
+			m_fComboStart = fNow;
+		}
+		m_bStickCombo = true;
+		if (!m_bComboDone && fNow - m_fComboStart >= 1.0f)
+		{
+			m_bComboDone = true;
+			SetHeightNow();
+		}
+	}
+	else
+	{
+		m_bComboHeld = false;
+	}
+
+	if (!m_bStickCombo)
+	{
+		m_bLeftStickClick = bPlay && bLWas && !bL;
+		if (bPlay && bRWas && !bR && g_pPlayerMgr && g_pInterfaceMgr && g_pPlayerMgr->IsPlayerInWorld())
+		{
+			// A key press and release, routed as CGameClientShell routes
+			// commands: the interface first, then the player.
+			int nCommand = (g_vtVRReload.GetFloat(1.0f) != 0.0f) ? COMMAND_ID_NEXT_AMMO : COMMAND_ID_RELOAD;
+			if (g_pPlayerMgr->IsPlayerDead() || !g_pInterfaceMgr->OnCommandOn(nCommand))
+				g_pPlayerMgr->OnCommandOn(nCommand);
+			if (!g_pInterfaceMgr->OnCommandOff(nCommand))
+				g_pPlayerMgr->OnCommandOff(nCommand);
+		}
+	}
+	if (!bL && !bR)
+		m_bStickCombo = false;
 }
 
 // ----------------------------------------------------------------------- //

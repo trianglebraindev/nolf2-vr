@@ -80,6 +80,11 @@ public:
 	LTVector	GetMoveVector(float fBodyYaw) const;
 
 	void		Recenter();
+	// Your head now = Cate standing, facing forward (both stick clicks held
+	// a second, or Options > VR > Set my height now).
+	void		SetHeightNow();
+	bool		IsSeated() const;					// VRSeated
+	bool		IsRealCrouching() const	{ return m_bRealCrouch; }	// standing, head well down
 
 	// True while this frame's interface drawing goes to the headset's
 	// interface layer (the 3D world is in the headset this frame).
@@ -263,6 +268,14 @@ private:
 	void		UpdateMenuControls(float fFrameTime);
 	void		UpdateHudMode();
 	void		UpdateGunAdjust(float fFrameTime);
+	void		UpdateStickClicks(bool bPlay);
+	void		UpdateRealCrouch();
+	bool		m_bRealCrouch;
+	bool		m_bStickCombo;			// both stick clicks went down together (no single clicks then)
+	bool		m_bComboHeld;
+	bool		m_bComboDone;
+	float		m_fComboStart;
+	bool		m_bLeftStickClick;		// the left stick was clicked (let go) this frame
 	void		UpdateTwoHand();
 	void		UpdateMoveBody();
 	bool		m_bMoveBodyBound;		// left grip is bound to "move body" while held

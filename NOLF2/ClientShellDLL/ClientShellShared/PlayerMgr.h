@@ -424,6 +424,7 @@ protected:
     LTBOOL   m_bStartedDuckingDown;      // Have we started ducking down
     LTBOOL   m_bStartedDuckingUp;        // Have we started back up
     float	 m_fCamDuck;                 // How far to move camera
+	float		m_fVRDuck;			// VR: the game's own crouch lowering of the view (see UpdateCameraPosition)
     float	 m_fDuckDownV;               // Ducking down velocity
     float	 m_fDuckUpV;                 // Ducking up velocity
     float	 m_fMaxDuckDistance;         // Max distance we can duck

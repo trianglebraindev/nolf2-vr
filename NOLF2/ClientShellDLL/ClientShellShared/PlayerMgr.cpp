@@ -241,6 +241,7 @@ CPlayerMgr::CPlayerMgr()
 	m_bStartedDuckingDown   = LTFALSE;
 	m_bStartedDuckingUp     = LTFALSE;
 	m_fCamDuck				= 0.0f;
+	m_fVRDuck				= 0.0f;
 	m_fDuckDownV			= -75.0f;
 	m_fDuckUpV				= 75.0f;
 	m_fMaxDuckDistance		= -20.0f;
@@ -3545,7 +3546,23 @@ void CPlayerMgr::UpdateCameraPosition()
 			// are with the head untracked; the engine builds the headset view
 			// on top of it, and the camera itself goes where the head really
 			// is (for aiming, sound, and everything else that uses it).
-			vPos.y	+= m_fCamDuck;
+			//
+			// Crouching: the game lowers the eyes (as it does on a monitor)
+			// for a stick crouch, or when there's no room to stand up. Not
+			// when you crouch for real: your head is already that low, so
+			// the view just follows it (Tre's pick). Its own lowering eases
+			// in and out at the game's ducking speed.
+			{
+				float fTarget = 0.0f;
+				if ( ( m_dwPlayerFlags & BC_CFLG_DUCK ) && !g_VRMgr.IsRealCrouching() )
+					fTarget = m_fMaxDuckDistance - g_pMoveMgr->GetCrouchHeightDifference();
+				float fStep = m_fDuckUpV * g_pGameClientShell->GetFrameTime();
+				if ( m_fVRDuck > fTarget )
+					m_fVRDuck = ( m_fVRDuck - fStep < fTarget ) ? fTarget : m_fVRDuck - fStep;
+				else if ( m_fVRDuck < fTarget )
+					m_fVRDuck = ( m_fVRDuck + fStep > fTarget ) ? fTarget : m_fVRDuck + fStep;
+			}
+			vPos.y	+= m_fVRDuck;
 			g_VRMgr.SetOrigin(vPos, m_fYaw);
 
 			LTRotation rBody(0.0f, m_fYaw, 0.0f);
