@@ -118,6 +118,7 @@ public:
 	virtual bool          WeaponNeedsCrosshair() const { return true; }
 
 	virtual void          GetShellEjectPos( LTVector *vOriginalPos );
+	virtual bool          VR_GetMuzzlePos( LTVector *pvPos ) const;
 
 	// used with the cheat codes to adjust the proper position of the weapon
 	virtual LTVector      GetMuzzleOffset() const               
@@ -478,9 +479,13 @@ protected:
 	bool          m_bVRReloadGun;		// a gun that reloads by hand (magazine bone or muzzle)
 	HMODELNODE    m_hVRClipNode;		// the magazine's bone ("clip", or found from the reload), or INVALID_MODEL_NODE
 	LTMatrix      m_mVRClipBind;
-	LTMatrix      m_mVRMagHandSkin;		// where the hand / falling copies put the magazine (see VR_MagOnlyNodeControl)
-	LTMatrix      m_mVRMagDropSkin;
+	LTMatrix      m_mVRMagHandBone;		// the magazine bone's matrix in the hand / falling copies (see VR_MagOnlyNodeControl)
+	LTMatrix      m_mVRMagDropBone;
+	LTMatrix      m_mVRClipTurn;		// how the magazine sits in the gun as you hold it (rotation only)
+	HMODELNODE    m_hVRMagHandNode;		// the magazine bone in the hand copy (a stand-in gun's, for guns without one)
+	LTMatrix      m_mVRMagHandTurn;		// how that magazine sits in its gun (rotation only)
 	HMODELNODE    VR_FindMagBone();
+	HOBJECT       VR_CreateMagObjectFrom( WEAPON const *pSource, bool bReallyClose );
 	HOBJECT       m_hVRMagHand;
 	HOBJECT       m_hVRMagDrop;
 	LTVector      m_vVRMagDropPoint;	// world: where the magazine's bone is

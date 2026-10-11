@@ -6219,8 +6219,11 @@ bool CClientWeapon::VR_ReloadBlocksFire() const
 void CClientWeapon::VR_SetupReload()
 {
 	VR_RemoveMagObjects();
-	m_mVRMagHandSkin.Identity();
-	m_mVRMagDropSkin.Identity();
+	m_mVRMagHandBone.Identity();
+	m_mVRMagDropBone.Identity();
+	m_mVRClipTurn.Identity();
+	m_mVRMagHandTurn.Identity();
+	m_hVRMagHandNode = INVALID_MODEL_NODE;
 	m_eVRMag = VRMAG_IN;
 	m_hVRClipNode = INVALID_MODEL_NODE;
 	m_bVRReloadGun = false;
@@ -6267,21 +6270,20 @@ void CClientWeapon::VR_ClipNodeControl( const NodeControlData &data, void *pUser
 }
 
 // The magazine copies: every bone shrunk to nothing but the magazine's,
-// which sits at its rest pose (so the magazine is at a known spot in the
-// model, whatever its parents are doing).
+// whose matrix is set outright. Bone matrices here already carry the
+// object's own placement (as the free left hand's do, see
+// CVRMgr::GetFreeHandTransform), so the matrix is where the magazine goes:
+// in your hand (really-close space) or falling (the world).
 void CClientWeapon::VR_MagOnlyNodeControl( const NodeControlData &data, void *pUser )
 {
 	CClientWeapon *p = (CClientWeapon*)pUser;
 	if ( !p || !data.m_pNodeTransform )
 		return;
-	if ( data.m_hNode == p->m_hVRClipNode )
+	bool bHand = ( data.m_hModel == p->m_hVRMagHand );
+	HMODELNODE hMag = bHand ? p->m_hVRMagHandNode : p->m_hVRClipNode;
+	if ( data.m_hNode == hMag )
 	{
-		// Bone matrices here already carry the object's own placement (as
-		// the free left hand's do, see CVRMgr::GetFreeHandTransform), so the
-		// magazine is put exactly where it goes: the rest pose moved by the
-		// copy's own "skin" transform (to your hand, or falling).
-		const LTMatrix &mSkin = ( data.m_hModel == p->m_hVRMagDrop ) ? p->m_mVRMagDropSkin : p->m_mVRMagHandSkin;
-		*data.m_pNodeTransform = mSkin * p->m_mVRClipBind;
+		*data.m_pNodeTransform = bHand ? p->m_mVRMagHandBone : p->m_mVRMagDropBone;
 		return;
 	}
 	LTMatrix &m = *data.m_pNodeTransform;
@@ -6296,9 +6298,27 @@ HOBJECT CClientWeapon::VR_CreateMagObject( bool bReallyClose )
 {
 	if ( INVALID_MODEL_NODE == m_hVRClipNode || !m_pWeapon )
 		return LTNULL;
+	return VR_CreateMagObjectFrom( m_pWeapon, bReallyClose );
+}
+
+// The same from any weapon's first-person model (the stand-in magazine for
+// guns without one of their own).
+HOBJECT CClientWeapon::VR_CreateMagObjectFrom( WEAPON const *pSource, bool bReallyClose )
+{
+	if ( !pSource || !pSource->szPVModel || !pSource->szPVModel[0] )
+		return LTNULL;
 	ObjectCreateStruct ocs;
 	INIT_OBJECTCREATESTRUCT( ocs );
-	PopulateCreateStruct( &ocs );
+	if ( pSource == m_pWeapon )
+	{
+		PopulateCreateStruct( &ocs );
+	}
+	else
+	{
+		SAFE_STRCPY( ocs.m_Filename, pSource->szPVModel );
+		pSource->blrPVSkins.CopyList( 0, ocs.m_SkinNames[0], ( MAX_CS_FILENAME_LEN + 1 ) );
+		pSource->blrPVRenderStyles.CopyList( 0, ocs.m_RenderStyleNames[0], ( MAX_CS_FILENAME_LEN + 1 ) );
+	}
 	ocs.m_ObjectType = OT_MODEL;
 	ocs.m_Flags |= FLAG_VISIBLE | ( bReallyClose ? FLAG_REALLYCLOSE : 0 );
 	ocs.m_Flags2 |= FLAG2_DYNAMICDIRLIGHT;
@@ -6373,24 +6393,23 @@ void CClientWeapon::VR_StartMagDrop()
 	VR_PlaceMagDrop();
 }
 
-// The falling copy: the magazine's rest point at m_vVRMagDropPoint (world),
-// turned by m_rVRMagDropRot, at the gun's size.
+// The falling copy: the magazine at m_vVRMagDropPoint (world), turned as
+// the gun was (m_rVRMagDropRot, tumbling) and as it sat in the gun, at the
+// gun's size.
 void CClientWeapon::VR_PlaceMagDrop()
 {
 	if ( !m_hVRMagDrop )
 		return;
-	LTVector vClipBind;
-	m_mVRClipBind.GetTranslation( vClipBind );
-	LTMatrix mRot;
-	mRot.Identity();
-	m_rVRMagDropRot.ConvertToMatrix( mRot );
+	LTMatrix mGun;
+	mGun.Identity();
+	m_rVRMagDropRot.ConvertToMatrix( mGun );
+	LTMatrix mBone = mGun * m_mVRClipTurn;
 	const float s = m_fVRMagDropScale;
 	for ( int r = 0; r < 3; ++r )
 		for ( int c = 0; c < 3; ++c )
-			mRot.m[r][c] *= s;
-	LTVector vMoved = VR_Rotate( m_rVRMagDropRot, vClipBind * s );
-	mRot.SetTranslation( m_vVRMagDropPoint - vMoved );
-	m_mVRMagDropSkin = mRot;
+			mBone.m[r][c] *= s;
+	mBone.SetTranslation( m_vVRMagDropPoint );
+	m_mVRMagDropBone = mBone;
 	g_pLTClient->SetObjectPos( m_hVRMagDrop, &m_vVRMagDropPoint );
 }
 
@@ -6482,6 +6501,20 @@ void CClientWeapon::VR_UpdateReload()
 		m_eVRMag = VRMAG_IN;
 	}
 
+	// While it's in: how the magazine sits in the gun as you hold it (for
+	// the copies; the rest pose can be turned quite differently, e.g. the
+	// AK-47's).
+	if ( VRMAG_IN == m_eVRMag && INVALID_MODEL_NODE != m_hVRClipNode )
+	{
+		LTransform tClip;
+		if ( LT_OK == g_pModelLT->GetNodeTransform( m_hObject, m_hVRClipNode, tClip, LTFALSE ) )
+		{
+			m_mVRClipTurn.Identity();
+			tClip.m_Rot.ConvertToMatrix( m_mVRClipTurn );
+			m_mVRClipTurn.SetTranslation( LTVector( 0.0f, 0.0f, 0.0f ) );
+		}
+	}
+
 	// A: drop the magazine. Its rounds stay in your reserve (the total is
 	// unchanged; only the gun's load goes to nothing).
 	if ( VRMAG_IN == m_eVRMag && g_VRMgr.GameButtonPressed( LTVR_RIGHT, LTVR_BTN_PRIMARY ) )
@@ -6513,8 +6546,35 @@ void CClientWeapon::VR_UpdateReload()
 	     g_VRMgr.IsLeftHandAtShoulder() )
 	{
 		m_eVRMag = VRMAG_HAND;
-		m_hVRMagHand = VR_CreateMagObject( true );
-		CVRMgr::Log( "Reload: %s took a magazine", m_pWeapon->szName );
+		if ( INVALID_MODEL_NODE != m_hVRClipNode )
+		{
+			m_hVRMagHand = VR_CreateMagObject( true );
+			m_hVRMagHandNode = m_hVRClipNode;
+			m_mVRMagHandTurn = m_mVRClipTurn;
+		}
+		else
+		{
+			// No magazine of its own (the shotgun): the Beretta's, as a
+			// stand-in, sitting as it does at rest in the Beretta.
+			WEAPON const *pStandIn = g_pWeaponMgr->GetWeapon( "Beretta" );
+			m_hVRMagHand = VR_CreateMagObjectFrom( pStandIn, true );
+			HMODELNODE hClip;
+			LTMatrix mBind;
+			if ( m_hVRMagHand && LT_OK == g_pModelLT->GetNode( m_hVRMagHand, "clip", hClip ) &&
+			     LT_OK == g_pModelLT->GetBindPoseNodeTransform( m_hVRMagHand, hClip, mBind ) )
+			{
+				mBind.SetTranslation( LTVector( 0.0f, 0.0f, 0.0f ) );
+				m_hVRMagHandNode = hClip;
+				m_mVRMagHandTurn = mBind;
+			}
+			else if ( m_hVRMagHand )
+			{
+				g_pLTClient->RemoveObject( m_hVRMagHand );
+				m_hVRMagHand = LTNULL;
+			}
+		}
+		CVRMgr::Log( "Reload: %s took a magazine%s", m_pWeapon->szName,
+			( m_hVRMagHand && INVALID_MODEL_NODE == m_hVRClipNode ) ? " (stand-in: the Beretta's)" : "" );
 	}
 	g_VRMgr.SetWantsMag( VRMAG_OUT == m_eVRMag && nAmmo > 0 );
 
@@ -6539,14 +6599,13 @@ void CClientWeapon::VR_UpdateReload()
 		// The magazine's bone at the hand, turned as the hand is (it hangs
 		// below your fist as it would in a gun held in that hand). In
 		// really-close space: camera space / the gun's size.
-		LTVector vClipBind;
-		m_mVRClipBind.GetTranslation( vClipBind );
 		LTVector vHand = vLeft / g_VRMgr.GetGunScale();
-		LTMatrix mRot;
-		mRot.Identity();
-		rLeft.ConvertToMatrix( mRot );
-		mRot.SetTranslation( vHand - VR_Rotate( rLeft, vClipBind ) );
-		m_mVRMagHandSkin = mRot;
+		LTMatrix mHand;
+		mHand.Identity();
+		rLeft.ConvertToMatrix( mHand );
+		LTMatrix mBone = mHand * m_mVRMagHandTurn;
+		mBone.SetTranslation( vHand );
+		m_mVRMagHandBone = mBone;
 		g_pLTClient->SetObjectPos( m_hVRMagHand, &vHand );
 	}
 
@@ -6692,7 +6751,10 @@ HMODELNODE CClientWeapon::VR_FindMagBone()
 		szOne[sizeof( szOne ) - 1] = '\0';
 		if ( strlen( szAll ) + strlen( szOne ) < sizeof( szAll ) )
 			strcat( szAll, szOne );
-		if ( nBest < 0 || afTravel[c] > afTravel[nBest] )
+		// A magazine leaves the gun mostly downward (the AK-47's goes down
+		// 1.17 of 1.35; the shotgun's pump slides straight back, 0.41).
+		bool bDown = ( -avMost[c].y ) >= 0.5f * afTravel[c];
+		if ( bDown && ( nBest < 0 || afTravel[c] > afTravel[nBest] ) )
 			nBest = c;
 	}
 	// (Model units: the hand is 0.38 across, so 0.4 is about a hand's width.)
@@ -6703,4 +6765,14 @@ HMODELNODE CClientWeapon::VR_FindMagBone()
 	if ( bFound )
 		s_anFound[nId] = (int)ahCand[nBest];
 	return bFound ? ahCand[nBest] : INVALID_MODEL_NODE;
+}
+
+// VR: the muzzle of the gun in your hand (tracers start there, see
+// CWeaponFX::CalcFirePos).
+bool CClientWeapon::VR_GetMuzzlePos( LTVector *pvPos ) const
+{
+	if ( !m_bVRPlaced || !pvPos )
+		return false;
+	*pvPos = m_vFlashPos;
+	return true;
 }

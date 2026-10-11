@@ -30,6 +30,9 @@
 #include "MuzzleFlashFX.h"
 #include "SurfaceFunctions.h"
 #include "VarTrack.h"
+#include "VRMgr.h"
+#include "ClientWeaponBase.h"
+#include "PlayerMgr.h"
 #include "PolyDebrisFX.h"
 #include "CharacterFX.h"
 #include "CMoveMgr.h"
@@ -1387,7 +1390,20 @@ LTVector CWeaponFX::CalcFirePos(const LTVector &vFirePos)
 
 	if (m_nLocalId == m_nShooterId)
 	{
-		if (g_pPlayerMgr->IsFirstPerson()) return vFirePos;
+		if (g_pPlayerMgr->IsFirstPerson())
+		{
+			// VR: shots leave from your hand along the aim, which is inside
+			// the gun, right by your eyes; tracers and the like start at the
+			// gun's muzzle instead (the shot itself is unchanged).
+			if (g_VRMgr.IsActive())
+			{
+				IClientWeaponBase *pWeapon = g_pPlayerMgr->GetCurrentClientWeapon();
+				LTVector vMuzzle;
+				if (pWeapon && pWeapon->VR_GetMuzzlePos(&vMuzzle))
+					return vMuzzle;
+			}
+			return vFirePos;
+		}
 	}
 
     LTVector vPos;

@@ -469,6 +469,25 @@ the shutdown hang.
   (5) A could only drop while the weapon was idle; now anything but
   reloading / switching / put away, and a refusal is logged with the
   weapon's state.
+- Second test (Tre): (1) faint white streaks either side of the gun when
+  firing, (2) the AK-47's magazine turned oddly in the hand, (3) the
+  shotgun "dropped" its pump. Measured / fixed:
+  (1) Tracers start at the shot's fire position, which in VR is the
+  controller's aim ray: inside the gun, right by your eyes, so each eye
+  saw it in a different place. For your own first-person shots they now
+  start at the gun's muzzle (CWeaponFX::CalcFirePos asks the weapon,
+  IClientWeaponBase::VR_GetMuzzlePos); the shot itself is unchanged.
+  (2) The copies were turned by the magazine bone's rest pose, which on
+  the AK-47 is turned quite differently from how it sits in the gun. Now
+  the bone's turn in the gun as you hold it is recorded while it's in,
+  and the hand / falling copies use that (bone matrix = hand or gun turn
+  x that turn, at the hand / falling point).
+  (3) The reload sampling found (vr_game.log): AK-47 "trigger" 1.35 units,
+  1.17 of it down (its magazine); sniper "joint2" 1.29, 1.24 down (its
+  magazine); shotgun "trigger" 0.41 straight back (the pump). A magazine
+  must now leave mostly downward (down >= half its travel), so the
+  shotgun has none: nothing drops, and (Tre) the hand holds a stand-in,
+  the Beretta's magazine.
 - The shoulder (CVRMgr::IsLeftHandAtShoulder): left of the head's middle,
   no further forward than the face, from about chest height up, within
   half a metre, in a frame turned by the head's heading only. While the

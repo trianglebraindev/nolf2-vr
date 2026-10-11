@@ -130,6 +130,10 @@ public:
 	virtual bool          IsMeleeWeapon() const { return false; }
 	virtual bool          IsFireButtonDown() const { return false; }
 	virtual void          GetShellEjectPos( LTVector *vOriginalPos ) { vOriginalPos->Init( 0.0f, 0.0f, 0.0f ); }
+
+	// VR: where the muzzle of the gun in your hand is (world). False when
+	// the weapon isn't held in VR.
+	virtual bool          VR_GetMuzzlePos( LTVector *pvPos ) const { return false; }
 	virtual bool          WeaponNeedsCrosshair() const { return false; }
 
 	// used with the cheat codes to adjust the proper position of the weapon
