@@ -235,6 +235,8 @@ CVRMgr::CVRMgr()
 	m_pfnSetScopeView	= NULL;
 	m_pfnTakeSnapshot	= NULL;
 	m_pfnSetMirrorEye	= NULL;
+	m_pfnShowMarker		= NULL;
+	m_vLeftNudge.Init(0.0f, 0.0f, 0.0f);
 	m_pfnSetVignette	= NULL;
 	m_fVignette			= 0.0f;
 	m_bSnapTriggerOff	= false;
@@ -318,6 +320,7 @@ void CVRMgr::Init()
 	m_pfnSetScopeView	= (LTVR_SetScopeViewFn)GetProcAddress(hEngine, "LTVR_SetScopeView");
 	m_pfnTakeSnapshot	= (LTVR_TakeSnapshotFn)GetProcAddress(hEngine, "LTVR_TakeSnapshot");
 	m_pfnSetMirrorEye	= (LTVR_SetMirrorEyeFn)GetProcAddress(hEngine, "LTVR_SetMirrorEye");
+	m_pfnShowMarker		= (LTVR_ShowMarkerFn)GetProcAddress(hEngine, "LTVR_ShowMarker");
 	m_pfnSetVignette	= (LTVR_SetVignetteFn)GetProcAddress(hEngine, "LTVR_SetVignette");
 
 	g_vtVRSnapTurn.Init(g_pLTClient, "VRSnapTurn", NULL, 0.0f);
@@ -495,6 +498,14 @@ bool CVRMgr::IsLeftHandNearCock() const
 	if (!GetHandInCamera(LTVR_LEFT, vLeft, rLeft, false))
 		return false;
 	return (vLeft - m_vCockPoint).Mag() / m_State.unitsPerMeter < 0.12f;
+}
+
+void CVRMgr::ShowMarker(const LTVector& vWorld, float fWidthMeters)
+{
+	if (!m_pfnShowMarker || !IsActive())
+		return;
+	float aPos[3] = { vWorld.x, vWorld.y, vWorld.z };
+	m_pfnShowMarker(aPos, fWidthMeters);
 }
 
 bool CVRMgr::IsSwingOn() const
@@ -1567,6 +1578,14 @@ void CVRMgr::HandsNodeControl(const NodeControlData& data, void* pUser)
 		{
 			*ppArm = NULL;
 			return;
+		}
+		else if (p->m_vLeftNudge.MagSqr() > 0.0f)
+		{
+			// On the gun, working a part (the shotgun's pump): the hand
+			// moves with it (the fingers hang off the wrist and follow).
+			LTVector vPos;
+			data.m_pNodeTransform->GetTranslation(vPos);
+			data.m_pNodeTransform->SetTranslation(vPos + p->m_vLeftNudge);
 		}
 	}
 	else if (hNode == p->m_hNodeWristR)

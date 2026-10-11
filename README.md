@@ -54,7 +54,9 @@ open Jupiter EX (LithTech) engine release and the NOLF2 game code.
   Guns without a separate magazine in their model (the shotgun) reload by
   bringing your left hand to the gun. Fired empty, a gun then needs
   cocking: grip the slide / cocking handle with your left hand and pull
-  it back (the shotgun: pump it back and forward).
+  it back (the shotgun: hold it with both hands and pump it back and
+  forward). An orange glow marks the part to pull. The sniper rifle needs
+  no cocking.
 
 - **Swords**: swing the katana or tulwar and it hits what the blade passes
   through (the trigger still does the game's own slash). How hard a swing

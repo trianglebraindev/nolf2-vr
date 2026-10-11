@@ -26,7 +26,7 @@
 #ifndef __LTVR_H__
 #define __LTVR_H__
 
-#define LTVR_VERSION	9
+#define LTVR_VERSION	10
 
 #define LTVR_LEFT		0
 #define LTVR_RIGHT		1
@@ -147,7 +147,8 @@ typedef void (*LTVR_SetCrosshairFn)(int bVisible, const float pos[3]);
 #define LTVR_LAYER_WRIST		2	// 512 x 256, health and armour (version 5)
 #define LTVR_LAYER_GUN			3	// 512 x 256, ammo (version 5)
 #define LTVR_LAYER_SCOPE		4	// 512 x 512, the scope's lens (version 6)
-#define LTVR_NUM_LAYERS			5
+#define LTVR_LAYER_MARKER		5	// 64 x 64, a glow the engine draws itself (version 10, LTVR_ShowMarker)
+#define LTVR_NUM_LAYERS			6
 
 typedef int  (*LTVR_BeginLayerFn)(int layer);
 typedef void (*LTVR_EndLayerFn)(void);
@@ -197,6 +198,13 @@ typedef void (*LTVR_SetMirrorEyeFn)(int eye);
 // and how far out from straight ahead the edge is fully dark (degrees; it
 // is clear to about half that). Call every frame it applies.
 typedef void (*LTVR_SetVignetteFn)(float fAmount, float fEdgeDegrees);
+
+// --- Marker (version 10) ---
+//
+// A soft orange glow at a world point this frame (facing you), fWidthMeters
+// across, drawn over everything: "grab here" (e.g. a gun's slide that needs
+// cocking). Call every frame it should show.
+typedef void (*LTVR_ShowMarkerFn)(const float pos[3], float fWidthMeters);
 
 // Writes a model's pieces, skeleton and sockets to vr_models.log (for
 // working out how the first-person gun models are built).

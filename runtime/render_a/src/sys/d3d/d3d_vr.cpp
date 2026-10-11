@@ -134,8 +134,9 @@ static LTRotation			g_rVRBodyUsed;
 static bool					g_bVRBodyUsedValid	= false;
 
 // Spot layers (see the top of this file). Index = LTVR_LAYER_*.
-static const uint32			kVRSpotWidth[LTVR_NUM_LAYERS]	= { 1024, 512, 512, 512, 512 };
-static const uint32			kVRSpotHeight[LTVR_NUM_LAYERS]	= { 1024, 512, 256, 256, 512 };
+static const uint32			kVRSpotWidth[LTVR_NUM_LAYERS]	= { 1024, 512, 512, 512, 512, 64 };
+static const uint32			kVRSpotHeight[LTVR_NUM_LAYERS]	= { 1024, 512, 256, 256, 512, 64 };
+static bool					g_bVRMarkerFilled	= false;	// the marker layer has its glow
 struct VRSpot
 {
 	int					nLayer;			// bridge layer, -1 = none
@@ -277,6 +278,7 @@ static void VR_Destroy()
 	VR_ReleaseCanvas();
 	VR_ReleaseMirror();
 	g_bVRSnapshotWanted = false;
+	g_bVRMarkerFilled = false;
 	if (g_pVRVignetteTex)	{ g_pVRVignetteTex->Release();	g_pVRVignetteTex = NULL; }
 	g_fVRVignette = 0.0f;
 	if (g_pVRScopeMask)		{ g_pVRScopeMask->Release();	g_pVRScopeMask = NULL; }
@@ -1471,6 +1473,73 @@ extern "C" __declspec(dllexport) void LTVR_SetLayer(int nLayer, int bVisible, co
 	spot.fWidth = fWidthMeters > 0.0f ? fWidthMeters : 0.0f;
 	spot.bOriented = false;
 	spot.fOpacity = 1.0f;
+}
+
+// The marker's glow, drawn once into its layer: orange, bright in the
+// middle, fading out to the edge (premultiplied, as the layers are).
+static bool VR_FillMarker()
+{
+	VRSpot& spot = g_aVRSpots[LTVR_LAYER_MARKER];
+	if (g_bVRMarkerFilled)
+		return true;
+	if (!spot.pSurf || !PD3DDEVICE)
+		return false;
+	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	const uint32 n = kVRSpotWidth[LTVR_LAYER_MARKER];
+	IDirect3DTexture9* pGlow = NULL;
+	if (FAILED(pDevice->CreateTexture(n, n, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &pGlow, NULL)) || !pGlow)
+		return false;
+	D3DLOCKED_RECT lr;
+	if (FAILED(pGlow->LockRect(0, &lr, NULL, D3DLOCK_DISCARD)))
+	{
+		pGlow->Release();
+		return false;
+	}
+	const float c = (float)(n - 1) * 0.5f;
+	for (uint32 y = 0; y < n; ++y)
+	{
+		uint32* pRow = (uint32*)((uint8*)lr.pBits + y * lr.Pitch);
+		for (uint32 x = 0; x < n; ++x)
+		{
+			float dx = ((float)x - c) / c, dy = ((float)y - c) / c;
+			float r = (float)sqrt(dx * dx + dy * dy);
+			float a = (r >= 1.0f) ? 0.0f : (1.0f - r) * (1.0f - r);		// soft falloff
+			if (r < 0.25f)
+				a = a + (1.0f - a) * (1.0f - r / 0.25f) * 0.5f;		// a brighter core
+			uint32 nA = (uint32)(a * 255.0f + 0.5f);
+			uint32 nR = (uint32)(a * 255.0f + 0.5f);
+			uint32 nG = (uint32)(a * 140.0f + 0.5f);
+			uint32 nB = (uint32)(a * 30.0f + 0.5f);
+			pRow[x] = (nA << 24) | (nR << 16) | (nG << 8) | nB;
+		}
+	}
+	pGlow->UnlockRect(0);
+
+	IDirect3DSurface9* pOldRT = NULL;
+	pDevice->GetRenderTarget(0, &pOldRT);
+	pDevice->ColorFill(spot.pSurf, NULL, D3DCOLOR_ARGB(0, 0, 0, 0));
+	pDevice->SetRenderTarget(0, spot.pSurf);
+	VR_DrawFullQuad(pGlow, D3DCOLOR_ARGB(255, 255, 255, 255), n, n, VRBLEND_PREMULTIPLIED);
+	pDevice->SetRenderTarget(0, pOldRT);
+	g_Device.InvalidateViewport();
+	if (pOldRT)
+		pOldRT->Release();
+	pGlow->Release();
+	g_bVRMarkerFilled = true;
+	return true;
+}
+
+extern "C" __declspec(dllexport) void LTVR_ShowMarker(const float pos[3], float fWidthMeters)
+{
+	if (!pos || !d3d_VR_IsActive() || !VR_FillMarker())
+		return;
+	VRSpot& spot = g_aVRSpots[LTVR_LAYER_MARKER];
+	spot.vPos.Init(pos[0], pos[1], pos[2]);
+	spot.fWidth = fWidthMeters > 0.005f ? fWidthMeters : 0.005f;
+	spot.bOriented = false;
+	spot.fOpacity = 1.0f;
+	spot.bSet = true;
+	spot.bDrawn = true;
 }
 
 extern "C" __declspec(dllexport) void LTVR_SetLayerPose(int nLayer, int bVisible, const float pos[3], const float rot[4],

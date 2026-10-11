@@ -543,7 +543,18 @@ the shutdown hang.
 - While the gun wants cocking, a left grip within 12 cm of the spot
   doesn't grab the gun or pick up a body. Sound: the weapon's reload
   sound 3 (falls back to 1). Logged: "Cock: <weapon> - <part> ...",
-  "took hold", "cocked".
+  "took hold", "let go (pulled back X cm at most of Y)", "cocked".
+- Second pass (Tre's feedback):
+  - A pulsing orange glow sits on the cocking part while the gun wants
+    cocking (engine marker layer, LTVR_LAYER_MARKER, 64x64, drawn by the
+    engine; LTVR_ShowMarker; LTVR_VERSION 10).
+  - The shotgun pumps with its normal two-hand grip: once the left hand
+    holds the fore-end, drawing the hands together counts as pulling the
+    pump back (the left hand and the pump follow); back at least 60% of
+    the 8 cm, then forward to 25% or less, cocks it.
+  - The sniper rifle never needs cocking (it works its own bolt).
+  - Every shot asks the HUD to redraw the ammo count (the Tommy gun's count
+    was stuck at 50).
 
 ## Menus: the mouse steps aside
 

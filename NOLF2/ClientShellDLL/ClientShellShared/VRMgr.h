@@ -158,6 +158,13 @@ public:
 	// The gun needs cocking, gripped at vCamPoint (camera space): a left grip
 	// there is cocking, not grabbing the gun or picking up a body.
 	void		SetCockPoint(bool bWants, const LTVector& vCamPoint)	{ m_bWantsCock = bWants; m_vCockPoint = vCamPoint; }
+	// Holding the gun with both hands (see UpdateTwoHand).
+	bool		IsTwoHand() const	{ return m_bTwoHand; }
+	// Moves the left hand on the gun (both hands on it) along with a part
+	// it's working, e.g. the shotgun's pump (really-close space; 0 = none).
+	void		SetLeftHandNudge(const LTVector& v)	{ m_vLeftNudge = v; }
+	// A soft orange glow at a world point this frame ("grab here").
+	void		ShowMarker(const LTVector& vWorld, float fWidthMeters);
 	bool		IsAdjustingMag() const	{ return m_bAdjusting && m_bAdjustMag; }
 	// How this weapon's magazine sits in the left hand: slide (cm: right,
 	// up, forward along the hand) and turn (degrees: turn, tilt, roll).
@@ -408,6 +415,8 @@ private:
 	LTVR_SetScopeViewFn		m_pfnSetScopeView;
 	LTVR_TakeSnapshotFn		m_pfnTakeSnapshot;
 	LTVR_SetMirrorEyeFn		m_pfnSetMirrorEye;
+	LTVR_ShowMarkerFn		m_pfnShowMarker;
+	LTVector				m_vLeftNudge;		// added to the left hand on the gun (the shotgun's pump, really-close space)
 	LTVR_SetVignetteFn		m_pfnSetVignette;
 	float					m_fVignette;		// smoothed amount, 0..1
 	void					UpdateVignette(float fFrameTime, bool bPlaying);
