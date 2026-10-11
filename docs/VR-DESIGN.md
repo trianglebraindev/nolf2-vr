@@ -665,6 +665,8 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
 - Level select: MISSION / LEVEL names from the mission data (the level's
   file name if it has none), CMissionMgr::StartGameFromLevel as the
   game's own chapter list does.
+- The list is stretched left to x 24 (640 x 480 layout) so the names
+  fit.
 - Levels with something to ride are marked "[ride]" (a scripted ride,
   class PlayerLure) and / or "[vehicle]" (PlayerVehicle, e.g. the
   snowmobile), read from each world file's object list (class names only;
@@ -776,6 +778,10 @@ quick dash, reach-and-grab pick-ups; the scripted rides (the "lure").
   of view, with the interface: subtitles, fades) is copied to the screen
   layer. The screen is placed in front of your head as the cutscene
   starts (VRScreenDistance / VRScreenAngle, as menus) and stays there.
+- During a cutscene our own hand controls are off (stick clicks, gun
+  adjusting, weapon ring, two-hand grip, the hand reload and throw
+  buttons); the game's bindings stay, as the left trigger ("activate")
+  skips the cutscene.
 - The letterbox bars are kept in flat mode (they frame the shot on a
   screen; in 3D they'd float in front of the scene, so they stay off).
 
@@ -803,6 +809,10 @@ symbols from the build's .pdb files):
   at their usual waiting spot (learnt by sampling: the first return
   address into dmusic's code on the stack), so never mid-work holding a
   lock; a 10 s watchdog lets them go regardless. Logged as "[music]".
+  First try learnt the wrong spot: the first pointer into dmusic's code
+  on the stack was the thread's own start address (a stored value, not a
+  call). Now only return addresses count (the bytes before are a call),
+  and the samples are logged.
 
 ## Menus: the mouse steps aside
 

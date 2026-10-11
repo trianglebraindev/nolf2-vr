@@ -166,6 +166,26 @@ namespace
 	// Where in dmusic a suspended thread is: 1 = running dmusic's own code
 	// right now; otherwise the first address into dmusic's code on its stack
 	// (the call it's waiting in), 0 if none.
+	// Is this a return address: the instruction just before it a call?
+	// (Stacks also hold plain pointers into the code, like the thread's own
+	// start address, which aren't where it's waiting.)
+	bool DMGuard_IsReturnAddress(DWORD dwAddr, const DMCode& code)
+	{
+		if (dwAddr < code.dwCodeStart + 6 || dwAddr > code.dwCodeEnd)
+			return false;
+		const BYTE* p = (const BYTE*)(UINT_PTR)dwAddr;
+		if (p[-5] == 0xE8)												// call rel32
+			return true;
+		if (p[-6] == 0xFF && (p[-5] == 0x15 || (p[-5] >= 0x90 && p[-5] <= 0x97)))	// call [abs] / [reg+disp32]
+			return true;
+		if (p[-3] == 0xFF && p[-2] >= 0x50 && p[-2] <= 0x57)				// call [reg+disp8]
+			return true;
+		if (p[-2] == 0xFF && ((p[-1] >= 0xD0 && p[-1] <= 0xD7) ||			// call reg
+			(p[-1] >= 0x10 && p[-1] <= 0x17 && p[-1] != 0x14 && p[-1] != 0x15)))	// call [reg]
+			return true;
+		return false;
+	}
+
 	DWORD DMGuard_ReadStack(DWORD dwEsp, const DMCode& code)
 	{
 		// (Only as far as the stack's memory goes.)
@@ -176,7 +196,8 @@ namespace
 		const DWORD* pStack = (const DWORD*)(UINT_PTR)dwEsp;
 		for (int i = 0; i < 256 && dwEsp + 4 * (i + 1) <= dwEnd; ++i)
 		{
-			if (pStack[i] >= code.dwCodeStart && pStack[i] < code.dwCodeEnd)
+			if (pStack[i] >= code.dwCodeStart && pStack[i] < code.dwCodeEnd &&
+				DMGuard_IsReturnAddress(pStack[i], code))
 				return pStack[i];
 		}
 		return 0;
@@ -239,6 +260,19 @@ namespace
 					nBest = n;
 					dwHome = aSpot[i];
 				}
+			}
+			{
+				char szSpots[256] = "";
+				for (int i = 0; i < kSamples; ++i)
+				{
+					char szOne[24];
+					if (aSpot[i] > 1)
+						sprintf(szOne, " %lX", aSpot[i] - code.dwImageStart);
+					else
+						sprintf(szOne, aSpot[i] ? " busy" : " ?");
+					strcat(szSpots, szOne);
+				}
+				DMGuard_Log("thread %lu: where it was (dmusic+):%s", dwThreadId, szSpots);
 			}
 			if (nBest < kSamples - 2)
 			{

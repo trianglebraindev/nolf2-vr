@@ -330,11 +330,17 @@ LTBOOL CScreenVRLevels::Build()
 {
 	CreateTitle((char*)"Level select");
 
-	// The list fills the Game page's frame (it scrolls).
+	// The list: the Game page's frame, but stretched left almost to the
+	// screen's edge (640 x 480 layout) so the long mission and level names
+	// fit (it scrolls).
 	LTRect frameRect = g_pLayoutMgr->GetScreenCustomRect(SCREEN_ID_GAME,"FrameRect");
+	const int kLeft = 24;
+	if (frameRect.left > kLeft)
+		frameRect.left = kLeft;
 	LTIntPt pos(frameRect.left,frameRect.top);
 	int nHt = frameRect.bottom - frameRect.top;
 	int nWd = frameRect.right - frameRect.left;
+	CVRMgr::Log("Level select: list at x %d..%d, y %d..%d", frameRect.left, frameRect.right, frameRect.top, frameRect.top + nHt);
 	if (GetPageBottom() > frameRect.top + nHt)
 		nHt = GetPageBottom() - frameRect.top;
 

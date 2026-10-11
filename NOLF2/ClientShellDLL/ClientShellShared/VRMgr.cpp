@@ -567,7 +567,8 @@ bool CVRMgr::GetHandTracking(int nHand, LTVector& vPos) const
 bool CVRMgr::GameButtonPressed(int nHand, unsigned nButton) const
 {
 	if (!IsActive() || m_bAdjusting || IsDecisionOpen() || !g_pInterfaceMgr ||
-		g_pInterfaceMgr->GetGameState() != GS_PLAYING)
+		g_pInterfaceMgr->GetGameState() != GS_PLAYING ||
+		(g_pPlayerMgr && g_pPlayerMgr->IsUsingExternalCamera()))	// (nor in a cutscene)
 		return false;
 	return Pressed(nHand, nButton);
 }
@@ -732,9 +733,14 @@ void CVRMgr::Update(float fFrameTime)
 		bPlaying = false;
 	}
 
-	if (!bPlaying && m_bAdjusting)
+	// A cutscene: still "playing" as far as the game's bindings go (the left
+	// trigger, "activate", skips it), but none of our own hand controls:
+	// no gun adjusting, weapon ring, two-hand grip or stick-click reload.
+	const bool bCutscene = bPlaying && g_pPlayerMgr && g_pPlayerMgr->IsUsingExternalCamera();
+
+	if ((!bPlaying || bCutscene) && m_bAdjusting)
 	{
-		m_bAdjusting = false;		// left play (menu, death, level change): stop adjusting
+		m_bAdjusting = false;		// left play (menu, death, level change, cutscene): stop adjusting
 		SaveGunFits();
 	}
 
@@ -795,9 +801,23 @@ void CVRMgr::Update(float fFrameTime)
 			}
 		}
 		UpdateSnapshot();
-		UpdateStickClicks(nWantSet == 1 || nWantSet == 3);
-		UpdateGunAdjust(fFrameTime);
-		if (m_bRiding)
+		if (bCutscene)
+		{
+			m_bTwoHand = false;
+			if (m_bRingOpen)
+				CloseWeaponRing(false);
+			UpdateStickClicks(false);	// (setting your height still works)
+		}
+		else
+		{
+			UpdateStickClicks(nWantSet == 1 || nWantSet == 3);
+			UpdateGunAdjust(fFrameTime);
+		}
+		if (bCutscene)
+		{
+			// (Nothing more: see above.)
+		}
+		else if (m_bRiding)
 		{
 			// (The grips are for the handlebars.)
 			m_bTwoHand = false;
