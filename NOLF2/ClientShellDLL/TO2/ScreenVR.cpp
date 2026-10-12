@@ -71,6 +71,7 @@ namespace
 		kHelpMirror,
 		kHelpRenderScale,
 		kHelpPerfReset,
+		kHelpTestSubmit,
 		kHelpEnd
 	};
 
@@ -104,6 +105,7 @@ namespace
 		"On: the monitor shows what the headset shows. Off: the monitor stays black, which saves a little work each frame.",
 		"How sharp the headset picture is drawn, as a percentage of what your headset asks for. Lower runs faster but looks softer; 70 draws about half the pixels of 100.",
 		"Put the settings on this page back to how they started.",
+		"For tracking down stutters: what the game sends to the headset. World only hides the HUD, crosshair and read-outs. Not saved: back to Everything next time.",
 	};
 
 	// The index of the closest value in a list.
@@ -530,6 +532,7 @@ CScreenVRPerf::CScreenVRPerf()
 {
 	m_bMirror = LTTRUE;
 	m_nRenderScale = 100;
+	m_nTestSubmit = 0;
 }
 
 CScreenVRPerf::~CScreenVRPerf()
@@ -567,6 +570,11 @@ LTBOOL CScreenVRPerf::Build()
 	pSlider->SetSliderIncrement(10);
 	pSlider->SetNumericDisplay(LTTRUE);
 
+	CLTGUICycleCtrl* pCycle = AddCycle((char*)"Testing: send to headset", kHelpTestSubmit, kGap, &m_nTestSubmit);
+	pCycle->AddString((char*)"Everything");
+	pCycle->AddString((char*)"World only");
+	pCycle->AddString((char*)"World only, monitor off");
+
 	AddTextItem((char*)"Reset to defaults", CMD_VR_PERF_RESET, kHelpPerfReset);
 
 	if (! CBaseScreen::Build()) return LTFALSE;
@@ -581,6 +589,7 @@ uint32 CScreenVRPerf::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwPara
 	{
 		CVRMgr::SetSetting("VRMirror", CVRMgr::GetSettingDefault("VRMirror"));
 		CVRMgr::SetSetting("VRRenderScale", CVRMgr::GetSettingDefault("VRRenderScale"));
+		CVRMgr::SetSetting("VRTestSubmit", 0.0f);
 		ReadSettings();
 		UpdateData(LTFALSE);
 		return 1;
@@ -665,10 +674,13 @@ void CScreenVRPerf::ReadSettings()
 	int n = (int)(CVRMgr::GetSetting("VRRenderScale") + 0.5f);
 	n = 10 * ((n + 5) / 10);		// (the slider's steps)
 	m_nRenderScale = (n < 50) ? 50 : (n > 100 ? 100 : n);
+	int nTest = (int)(CVRMgr::GetSetting("VRTestSubmit") + 0.5f);
+	m_nTestSubmit = (uint8)((nTest < 0) ? 0 : (nTest > 2 ? 2 : nTest));
 }
 
 void CScreenVRPerf::WriteSettings()
 {
 	CVRMgr::SetSetting("VRMirror",		m_bMirror ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRRenderScale",	(float)m_nRenderScale);
+	CVRMgr::SetSetting("VRTestSubmit",	(float)m_nTestSubmit);	// (not in the saved list: testing only)
 }

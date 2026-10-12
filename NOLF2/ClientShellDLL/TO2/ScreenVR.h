@@ -104,6 +104,7 @@ protected:
 
 	LTBOOL	m_bMirror;			// VRMirror
 	int		m_nRenderScale;		// VRRenderScale, percent
+	uint8	m_nTestSubmit;		// VRTestSubmit (testing, not saved): 0 everything, 1 world only, 2 + no monitor
 };
 
 #endif // _SCREEN_VR_H_

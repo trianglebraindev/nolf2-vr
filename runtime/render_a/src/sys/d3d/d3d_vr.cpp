@@ -292,6 +292,8 @@ struct VRPerf
 };
 
 static VRPerf g_VRPerf;
+static int g_nVRTestSubmitWas = 0;			// (VRTestSubmit, to log when it changes)
+static bool g_bVRLastSwapWorld = false;		// the last frame handed over had the world in it
 
 static double VR_PerfMs(const LARGE_INTEGER& a, const LARGE_INTEGER& b)
 {
@@ -461,13 +463,13 @@ static void VR_PerfFrameDone(bool bEyes)
 	else
 		strcpy(szGpu, "n/a");
 	xrb::Log("Perf: %.1f fps (headset %.0f Hz), frame %.1f ms avg / %.1f worst, drawing CPU %.1f ms / GPU %s, "
-		"headset wait %.1f ms, slow frames %d (hitches %d), eyes %ux%u (%d%%), mirror %s",
+		"headset wait %.1f ms, slow frames %d (hitches %d), eyes %ux%u (%d%%), mirror %s, test %d",
 		n * 1000.0 / fWindowMs, fPeriod > 0.0 ? 1000.0 / fPeriod : 0.0,
 		g_VRPerf.fFrameMsSum / n, g_VRPerf.fFrameMsWorst, g_VRPerf.fCpuMsSum / n, szGpu,
 		g_VRPerf.fWaitMsSum / n, g_VRPerf.nMissed, g_VRPerf.nHitches,
 		g_pVRBridge ? g_pVRBridge->GetEyeWidth() : 0, g_pVRBridge ? g_pVRBridge->GetEyeHeight() : 0,
 		g_pVRBridge ? (int)(g_pVRBridge->GetEyeRenderScale() * 100.0f + 0.5f) : 100,
-		g_CV_VRMirror.m_Val ? "on" : "off");
+		g_CV_VRMirror.m_Val ? "on" : "off", g_nVRTestSubmitWas);
 	g_VRPerf.bWindowOpen = false;	// the next frame starts the next 10 seconds
 }
 
@@ -2274,6 +2276,13 @@ static void VR_UpdateCursorClip()
 // End of frame
 //------------------------------------------------------------------
 
+// Testing (VRTestSubmit 2): skip the monitor's Present on frames with the
+// world in the headset.
+bool d3d_VR_SkipPresent()
+{
+	return d3d_VR_IsActive() && g_bVRLastSwapWorld && g_nVRTestSubmitWas >= 2;
+}
+
 // The monitor's Present is done (d3d_SwapBuffers): for the hitch breakdown.
 void d3d_VR_AfterPresent()
 {
@@ -2288,6 +2297,20 @@ void d3d_VR_OnSwapBuffers()
 
 	const float fScreenDistance = VR_ClampDistance(g_CV_VRScreenDistance.m_Val);
 	const float fScreenWidth = VR_WidthForAngle(fScreenDistance, g_CV_VRScreenAngle.m_Val);
+
+	// Testing (VRTestSubmit): note a change, and measure each setting apart.
+	{
+		int nTest = g_CV_VRTestSubmit.m_Val;
+		nTest = (nTest < 0) ? 0 : (nTest > 2 ? 2 : nTest);
+		if (nTest != g_nVRTestSubmitWas)
+		{
+			static const char* const kTestNames[] = { "everything", "the world only", "the world only, no monitor Present" };
+			xrb::Log("Test: sending %s to the headset (VRTestSubmit %d)", kTestNames[nTest], nTest);
+			g_nVRTestSubmitWas = nTest;
+			g_VRPerf.bWindowOpen = false;
+		}
+	}
+	g_bVRLastSwapWorld = false;
 
 	// Screens without a 3D world (menus etc.) never opened the frame.
 	if (VR_EnsureFrameOpen())
@@ -2366,7 +2389,10 @@ void d3d_VR_OnSwapBuffers()
 				if (bMirror || g_bVRSnapshotWanted)
 					VR_ComposeMirrorAndShow(bMirror, &place, aMirrorSpots, anMirrorSpot, nMirrorSpots);
 				VR_PerfGpuEnd();
-				g_pVRBridge->EndFrame(true, &place, nSpots ? aSpots : NULL, nSpots);
+				if (g_nVRTestSubmitWas >= 1)
+					g_pVRBridge->EndFrame(true, (const xrb::ScreenPlacement*)NULL);	// (testing: the world only)
+				else
+					g_pVRBridge->EndFrame(true, &place, nSpots ? aSpots : NULL, nSpots);
 			}
 			else
 			{
@@ -2376,6 +2402,7 @@ void d3d_VR_OnSwapBuffers()
 				g_pVRBridge->EndFrame(true, (const xrb::ScreenPlacement*)NULL);
 			}
 			VR_PerfFrameDone(true);
+			g_bVRLastSwapWorld = true;
 		}
 		else
 		{

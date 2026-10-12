@@ -918,6 +918,20 @@ symbols from the build's .pdb files):
 - Options > VR performance is its own page: the VR page was already
   squeezed to 46% row spacing to fit.
 
+## Stutter hunt (in progress)
+
+- Tre: drops from 90 to the 20s, feeling random. Measured (Perf / Hitch
+  lines): game and drawing stay under 4 ms; the lost time is inside
+  xrEndFrame (VDXR taking the frame), on a clock: three ~100 ms frames
+  every 40.0 s, 20-40 ms stalls every 10 s. The GPU finishes our work in
+  under 1.5 ms. Titanfall 2 VR (OpenXR, SteamVR not running, so VDXR too)
+  shows no drops on the same PC, so it's something about how we use VDXR.
+- SteamVR as the OpenXR runtime: the picture is upside down (Tre). Not
+  looked at yet.
+- Next: VRTestSubmit (Options > VR performance > Testing): 1 = submit the
+  projection only (no quad layers), 2 = also no monitor Present. Logged as
+  "Test:" and in the Perf line, so each setting is measured apart.
+
 ## Menus: the mouse steps aside
 
 - Problem (Tre): in menus the mouse cursor sat in the middle of the screen

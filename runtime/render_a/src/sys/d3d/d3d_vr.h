@@ -60,4 +60,7 @@ void d3d_VR_OnSwapBuffers();
 // breakdown).
 void d3d_VR_AfterPresent();
 
+// Testing: true = don't Present this frame (VRTestSubmit 2).
+bool d3d_VR_SkipPresent();
+
 #endif // __D3D_VR_H__
