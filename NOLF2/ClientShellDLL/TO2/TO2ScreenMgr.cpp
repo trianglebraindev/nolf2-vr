@@ -228,6 +228,9 @@ void CTO2ScreenMgr::AddScreen(eScreenID screenID)
 	case SCREEN_ID_VRLEVELS:
 		pScreen = debug_new(CScreenVRLevels);
 		break;
+	case SCREEN_ID_VRPERF:
+		pScreen = debug_new(CScreenVRPerf);
+		break;
 	case SCREEN_ID_CONTROLS:
 		pScreen = debug_new(CScreenControls);
 		break;

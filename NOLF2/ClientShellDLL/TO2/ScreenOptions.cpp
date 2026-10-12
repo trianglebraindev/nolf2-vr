@@ -49,6 +49,7 @@ LTBOOL CScreenOptions::Build()
 	CLTGUITextCtrl* pGame = AddTextItem(IDS_GAME_OPTIONS, CMD_GAME, IDS_HELP_GAME_OPTIONS);
 	CLTGUITextCtrl* pPerf = AddTextItem(IDS_PERFORMANCE, CMD_PERFORMANCE, IDS_HELP_PERFORMANCE);
 	AddTextItem((char*)"VR", CMD_VR_OPTIONS, 0);	// NOLF2 VR project
+	AddTextItem((char*)"VR performance", CMD_VR_PERF, 0);
 	AddTextItem((char*)"Cheats", CMD_VR_CHEATS, 0);
 
 	// Make sure to call the base class
@@ -95,6 +96,11 @@ uint32 CScreenOptions::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwPar
 	case CMD_VR_CHEATS:
 		{
 			m_pScreenMgr->SetCurrentScreen(SCREEN_ID_VRCHEATS);
+			break;
+		}
+	case CMD_VR_PERF:
+		{
+			m_pScreenMgr->SetCurrentScreen(SCREEN_ID_VRPERF);
 			break;
 		}
 	default:

@@ -85,6 +85,8 @@ ADD_SCREEN(VR,ScreenGame)
 //options - Cheats, and its Level select (NOLF2 VR project), likewise
 ADD_SCREEN(VRCHEATS,ScreenGame)
 ADD_SCREEN(VRLEVELS,ScreenGame)
+//options - VR performance (NOLF2 VR project), likewise
+ADD_SCREEN(VRPERF,ScreenGame)
 
 // Tron's player management screen
 ADD_SCREEN(SUBROUTINES,ScreenSubroutines)

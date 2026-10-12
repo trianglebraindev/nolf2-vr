@@ -138,7 +138,7 @@ struct SlowCallLog
 static const char g_szCopyShader[] =
 	"Texture2D    g_Tex     : register(t0);\n"
 	"SamplerState g_Sampler : register(s0);\n"
-	"cbuffer Params : register(b0) { float4 g_vParams; };\n"	// x = linearize (0/1), y = keep alpha (0/1)
+	"cbuffer Params : register(b0) { float4 g_vParams; };\n"	// x = linearize (0/1), y = keep alpha (0/1), zw = part of the source used (render scale)
 	"struct VSOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };\n"
 	"VSOut VSMain(uint id : SV_VertexID)\n"
 	"{\n"
@@ -153,7 +153,7 @@ static const char g_szCopyShader[] =
 	"}\n"
 	"float4 PSMain(VSOut i) : SV_Target\n"
 	"{\n"
-	"    float4 t = g_Tex.Sample(g_Sampler, i.uv);\n"
+	"    float4 t = g_Tex.Sample(g_Sampler, i.uv * g_vParams.zw);\n"
 	"    float3 c = t.rgb;\n"
 	"    float  a = (g_vParams.y > 0.5) ? t.a : 1.0;\n"
 	"    if (g_vParams.x > 0.5)\n"
@@ -325,6 +325,8 @@ struct Bridge::Impl
 		m_hLocalSpace = m_hAppSpace = m_hViewSpace = XR_NULL_HANDLE;
 		m_eSessionState = XR_SESSION_STATE_UNKNOWN;
 		m_bSessionRunning = m_bQuit = m_bRecenterPending = false;
+		m_fEyeScale = 1.0f;
+		m_fLastWaitMs = 0.0;
 		ZeroMemory(&m_AdapterLuid, sizeof(m_AdapterLuid));
 		m_eMinFeatureLevel = D3D_FEATURE_LEVEL_11_0;
 		m_nSwapchainFormat = 0;
@@ -374,8 +376,14 @@ struct Bridge::Impl
 	void PollEvents();
 	void WaitForD3D9();
 	void WaitForD3D11();
-	void Blit(SharedTexture& src, Swapchain& dst, bool bAlpha);
+	void Blit(SharedTexture& src, Swapchain& dst, bool bAlpha, float fUScale = 1.0f, float fVScale = 1.0f);
 	bool DoRecenter();
+
+	// The eyes are drawn at this share of their textures' size (the
+	// render resolution setting), from the top left; the copy into the
+	// headset's images stretches that part over them.
+	float		m_fEyeScale;
+	double		m_fLastWaitMs;		// last xrWaitFrame (waiting on the headset)
 };
 
 static XrPosef IdentityPose()
@@ -1198,8 +1206,10 @@ bool Bridge::BeginFrame()
 	XrFrameWaitInfo wi;
 	ZeroMemory(&wi, sizeof(wi));
 	wi.type = XR_TYPE_FRAME_WAIT_INFO;
+	const double fWaitStart = NowMs();
 	if (!im.Check(xrWaitFrame(im.m_hSession, &wi, &im.m_FrameState), "xrWaitFrame"))
 		return false;
+	im.m_fLastWaitMs = NowMs() - fWaitStart;
 
 	XrFrameBeginInfo bi;
 	ZeroMemory(&bi, sizeof(bi));
@@ -1280,7 +1290,7 @@ void Bridge::Impl::WaitForD3D11()
 		SwitchToThread();
 }
 
-void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst, bool bAlpha)
+void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst, bool bAlpha, float fUScale, float fVScale)
 {
 	XrSwapchainImageAcquireInfo ai;
 	ZeroMemory(&ai, sizeof(ai));
@@ -1298,7 +1308,7 @@ void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst, bool bAlpha)
 		Log("xrWaitSwapchainImage timed out; skipping this image");
 	if (resWait == XR_SUCCESS)
 	{
-		float aParams[4] = { dst.m_bLinearize ? 1.0f : 0.0f, bAlpha ? 1.0f : 0.0f, 0, 0 };
+		float aParams[4] = { dst.m_bLinearize ? 1.0f : 0.0f, bAlpha ? 1.0f : 0.0f, fUScale, fVScale };
 		m_pCtx11->UpdateSubresource(m_pParams, 0, NULL, aParams, 0, 0);
 
 		D3D11_VIEWPORT vp = { 0, 0, (float)dst.m_nWidth, (float)dst.m_nHeight, 0.0f, 1.0f };
@@ -1427,7 +1437,13 @@ void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen, const La
 		if (bEyes)
 		{
 			for (int e = 0; e < EYE_COUNT; ++e)
-				im.Blit(im.m_aEyeTex[e], im.m_aEyeChain[e], false);
+			{
+				// (Only the part drawn at the render resolution.)
+				SharedTexture& tex = im.m_aEyeTex[e];
+				float fU = tex.m_nWidth ? (float)GetEyeWidth() / (float)tex.m_nWidth : 1.0f;
+				float fV = tex.m_nHeight ? (float)GetEyeHeight() / (float)tex.m_nHeight : 1.0f;
+				im.Blit(tex, im.m_aEyeChain[e], false, fU, fV);
+			}
 		}
 		for (unsigned i = 0; i < nExtra; ++i)
 		{
@@ -1568,8 +1584,28 @@ bool Bridge::ResizeScreen(unsigned nWidth, unsigned nHeight)
 
 bool Bridge::IsSessionRunning() const	{ return m_pImpl && m_pImpl->m_bSessionRunning; }
 bool Bridge::ShouldQuit() const			{ return m_pImpl && m_pImpl->m_bQuit; }
-unsigned Bridge::GetEyeWidth() const	{ return m_pImpl->m_aEyeTex[0].m_nWidth; }
-unsigned Bridge::GetEyeHeight() const	{ return m_pImpl->m_aEyeTex[0].m_nHeight; }
+unsigned Bridge::GetEyeTextureWidth() const		{ return m_pImpl->m_aEyeTex[0].m_nWidth; }
+unsigned Bridge::GetEyeTextureHeight() const	{ return m_pImpl->m_aEyeTex[0].m_nHeight; }
+unsigned Bridge::GetEyeWidth() const
+{
+	unsigned n = (unsigned)((float)m_pImpl->m_aEyeTex[0].m_nWidth * m_pImpl->m_fEyeScale + 0.5f);
+	return (n > 16) ? n : 16;
+}
+unsigned Bridge::GetEyeHeight() const
+{
+	unsigned n = (unsigned)((float)m_pImpl->m_aEyeTex[0].m_nHeight * m_pImpl->m_fEyeScale + 0.5f);
+	return (n > 16) ? n : 16;
+}
+void Bridge::SetEyeRenderScale(float fScale)
+{
+	m_pImpl->m_fEyeScale = (fScale < 0.5f) ? 0.5f : (fScale > 1.0f ? 1.0f : fScale);
+}
+float Bridge::GetEyeRenderScale() const	{ return m_pImpl->m_fEyeScale; }
+double Bridge::GetLastWaitMs() const	{ return m_pImpl->m_fLastWaitMs; }
+double Bridge::GetDisplayPeriodMs() const
+{
+	return (double)m_pImpl->m_FrameState.predictedDisplayPeriod / 1000000.0;
+}
 IDirect3DTexture9* Bridge::GetEyeTexture(Eye eEye) const	{ return m_pImpl->m_aEyeTex[eEye].m_p9; }
 IDirect3DTexture9* Bridge::GetScreenTexture() const			{ return m_pImpl->m_ScreenTex.m_p9; }
 const EyeView& Bridge::GetEyeView(Eye eEye) const			{ return m_pImpl->m_aEyeViews[eEye]; }

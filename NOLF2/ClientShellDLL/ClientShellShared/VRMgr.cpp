@@ -46,7 +46,8 @@
 //   VRMoveWithHand  0 = walk where you look (default),
 //                   1 = walk where the left controller points
 //
-//   ADJUST GUN (click the left stick while playing; click again when done)
+//   ADJUST GUN (with VRAdjustClick on: click the left stick while playing;
+//   click again when done)
 //     Left stick              slide the gun in your hand
 //     Right stick             tilt (up/down) and turn (left/right) it
 //     Right grip + right stick up/down   raise / lower it
@@ -121,6 +122,16 @@
 //   VRVehicleTilt   0 = the horizon stays level (default; the snowmobile
 //                   banks and climbs, your view doesn't); 1 = the view
 //                   tilts with the snowmobile
+//
+//   Adjusting (see UpdateGunAdjust):
+//   VRAdjustClick   1 = clicking the left stick adjusts the gun, scope,
+//                   magazine hold or snowmobile fit; 0 = off (default)
+//
+//   Performance (read by the engine):
+//   VRMirror        1 = the monitor shows the headset's view (default);
+//                   0 = the monitor stays black (a little faster)
+//   VRRenderScale   the headset picture's resolution, percent of what the
+//                   VR runtime asks for: 50 - 100 (default 100)
 //
 //   Left-handed play (see IsLeftHanded in VRMgr.h):
 //   VRLeftHanded    0 = the gun in your right hand (default), 1 = in your
@@ -221,6 +232,7 @@ static VarTrack g_vtVRVehicleTilt;
 static VarTrack g_vtVRVehiclePiece;
 static VarTrack g_vtVRCutsceneFlat;
 static VarTrack g_vtVRLeftHanded;
+static VarTrack g_vtVRAdjustClick;
 static VarTrack g_vtVRWalkStick;
 static VarTrack g_vtVRCheatGod;
 static VarTrack g_vtVRCheatInvisible;
@@ -432,6 +444,7 @@ void CVRMgr::Init()
 	g_vtVRVehiclePiece.Init(g_pLTClient, "VRVehiclePiece", NULL, -1.0f);
 	g_vtVRCutsceneFlat.Init(g_pLTClient, "VRCutsceneFlat", NULL, 0.0f);
 	g_vtVRLeftHanded.Init(g_pLTClient, "VRLeftHanded", NULL, 0.0f);
+	g_vtVRAdjustClick.Init(g_pLTClient, "VRAdjustClick", NULL, 0.0f);
 	g_vtVRWalkStick.Init(g_pLTClient, "VRWalkStick", NULL, 0.0f);
 	g_vtVRCheatGod.Init(g_pLTClient, "VRCheatGod", NULL, 0.0f);
 	g_vtVRCheatInvisible.Init(g_pLTClient, "VRCheatInvisible", NULL, 0.0f);
@@ -501,6 +514,9 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRVehiclePiece",		-1.0f },
 	{ "VRCutsceneFlat",		0.0f },
 	{ "VRLeftHanded",		0.0f },
+	{ "VRAdjustClick",		0.0f },
+	{ "VRMirror",			1.0f },
+	{ "VRRenderScale",		100.0f },
 	{ "VRWalkStick",		0.0f },
 	{ "VRCheatGod",			0.0f },
 	{ "VRCheatInvisible",	0.0f },
@@ -1358,7 +1374,7 @@ void CVRMgr::SaveGunFits()
 	if (!pFile)
 		return;
 	fprintf(pFile, "# NOLF2 VR: how each gun sits in your hand. Made by the in-game\n");
-	fprintf(pFile, "# \"adjust gun\" mode (click the left stick while playing).\n");
+	fprintf(pFile, "# \"adjust gun\" mode (Options > VR > Adjust with stick click, then click the left stick).\n");
 	fprintf(pFile, "# \"weapon\"  slide right / up / forward (cm)  turn  tilt (degrees)  size  scope up / right (cm)\n");
 	fprintf(pFile, "#     magazine in the left hand: slide right / up / forward (cm)  turn  tilt  roll (degrees)\n");
 	for (int i = 0; i < m_nGunFits; ++i)
@@ -1380,8 +1396,10 @@ void CVRMgr::Message(const char* pszText)
 void CVRMgr::UpdateGunAdjust(float fFrameTime)
 {
 	// Click the left stick: start / finish adjusting (on letting go, see
-	// UpdateStickClicks).
-	if (m_bLeftStickClick && !IsDecisionOpen())
+	// UpdateStickClicks). Starting needs VRAdjustClick on (Options > VR,
+	// off by default: the starting fits are tuned, and a stray click
+	// shouldn't throw you into it); finishing always works.
+	if (m_bLeftStickClick && !IsDecisionOpen() && (m_bAdjusting || g_vtVRAdjustClick.GetFloat(0.0f) != 0.0f))
 	{
 		if (!m_bAdjusting)
 		{
@@ -3154,8 +3172,10 @@ void CVRMgr::UpdateStickClicks(bool bPlay)
 
 	if (!m_bStickCombo)
 	{
-		m_bLeftStickClick = bPlay && bLWas && !bL;
-		if (bPlay && bRWas && !bR && !m_bRiding)
+		// (While adjusting, too: that click is how you finish. It was off
+		// then, so the adjust mode could only be left through the menu.)
+		m_bLeftStickClick = (bPlay || m_bAdjusting) && bLWas && !bL;
+		if (bPlay && !m_bAdjusting && bRWas && !bR && !m_bRiding)
 			SendCommandClick((g_vtVRReload.GetFloat(1.0f) != 0.0f) ? COMMAND_ID_NEXT_AMMO : COMMAND_ID_RELOAD);
 	}
 	if (!bL && !bR)
@@ -3561,8 +3581,21 @@ bool CVRMgr::RenderHudItem(CHUDItem* pItem)
 			// then anyway.)
 			if (g_vtVRGunHud.GetFloat(1.0f) == 0.0f || !GetGunHudPos(vPos))
 				return false;
+			// Choosing ammo: the chooser takes its place (below).
+			if (g_pInterfaceMgr && g_pInterfaceMgr->IsChoosingAmmo())
+				return true;
 			nLayer = LTVR_LAYER_GUN;
 			fWidthCm = g_vtVRGunHudSize.GetFloat(10.0f);
+			break;
+
+		case kHUDVRGunChooser:
+			// The ammo chooser (next ammo), on the gun where the ammo is, a
+			// little larger (it holds a list). With the ammo on the HUD
+			// instead (VRGunHud 0), it stays on the HUD too.
+			if (g_vtVRGunHud.GetFloat(1.0f) == 0.0f || !GetGunHudPos(vPos))
+				return false;
+			nLayer = LTVR_LAYER_GUN;
+			fWidthCm = g_vtVRGunHudSize.GetFloat(10.0f) * 1.5f;
 			break;
 
 		default:

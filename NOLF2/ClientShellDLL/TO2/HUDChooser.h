@@ -75,6 +75,10 @@ public:
 
     void        UpdateLayout();
 
+	// VR: on the gun, in place of the ammo readout while you choose.
+	eHUDVRSpot	GetVRSpot() { return kHUDVRGunChooser; }
+	bool		GetVRRect(float rect[4]) { return m_VRRect.Get(rect); }
+
 	enum Constants 
 	{ 
 		kMaxAmmoTypes = 10,
@@ -82,6 +86,8 @@ public:
 	
 
 private:
+	CHUDVRRect	m_VRRect;
+
 	float		m_fIconHt;
 	float		m_fTextHeight;
 	uint32		m_TextColor;

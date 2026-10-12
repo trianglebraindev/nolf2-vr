@@ -24,7 +24,6 @@
 //  instead of the monitor picture, on a transparent background. That
 //  layer is shown over the 3D world: fixed in front of the eyes while
 //  playing, or as a panel that stays put for menus (LTVR_SetHudMode).
-//  The monitor still gets the world with the interface laid on top.
 //
 //  Transparency: the texture is cleared to fully transparent, and alpha
 //  blending is told to build up coverage in the alpha channel
@@ -64,14 +63,28 @@
 //  layers go on.
 //
 //  THE MONITOR AND SNAPSHOTS
-//  The layers above (scope, crosshair, watch, HUD) are put together by
-//  the headset, so the monitor (the game's own flat camera) and the
-//  headset's own captures never show them. With VRMirror on, the monitor
-//  shows the middle of the left eye's picture (the eye at the scope while
-//  you look through one, LTVR_SetMirrorEye) with every layer drawn onto
-//  it where the headset puts it (each layer's corners projected with that
-//  eye's own pose and field of view). LTVR_TakeSnapshot saves that same
-//  picture, at the eye's full sharpness, as a PNG in run\Snapshots.
+//  On frames with the world in the headset the game's own flat camera is
+//  not drawn at all (nobody can see the monitor with a headset on, and it
+//  would cost as much as a third eye). With VRMirror on, the monitor shows
+//  the middle of the left eye's picture (the eye at the scope while you
+//  look through one, LTVR_SetMirrorEye) with every layer drawn onto it
+//  where the headset puts it (each layer's corners projected with that
+//  eye's own pose and field of view: the headset puts the layers together
+//  itself, so they aren't in the eye pictures). With VRMirror off the
+//  monitor stays black, which saves that work too. LTVR_TakeSnapshot saves
+//  the same picture, at the eye's full sharpness, as a PNG in run\Snapshots.
+//
+//  RENDER RESOLUTION
+//  VRRenderScale (50 - 100, percent of the headset's recommended size per
+//  side) draws the eyes into the top left of their textures at that size;
+//  the bridge stretches that part over the headset's images.
+//
+//  THE PERFORMANCE LINE
+//  Every 10 seconds of play with the world in the headset, xrbridge.log
+//  gets a "Perf:" line: frames per second against the headset's refresh,
+//  average and worst frame time, how long drawing took on the processor
+//  and on the graphics card, how long the headset made us wait (time to
+//  spare), and the eye size in use.
 //
 //  COORDINATES
 //  OpenXR:   metres, right-handed, +X right, +Y up, -Z forward.
@@ -235,6 +248,190 @@ static void VR_ReleaseCanvas()
 }
 
 //------------------------------------------------------------------
+// The performance line (see the top of this file)
+//------------------------------------------------------------------
+
+// The graphics card's time is measured with timestamp queries: one set per
+// frame, read back a few frames later (never waiting for them).
+static const int kVRPerfSlots = 4;
+
+struct VRPerfSlot
+{
+	IDirect3DQuery9*	pDisjoint;	// were the timestamps reliable (no clock change)
+	IDirect3DQuery9*	pFreq;		// timestamp ticks per second
+	IDirect3DQuery9*	pStart;
+	IDirect3DQuery9*	pEnd;
+	bool				bPending;	// issued, not read yet
+};
+
+struct VRPerf
+{
+	VRPerfSlot		aSlots[kVRPerfSlots];
+	int				nSlot;			// the slot this frame uses
+	bool			bGpuOpen;		// this frame's start was issued
+	bool			bQueriesFailed;	// the card can't do them: CPU numbers only
+	LARGE_INTEGER	freq;
+	LARGE_INTEGER	windowStart;	// the 10 seconds being measured
+	LARGE_INTEGER	lastSwap;
+	LARGE_INTEGER	eyesStart;		// this frame's eye drawing began
+	bool			bWindowOpen;
+	bool			bLastSwapValid;
+	int				nFrames;
+	double			fFrameMsSum, fFrameMsWorst;
+	double			fCpuMsSum;		// eye drawing to the end of the frame, on the processor
+	double			fWaitMsSum;		// waiting on the headset
+	double			fGpuMsSum;
+	int				nGpuSamples;
+};
+
+static VRPerf g_VRPerf;
+
+static double VR_PerfMs(const LARGE_INTEGER& a, const LARGE_INTEGER& b)
+{
+	return g_VRPerf.freq.QuadPart ? (double)(b.QuadPart - a.QuadPart) * 1000.0 / (double)g_VRPerf.freq.QuadPart : 0.0;
+}
+
+static void VR_PerfRelease()
+{
+	for (int i = 0; i < kVRPerfSlots; ++i)
+	{
+		VRPerfSlot& s = g_VRPerf.aSlots[i];
+		if (s.pDisjoint)	s.pDisjoint->Release();
+		if (s.pFreq)		s.pFreq->Release();
+		if (s.pStart)		s.pStart->Release();
+		if (s.pEnd)			s.pEnd->Release();
+	}
+	memset(&g_VRPerf, 0, sizeof(g_VRPerf));
+}
+
+// Collects any earlier frame's graphics card time that has come back.
+static void VR_PerfCollectGpu()
+{
+	for (int i = 0; i < kVRPerfSlots; ++i)
+	{
+		VRPerfSlot& s = g_VRPerf.aSlots[i];
+		if (!s.bPending)
+			continue;
+		BOOL bDisjoint = TRUE;
+		UINT64 nFreq = 0, nStart = 0, nEnd = 0;
+		if (s.pDisjoint->GetData(&bDisjoint, sizeof(bDisjoint), 0) != S_OK ||
+			s.pFreq->GetData(&nFreq, sizeof(nFreq), 0) != S_OK ||
+			s.pStart->GetData(&nStart, sizeof(nStart), 0) != S_OK ||
+			s.pEnd->GetData(&nEnd, sizeof(nEnd), 0) != S_OK)
+			continue;		// not back yet
+		s.bPending = false;
+		if (!bDisjoint && nFreq && nEnd > nStart)
+		{
+			g_VRPerf.fGpuMsSum += (double)(nEnd - nStart) * 1000.0 / (double)nFreq;
+			++g_VRPerf.nGpuSamples;
+		}
+	}
+}
+
+// The eyes are about to be drawn.
+static void VR_PerfEyesStart(IDirect3DDevice9* pDevice)
+{
+	if (!g_VRPerf.freq.QuadPart)
+		QueryPerformanceFrequency(&g_VRPerf.freq);
+	QueryPerformanceCounter(&g_VRPerf.eyesStart);
+	g_VRPerf.bGpuOpen = false;
+	if (g_VRPerf.bQueriesFailed || !pDevice)
+		return;
+
+	VR_PerfCollectGpu();
+	VRPerfSlot& s = g_VRPerf.aSlots[g_VRPerf.nSlot];
+	if (!s.pDisjoint)
+	{
+		if (FAILED(pDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMPDISJOINT, &s.pDisjoint)) ||
+			FAILED(pDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMPFREQ, &s.pFreq)) ||
+			FAILED(pDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &s.pStart)) ||
+			FAILED(pDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &s.pEnd)))
+		{
+			g_VRPerf.bQueriesFailed = true;
+			xrb::Log("Perf: the graphics card can't time itself here; CPU numbers only");
+			return;
+		}
+	}
+	if (s.bPending)
+		return;			// (still out after four frames: skip timing this one)
+	s.pDisjoint->Issue(D3DISSUE_BEGIN);
+	s.pStart->Issue(D3DISSUE_END);
+	g_VRPerf.bGpuOpen = true;
+}
+
+// This frame's drawing is done (just before it goes to the headset).
+static void VR_PerfGpuEnd()
+{
+	if (!g_VRPerf.bGpuOpen)
+		return;
+	VRPerfSlot& s = g_VRPerf.aSlots[g_VRPerf.nSlot];
+	s.pEnd->Issue(D3DISSUE_END);
+	s.pFreq->Issue(D3DISSUE_END);
+	s.pDisjoint->Issue(D3DISSUE_END);
+	s.bPending = true;
+	g_VRPerf.bGpuOpen = false;
+	g_VRPerf.nSlot = (g_VRPerf.nSlot + 1) % kVRPerfSlots;
+}
+
+// A frame went to the headset (bEyes: with the world drawn in it). Writes
+// the line every 10 seconds of world frames.
+static void VR_PerfFrameDone(bool bEyes)
+{
+	if (!g_VRPerf.freq.QuadPart)
+		QueryPerformanceFrequency(&g_VRPerf.freq);
+	LARGE_INTEGER now;
+	QueryPerformanceCounter(&now);
+	const double fFrameMs = g_VRPerf.bLastSwapValid ? VR_PerfMs(g_VRPerf.lastSwap, now) : 0.0;
+	g_VRPerf.lastSwap = now;
+	g_VRPerf.bLastSwapValid = true;
+
+	if (!bEyes)
+	{
+		// Menus, loading, cutscenes on the flat screen: start afresh after.
+		g_VRPerf.bWindowOpen = false;
+		return;
+	}
+	if (!g_VRPerf.bWindowOpen)
+	{
+		g_VRPerf.bWindowOpen = true;
+		g_VRPerf.windowStart = now;
+		g_VRPerf.nFrames = 0;
+		g_VRPerf.fFrameMsSum = g_VRPerf.fFrameMsWorst = 0.0;
+		g_VRPerf.fCpuMsSum = g_VRPerf.fWaitMsSum = g_VRPerf.fGpuMsSum = 0.0;
+		g_VRPerf.nGpuSamples = 0;
+		return;		// (the first frame's time includes whatever came before)
+	}
+
+	++g_VRPerf.nFrames;
+	g_VRPerf.fFrameMsSum += fFrameMs;
+	if (fFrameMs > g_VRPerf.fFrameMsWorst)
+		g_VRPerf.fFrameMsWorst = fFrameMs;
+	g_VRPerf.fCpuMsSum += VR_PerfMs(g_VRPerf.eyesStart, now);
+	g_VRPerf.fWaitMsSum += g_pVRBridge ? g_pVRBridge->GetLastWaitMs() : 0.0;
+
+	const double fWindowMs = VR_PerfMs(g_VRPerf.windowStart, now);
+	if (fWindowMs < 10000.0 || g_VRPerf.nFrames <= 0)
+		return;
+
+	const double n = (double)g_VRPerf.nFrames;
+	const double fPeriod = g_pVRBridge ? g_pVRBridge->GetDisplayPeriodMs() : 0.0;
+	char szGpu[32];
+	if (g_VRPerf.nGpuSamples > 0)
+		_snprintf(szGpu, sizeof(szGpu), "%.1f ms", g_VRPerf.fGpuMsSum / (double)g_VRPerf.nGpuSamples);
+	else
+		strcpy(szGpu, "n/a");
+	xrb::Log("Perf: %.1f fps (headset %.0f Hz), frame %.1f ms avg / %.1f worst, drawing CPU %.1f ms / GPU %s, "
+		"headset wait %.1f ms, eyes %ux%u (%d%%), mirror %s",
+		n * 1000.0 / fWindowMs, fPeriod > 0.0 ? 1000.0 / fPeriod : 0.0,
+		g_VRPerf.fFrameMsSum / n, g_VRPerf.fFrameMsWorst, g_VRPerf.fCpuMsSum / n, szGpu,
+		g_VRPerf.fWaitMsSum / n,
+		g_pVRBridge ? g_pVRBridge->GetEyeWidth() : 0, g_pVRBridge ? g_pVRBridge->GetEyeHeight() : 0,
+		g_pVRBridge ? (int)(g_pVRBridge->GetEyeRenderScale() * 100.0f + 0.5f) : 100,
+		g_CV_VRMirror.m_Val ? "on" : "off");
+	g_VRPerf.bWindowOpen = false;	// the next frame starts the next 10 seconds
+}
+
+//------------------------------------------------------------------
 // Set-up and tear-down
 //------------------------------------------------------------------
 
@@ -287,6 +484,7 @@ static void VR_Destroy()
 	g_nVRSpotDrawing = -1;
 	VR_ReleaseCanvas();
 	VR_ReleaseMirror();
+	VR_PerfRelease();
 	g_bVRSnapshotWanted = false;
 	g_bVRMarkerFilled = false;
 	if (g_pVRVignetteTex)	{ g_pVRVignetteTex->Release();	g_pVRVignetteTex = NULL; }
@@ -382,7 +580,8 @@ void d3d_VR_PostDeviceCreate(IDirect3DDevice9Ex* pDevice, uint32 nScreenWidth, u
 			eDepthFormat = desc.Format;
 		pGameDepth->Release();
 	}
-	HRESULT hr = pDevice->CreateDepthStencilSurface(g_pVRBridge->GetEyeWidth(), g_pVRBridge->GetEyeHeight(),
+	// (Full texture size: the render resolution setting only uses part of it.)
+	HRESULT hr = pDevice->CreateDepthStencilSurface(g_pVRBridge->GetEyeTextureWidth(), g_pVRBridge->GetEyeTextureHeight(),
 		eDepthFormat, D3DMULTISAMPLE_NONE, 0, TRUE, &g_pVREyeDepth, NULL);
 	if (FAILED(hr) || !g_pVREyeSurf[0] || !g_pVREyeSurf[1])
 	{
@@ -410,8 +609,8 @@ void d3d_VR_PostDeviceCreate(IDirect3DDevice9Ex* pDevice, uint32 nScreenWidth, u
 	// Put the world origin wherever the head is when tracking starts.
 	g_pVRBridge->Recenter();
 
-	xrb::Log("VR active (stereo), eyes %ux%u, monitor %ux%u", g_pVRBridge->GetEyeWidth(),
-		g_pVRBridge->GetEyeHeight(), nScreenWidth, nScreenHeight);
+	xrb::Log("VR active (stereo), eyes %ux%u, monitor %ux%u", g_pVRBridge->GetEyeTextureWidth(),
+		g_pVRBridge->GetEyeTextureHeight(), nScreenWidth, nScreenHeight);
 }
 
 void d3d_VR_OnModeChange(uint32 nScreenWidth, uint32 nScreenHeight)
@@ -687,12 +886,12 @@ static bool IsMainWorldView(const SceneDesc* pDesc)
 		pDesc->m_Rect.right >= (int)g_ScreenWidth && pDesc->m_Rect.bottom >= (int)g_ScreenHeight;
 }
 
-void d3d_VR_RenderEyes(SceneDesc* pDesc)
+bool d3d_VR_RenderEyes(SceneDesc* pDesc)
 {
 	if (!pDesc || !d3d_VR_IsActive())
-		return;
+		return false;
 	if (!IsMainWorldView(pDesc))
-		return;
+		return false;
 
 	// The interface layer is still installed: the last frame never reached
 	// the flip (it can happen as a level starts loading). Put the monitor
@@ -706,14 +905,22 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 	// On a flat screen this frame: no eyes, so it's shown like a menu (the
 	// monitor's picture, interface and all, on the screen).
 	if (g_bVRFlatView)
-		return;
+		return false;
 
+	// (Drawn already this frame: nothing more to show anywhere.)
 	if (g_bVREyesDrawn)
-		return;
+		return true;
 	if (!VR_EnsureFrameOpen() || !g_pVRBridge->HasValidViews())
-		return;
+		return false;
+
+	// The render resolution setting (percent per side), for this frame.
+	{
+		float fScale = g_CV_VRRenderScale.m_Val / 100.0f;
+		g_pVRBridge->SetEyeRenderScale(fScale < 0.5f ? 0.5f : (fScale > 1.0f ? 1.0f : fScale));
+	}
 
 	IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+	VR_PerfEyesStart(pDevice);
 
 	// Remember the game's render target and depth buffer.
 	IDirect3DSurface9* pOldRT = NULL;
@@ -762,7 +969,9 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 		eyeDesc.m_Rect.bottom	= (int)nEyeHeight;
 		eyeDesc.m_Pos			= vBodyPos + RotateVec(rBody, XRToLTPos(view.pose.position, fUnitsPerMeter));
 		eyeDesc.m_Rotation		= rBody * XRToLTRot(view.pose.orientation);
-		eyeDesc.m_FrameTime		= 0.0f;	// time moves once per frame, in the monitor pass
+		// Time moves once per frame: in the left eye's pass (the monitor's
+		// own pass, which used to do it, isn't drawn any more).
+		eyeDesc.m_FrameTime		= (e == 0) ? pDesc->m_FrameTime : 0.0f;
 
 		// This eye's exact (off-centre) view window at distance 1.
 		float fTanLeft  = (float)tan(view.fov.angleLeft);
@@ -797,7 +1006,7 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 	if (g_bVRScopeSet)
 		VR_RenderScopeView(pDevice, pDesc);
 
-	// Back to the game's own targets for the monitor pass.
+	// Back to the game's own targets (for the interface, drawn after).
 	pDevice->SetRenderTarget(0, pOldRT);
 	pDevice->SetDepthStencilSurface(pOldDepth);
 	g_Device.InvalidateViewport();
@@ -806,6 +1015,7 @@ void d3d_VR_RenderEyes(SceneDesc* pDesc)
 
 	g_bVREyesDrawn = true;
 	g_bVREyesJustDrawn = true;
+	return true;
 }
 
 //------------------------------------------------------------------
@@ -1954,8 +2164,7 @@ static void VR_SaveSnapshot()
 
 // Puts the headset's picture together; saves it if a snapshot is wanted
 // and shows it on the monitor if bShow. If it can't be put together the
-// monitor keeps the game's own picture (drawn earlier when not mirroring;
-// when mirroring, the plain world without the interface).
+// monitor stays black.
 static void VR_ComposeMirrorAndShow(bool bShow, const xrb::ScreenPlacement* pScreen, const xrb::ScreenPlacement* aSpots,
 	const int* anSpot, unsigned nSpots)
 {
@@ -2044,20 +2253,16 @@ void d3d_VR_OnSwapBuffers()
 			VR_ApplySpotOpacity();
 
 			// The monitor: what the headset shows (VRMirror, drawn below,
-			// once the layers are placed), or the game's own camera,
-			// faded like the headset, with the interface on top.
+			// once the layers are placed), or black. (The game's own flat
+			// camera isn't drawn on these frames; see the top of this file.)
 			const bool bMirror = g_CV_VRMirror.m_Val != 0;
-			if (!bMirror)
 			{
-				if (g_fVRFade > 0.0f)
+				IDirect3DDevice9* pDevice = PD3DDEVICE->GetDevice();
+				IDirect3DSurface9* pBackBuffer = NULL;
+				if (SUCCEEDED(pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer)) && pBackBuffer)
 				{
-					VR_DrawFullQuad(NULL, D3DCOLOR_ARGB((int)(g_fVRFade * 255.0f + 0.5f), 0, 0, 0),
-						g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_ALPHA);
-				}
-				if (bHud)
-				{
-					VR_DrawFullQuad(g_pVRBridge->GetScreenTexture(), D3DCOLOR_ARGB(255, 255, 255, 255),
-						g_nVRScreenWidth, g_nVRScreenHeight, VRBLEND_PREMULTIPLIED);
+					pDevice->ColorFill(pBackBuffer, NULL, D3DCOLOR_XRGB(0, 0, 0));
+					pBackBuffer->Release();
 				}
 			}
 
@@ -2112,14 +2317,17 @@ void d3d_VR_OnSwapBuffers()
 				// (Before EndFrame: the eye poses and layers are this frame's.)
 				if (bMirror || g_bVRSnapshotWanted)
 					VR_ComposeMirrorAndShow(bMirror, &place, aMirrorSpots, anMirrorSpot, nMirrorSpots);
+				VR_PerfGpuEnd();
 				g_pVRBridge->EndFrame(true, &place, nSpots ? aSpots : NULL, nSpots);
 			}
 			else
 			{
 				if (bMirror || g_bVRSnapshotWanted)
 					VR_ComposeMirrorAndShow(bMirror, NULL, aMirrorSpots, anMirrorSpot, 0);
+				VR_PerfGpuEnd();
 				g_pVRBridge->EndFrame(true, (const xrb::ScreenPlacement*)NULL);
 			}
+			VR_PerfFrameDone(true);
 		}
 		else
 		{
@@ -2146,6 +2354,7 @@ void d3d_VR_OnSwapBuffers()
 			}
 			place.widthMeters = fScreenWidth;
 			g_pVRBridge->EndFrame(false, &place);
+			VR_PerfFrameDone(false);
 		}
 		g_bVRFrameOpen = false;
 		g_bVREyesDrawn = false;

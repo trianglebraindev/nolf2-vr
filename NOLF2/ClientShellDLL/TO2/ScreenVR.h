@@ -2,7 +2,8 @@
 //
 // MODULE  : ScreenVR.h
 //
-// PURPOSE : Options > VR: the VR settings (NOLF2 VR project)
+// PURPOSE : Options > VR: the VR settings, and Options > VR performance
+//           (NOLF2 VR project)
 //
 // ----------------------------------------------------------------------- //
 
@@ -22,7 +23,9 @@ enum
 	CMD_VR_OPTIONS = CMD_CUSTOM + 300,
 	CMD_VR_RESET,
 	CMD_VR_GIVEALL,
-	CMD_VR_SETHEIGHT
+	CMD_VR_SETHEIGHT,
+	CMD_VR_PERF,			// Options > VR performance
+	CMD_VR_PERF_RESET
 };
 
 class CScreenVR : public CBaseScreen
@@ -71,6 +74,36 @@ protected:
 	uint8	m_nWalkStick;		// 0 left stick, 1 right stick (VRWalkStick)
 	uint8	m_nVignette;		// 0 off, 1 light, 2 medium, 3 strong
 	uint8	m_nVignetteWhen;	// 0 moving, 1 turning, 2 both
+	LTBOOL	m_bAdjustClick;		// left stick click adjusts the gun (VRAdjustClick)
+};
+
+// Options > VR performance: the settings that trade looks for frame rate.
+// (Their own page: the VR page is full.)
+class CScreenVRPerf : public CBaseScreen
+{
+public:
+	CScreenVRPerf();
+	virtual ~CScreenVRPerf();
+
+    LTBOOL	Build();
+    void	OnFocus(LTBOOL bFocus);
+
+	// Settings take effect as soon as they're changed.
+    LTBOOL	OnLeft();
+    LTBOOL	OnRight();
+    LTBOOL	OnLButtonUp(int x, int y);
+    LTBOOL	OnRButtonUp(int x, int y);
+
+	void	GetHelpString(uint32 dwHelpId, uint16 nControlIndex, char *buffer, int bufLen);
+
+protected:
+    uint32	OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2);
+
+	void	ReadSettings();
+	void	WriteSettings();
+
+	LTBOOL	m_bMirror;			// VRMirror
+	int		m_nRenderScale;		// VRRenderScale, percent
 };
 
 #endif // _SCREEN_VR_H_

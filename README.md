@@ -37,7 +37,8 @@ file the game needs come with it. Your normal NOLF2 isn't changed; the VR
 version keeps its own settings, saves and logs in the `VR` folder.
 
 Once in: stand (or sit) as you'll play, look ahead, and hold both stick
-clicks for a second to set your height. Settings are in **Options > VR**.
+clicks for a second to set your height. Settings are in **Options > VR**
+and **Options > VR performance**.
 
 ### If something goes wrong
 
@@ -69,7 +70,7 @@ clicks for a second to set your height. Settings are in **Options > VR**.
   look through a magnified lens.
 - **Weapon ring**: hold the grip, reach for a weapon, let go.
 - **Interface in the headset**: health and armour on your wrist like a
-  watch, ammo on the gun, the HUD and subtitles on a floating panel, menus
+  watch, ammo (and the ammo chooser) on the gun, the HUD and subtitles on a floating panel, menus
   and conversations driven by the controllers.
 - **The snowmobile**: drive with both hands on the handlebars (or the
   stick); on the scripted rides, look and turn freely.
@@ -78,6 +79,9 @@ clicks for a second to set your height. Settings are in **Options > VR**.
 - **Comfort and accessibility**: smooth or snap turning, an optional
   comfort vignette, left-handed play (gun, hands and every button swap
   sides, with mirrored models), and a choice of walking stick.
+- **Performance options**: render resolution, and the desktop mirror can
+  be switched off; the monitor's own copy of the world isn't drawn at all.
+  A performance line every 10 seconds in `xrbridge.log`.
 - **Cheats page** with level select, for jumping to any level.
 - **Stability**: fixes for a crash on exit and an occasional crash while
   loading a level, and readable crash reports.
@@ -100,7 +104,7 @@ clicks for a second to set your height. Settings are in **Options > VR**.
 | Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
-| Left stick click | adjust the gun's fit in your hand (looking through a scope: adjust the scope; holding a magazine: adjust how it's held) | |
+| Left stick click | with Options > VR > Adjust with stick click on (off by default): adjust the gun's fit in your hand (looking through a scope: adjust the scope; holding a magazine: adjust how it's held); click again to save | |
 | Conversation choices | right stick up / down, right trigger or A to pick, B to say nothing | |
 | Home key (keyboard) | recentre | recenter |
 
@@ -112,7 +116,8 @@ setting (Options > VR > Walk with).
 
 ## Settings
 
-The everyday ones are on the **Options > VR** page in the game. Everything
+The everyday ones are on the **Options > VR** and **Options > VR
+performance** pages in the game. Everything
 below is kept in `vr_settings.txt` (in the `VR` folder; `run\` for a
 source build), written when you leave that page. You can also edit it by
 hand: one `Name value` per line, read when the game starts.
@@ -149,7 +154,9 @@ hand: one `Name value` per line, read when the game starts.
 | `VRCrouchDepth` | 25 | standing: how far (cm) your head drops below your set height before Cate crouches; 0 = stick only |
 | `VRSwing` / `VRSwingSpeed` | 1 / 2.5 | swinging a sword hits (0 = trigger only); how fast the blade's tip must move, m/s |
 | `VRVignette` / `VRVignetteWhen` | 0 / 3 | comfort vignette 0 off, 1 light, 2 medium, 3 strong; when: 1 moving, 2 turning, 3 both |
-| `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the game's flat camera |
+| `VRAdjustClick` | 0 | 1 = clicking the left stick starts the adjust mode (gun fit, scope, magazine hold, snowmobile hands); Options > VR > Adjust with stick click |
+| `VRMirror` | 1 | the monitor shows what the headset shows (scope, crosshair, watch and all); 0 = the monitor stays black (a little faster). Options > VR performance |
+| `VRRenderScale` | 100 | the headset picture's resolution, percent (per side) of what the VR runtime recommends, 50 to 100; lower is faster. Options > VR performance |
 
 Files the game writes (in the `VR` folder, or `run\` for a source build):
 

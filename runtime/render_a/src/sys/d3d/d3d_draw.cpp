@@ -780,11 +780,16 @@ int d3d_RenderScene(SceneDesc *pDesc)
 	d3d_UpdateGamma();
 
 	// VR: if this is the frame's main view, draw it once per eye into the
-	// headset's textures first. The normal pass below still draws the
-	// monitor's picture.
-	d3d_VR_RenderEyes(pDesc);
+	// headset's textures. Then the normal pass (the monitor's own picture)
+	// is skipped: the monitor shows the headset's view instead, or nothing
+	// (VRMirror). Its frame is still set up, for the interface drawn after.
+	const bool bVREyes = d3d_VR_RenderEyes(pDesc);
 
-	if (d3d_InitFrame(&g_ViewParams, pDesc)) 
+	if (bVREyes)
+	{
+		d3d_InitFrame(&g_ViewParams, pDesc);
+	}
+	else if (d3d_InitFrame(&g_ViewParams, pDesc)) 
 	{
 		// Tell the d3d device to begin scene.
 

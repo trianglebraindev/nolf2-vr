@@ -28,7 +28,8 @@ enum eHUDVRSpot
 {
 	kHUDVRNone = 0,			// on the HUD panel with everything else
 	kHUDVRWrist,			// on the left wrist
-	kHUDVRGun				// on the gun
+	kHUDVRGun,				// on the gun
+	kHUDVRGunChooser		// on the gun, in place of the ammo, while choosing ammo
 };
 
 // VR: the part of the screen a HUD item draws in, built up piece by piece

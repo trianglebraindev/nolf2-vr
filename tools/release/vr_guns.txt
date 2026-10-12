@@ -1,5 +1,5 @@
 # NOLF2 VR: how each gun sits in your hand. Made by the in-game
-# "adjust gun" mode (click the left stick while playing).
+# "adjust gun" mode (Options > VR > Adjust with stick click, then click the left stick).
 # "weapon"  slide right / up / forward (cm)  turn  tilt (degrees)  size  scope up / right (cm)
 #     magazine in the left hand: slide right / up / forward (cm)  turn  tilt  roll (degrees)
 "Crossbow"  0.10 0.00 0.25  5.62 1.39  12.00  0.00 0.00  0.00 0.00 0.00  0.0 0.0 0.0

@@ -54,9 +54,13 @@ RCONVAR(g_CV_VRHudFollowAngle, "VRHudFollowAngle", float, 35.0f);
 RCONVAR(g_CV_VRScreenDistance, "VRScreenDistance", float, 2.0f);
 RCONVAR(g_CV_VRScreenAngle, "VRScreenAngle", float, 62.0f);
 // The monitor window while playing: 1 = what the headset shows (the left
-// eye with the scope, crosshair, watch and other layers on it), 0 = the
-// game's own flat camera with the HUD on top.
+// eye with the scope, crosshair, watch and other layers on it), 0 = black
+// (a little faster). The game's own flat picture isn't drawn in VR at all:
+// nobody saw it, and it cost a whole extra drawing of the scene a frame.
 RCONVAR(g_CV_VRMirror, "VRMirror", int, 1);
+// The headset picture's resolution, percent of what the VR runtime asks
+// for (50 - 100): lower is faster on a slower graphics card.
+RCONVAR(g_CV_VRRenderScale, "VRRenderScale", float, 100.0f);
 
 //------------------------------
 // Really Close settings

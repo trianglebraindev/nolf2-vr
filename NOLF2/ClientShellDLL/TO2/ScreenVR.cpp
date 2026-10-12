@@ -2,11 +2,12 @@
 //
 // MODULE  : ScreenVR.cpp
 //
-// PURPOSE : Options > VR: the VR settings (NOLF2 VR project)
+// PURPOSE : Options > VR: the VR settings, and Options > VR performance
+//           (NOLF2 VR project)
 //
-// The settings are console variables (see VRMgr.cpp); this page sets them
-// as you change them and saves them to vr_settings.txt when you leave it.
-// It borrows the Game options page's look: its screen name is
+// The settings are console variables (see VRMgr.cpp); these pages set them
+// as you change them and save them to vr_settings.txt when you leave.
+// They borrow the Game options page's look: its screen name is
 // "ScreenGame" (see ScreenEnum.h), so the layout file's entries for that
 // page (frame, positions, fonts, background) apply here too.
 //
@@ -66,6 +67,10 @@ namespace
 		kHelpCutscenes,
 		kHelpReset,
 		kHelpGiveAll,
+		kHelpAdjustClick,
+		kHelpMirror,
+		kHelpRenderScale,
+		kHelpPerfReset,
 		kHelpEnd
 	};
 
@@ -95,6 +100,10 @@ namespace
 		"In 3D: the scene plays out around you and you can look about. Flat screen: watch it framed as the game's camera shot it, on a screen in front of you.",
 		"Put every setting on this page back to how it started.",
 		"For testing: every weapon, gadget and piece of gear, with full ammo (single player, in a mission).",
+		"On: click the left stick to move the gun, scope, magazine grip or snowmobile hands to fit you; click again to save. Off: stray clicks do nothing.",
+		"On: the monitor shows what the headset shows. Off: the monitor stays black, which saves a little work each frame.",
+		"How sharp the headset picture is drawn, as a percentage of what your headset asks for. Lower runs faster but looks softer; 70 draws about half the pixels of 100.",
+		"Put the settings on this page back to how they started.",
 	};
 
 	// The index of the closest value in a list.
@@ -137,6 +146,7 @@ CScreenVR::CScreenVR()
 	m_nWalkStick = 0;
 	m_nVignette = 0;
 	m_nVignetteWhen = 2;
+	m_bAdjustClick = LTFALSE;
 }
 
 CScreenVR::~CScreenVR()
@@ -202,6 +212,10 @@ LTBOOL CScreenVR::Build()
 	pCycle->AddString("Left stick");
 	pCycle->AddString("Right stick");
 
+	CLTGUIToggle* pToggle = AddToggle((char*)"Adjust with stick click", kHelpAdjustClick, kGap, &m_bAdjustClick);
+	pToggle->SetOnString((char*)"On");
+	pToggle->SetOffString((char*)"Off");
+
 	pCycle = AddCycle((char*)"Play position", kHelpSeated, kGap, &m_nSeated);
 	pCycle->AddString("Standing");
 	pCycle->AddString("Seated");
@@ -239,7 +253,7 @@ LTBOOL CScreenVR::Build()
 	pCycle->AddString("Large");
 	pCycle->AddString("Very large");
 
-	CLTGUIToggle* pToggle = AddToggle((char*)"HUD stays put", kHelpHudFollow, kGap, &m_bHudFollow);
+	pToggle = AddToggle((char*)"HUD stays put", kHelpHudFollow, kGap, &m_bHudFollow);
 	pToggle->SetOnString(szYes);
 	pToggle->SetOffString(szNo);
 
@@ -326,7 +340,7 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 			const char* const aNames[] = { "VRSnapTurn", "VRTurnSpeed", "VRSnapAngle", "VRMoveWithHand",
 				"VRUnitsPerMeter", "VRHudDistance", "VRHudAngle", "VRHudFollow", "VRWristHud",
 				"VRWristHudWatch", "VRGunHud", "VRArms", "VRSwing", "VRSwingSpeed", "VRVignette",
-				"VRVignetteWhen", "VRReload", "VRThrow", "VRSeated", "VRVehicleTilt", "VRCutsceneFlat", "VRLeftHanded", "VRWalkStick" };
+				"VRVignetteWhen", "VRReload", "VRThrow", "VRSeated", "VRVehicleTilt", "VRCutsceneFlat", "VRLeftHanded", "VRWalkStick", "VRAdjustClick" };
 			for (int i = 0; i < (int)(sizeof(aNames) / sizeof(aNames[0])); ++i)
 				CVRMgr::SetSetting(aNames[i], CVRMgr::GetSettingDefault(aNames[i]));
 			ReadSettings();
@@ -467,6 +481,7 @@ void CScreenVR::ReadSettings()
 	m_nCutscenes = (CVRMgr::GetSetting("VRCutsceneFlat") != 0.0f) ? 1 : 0;
 	m_nMainHand = (CVRMgr::GetSetting("VRLeftHanded") != 0.0f) ? 1 : 0;
 	m_nWalkStick = (CVRMgr::GetSetting("VRWalkStick") != 0.0f) ? 1 : 0;
+	m_bAdjustClick = CVRMgr::GetSetting("VRAdjustClick") != 0.0f;
 	if (CVRMgr::GetSetting("VRSwing") == 0.0f)
 		m_nSwing = 0;
 	else
@@ -501,7 +516,159 @@ void CScreenVR::WriteSettings()
 	CVRMgr::SetSetting("VRCutsceneFlat",	m_nCutscenes ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRLeftHanded",		m_nMainHand ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRWalkStick",		m_nWalkStick ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRAdjustClick",		m_bAdjustClick ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRSwing",			m_nSwing ? 1.0f : 0.0f);
 	if (m_nSwing > 0 && m_nSwing <= kNumSwingSpeeds)
 		CVRMgr::SetSetting("VRSwingSpeed",	kSwingSpeeds[m_nSwing - 1]);
+}
+
+//////////////////////////////////////////////////////////////////////
+// Options > VR performance
+//////////////////////////////////////////////////////////////////////
+
+CScreenVRPerf::CScreenVRPerf()
+{
+	m_bMirror = LTTRUE;
+	m_nRenderScale = 100;
+}
+
+CScreenVRPerf::~CScreenVRPerf()
+{
+}
+
+LTBOOL CScreenVRPerf::Build()
+{
+	CreateTitle((char*)"VR performance");
+
+	kGap = g_pLayoutMgr->GetScreenCustomInt(SCREEN_ID_GAME,"ColumnWidth");
+	kWidth = g_pLayoutMgr->GetScreenCustomInt(SCREEN_ID_GAME,"SliderWidth");
+
+	// Background frame, like the Game options page.
+	LTRect frameRect = g_pLayoutMgr->GetScreenCustomRect(SCREEN_ID_GAME,"FrameRect");
+	LTIntPt pos(frameRect.left,frameRect.top);
+	int nHt = frameRect.bottom - frameRect.top;
+	int nWd = frameRect.right - frameRect.left;
+
+	char szFrame[128];
+	g_pLayoutMgr->GetScreenCustomString(SCREEN_ID_GAME,"FrameTexture",szFrame,sizeof(szFrame));
+	HTEXTURE hFrame = g_pInterfaceResMgr->GetTexture(szFrame);
+	CLTGUIFrame *pFrame = debug_new(CLTGUIFrame);
+	pFrame->Create(hFrame,nWd,nHt+8,LTTRUE);
+	pFrame->SetBasePos(pos);
+	pFrame->SetBorder(2,m_SelectedColor);
+	AddControl(pFrame);
+
+	CLTGUIToggle* pToggle = AddToggle((char*)"Desktop mirror", kHelpMirror, kGap, &m_bMirror);
+	pToggle->SetOnString((char*)"On");
+	pToggle->SetOffString((char*)"Off");
+
+	CLTGUISlider* pSlider = AddSlider((char*)"Render resolution %", kHelpRenderScale, kGap, kWidth, -1, &m_nRenderScale);
+	pSlider->SetSliderRange(50, 100);
+	pSlider->SetSliderIncrement(10);
+	pSlider->SetNumericDisplay(LTTRUE);
+
+	AddTextItem((char*)"Reset to defaults", CMD_VR_PERF_RESET, kHelpPerfReset);
+
+	if (! CBaseScreen::Build()) return LTFALSE;
+
+	UseBack(LTTRUE,LTTRUE);
+	return LTTRUE;
+}
+
+uint32 CScreenVRPerf::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
+{
+	if (dwCommand == CMD_VR_PERF_RESET)
+	{
+		CVRMgr::SetSetting("VRMirror", CVRMgr::GetSettingDefault("VRMirror"));
+		CVRMgr::SetSetting("VRRenderScale", CVRMgr::GetSettingDefault("VRRenderScale"));
+		ReadSettings();
+		UpdateData(LTFALSE);
+		return 1;
+	}
+	return CBaseScreen::OnCommand(dwCommand,dwParam1,dwParam2);
+}
+
+void CScreenVRPerf::OnFocus(LTBOOL bFocus)
+{
+	if (bFocus)
+	{
+		ReadSettings();
+		UpdateData(LTFALSE);
+	}
+	else
+	{
+		UpdateData();
+		WriteSettings();
+		CVRMgr::SaveSettings();
+	}
+	CBaseScreen::OnFocus(bFocus);
+}
+
+LTBOOL CScreenVRPerf::OnLeft()
+{
+	LTBOOL bHandled = CBaseScreen::OnLeft();
+	if (bHandled)
+	{
+		UpdateData();
+		WriteSettings();
+	}
+	return bHandled;
+}
+
+LTBOOL CScreenVRPerf::OnRight()
+{
+	LTBOOL bHandled = CBaseScreen::OnRight();
+	if (bHandled)
+	{
+		UpdateData();
+		WriteSettings();
+	}
+	return bHandled;
+}
+
+LTBOOL CScreenVRPerf::OnLButtonUp(int x, int y)
+{
+	LTBOOL bHandled = CBaseScreen::OnLButtonUp(x,y);
+	if (bHandled)
+	{
+		UpdateData();
+		WriteSettings();
+	}
+	return bHandled;
+}
+
+LTBOOL CScreenVRPerf::OnRButtonUp(int x, int y)
+{
+	LTBOOL bHandled = CBaseScreen::OnRButtonUp(x,y);
+	if (bHandled)
+	{
+		UpdateData();
+		WriteSettings();
+	}
+	return bHandled;
+}
+
+void CScreenVRPerf::GetHelpString(uint32 dwHelpId, uint16 nControlIndex, char *buffer, int bufLen)
+{
+	if (dwHelpId >= (uint32)kHelpBase && dwHelpId < (uint32)kHelpEnd)
+	{
+		strncpy(buffer, kHelpText[dwHelpId - kHelpBase], bufLen - 1);
+		buffer[bufLen - 1] = '\0';
+		return;
+	}
+	CBaseScreen::GetHelpString(dwHelpId, nControlIndex, buffer, bufLen);
+}
+
+void CScreenVRPerf::ReadSettings()
+{
+	m_bMirror = CVRMgr::GetSetting("VRMirror") != 0.0f;
+	int n = (int)(CVRMgr::GetSetting("VRRenderScale") + 0.5f);
+	n = 10 * ((n + 5) / 10);		// (the slider's steps)
+	m_nRenderScale = (n < 50) ? 50 : (n > 100 ? 100 : n);
+}
+
+void CScreenVRPerf::WriteSettings()
+{
+	CVRMgr::SetSetting("VRMirror",		m_bMirror ? 1.0f : 0.0f);
+	CVRMgr::SetSetting("VRRenderScale",	(float)m_nRenderScale);
 }

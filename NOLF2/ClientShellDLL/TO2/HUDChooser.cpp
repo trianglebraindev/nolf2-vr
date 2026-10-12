@@ -385,8 +385,19 @@ void CHUDAmmoChooser::Render()
 }
 
 
+// VR: adds a poly string's area to a rect (estimated if it can't say).
+static void VR_AddChooserString(CHUDVRRect& rect, CUIPolyString* pStr, const char* pszText, float x, float y, float h)
+{
+	CUIRECT rc;
+	if (pStr && pStr->GetRect(&rc) == CUIR_OK && rc.width > 0.0f && rc.height > 0.0f)
+		rect.Add(rc.x, rc.y, rc.width, rc.height);
+	else if (pszText)
+		rect.Add(x, y, h * 0.7f * (float)strlen(pszText), h);
+}
+
 void CHUDAmmoChooser::Update()
 {
+	m_VRRect.Reset();
 	m_bDraw = !!g_pInterfaceMgr->IsChoosingAmmo();
 	if (!m_bDraw) return;
 	IClientWeaponBase *pClientWeapon = g_pPlayerMgr->GetCurrentClientWeapon();
@@ -435,6 +446,7 @@ void CHUDAmmoChooser::Update()
 	float fWidth = (float)tw * ( fHeight / (float)th );
 	float x = ((float)m_nScreenWidth / 2.0f);
 	g_pDrawPrim->SetXYWH( &m_WeaponPoly, x-fWidth, 0.0f, fWidth, fHeight );
+	m_VRRect.Add( x-fWidth, 0.0f, fWidth, fHeight );
 
 	uint8 nSlot = 0;
 	uint8 nCurrAmmo = g_pInterfaceMgr->GetAmmoChooser()->GetCurrentSelection();
@@ -443,6 +455,7 @@ void CHUDAmmoChooser::Update()
 
 	m_pWpnStr->SetText(pWeapon->szShortName);
 	m_pWpnStr->SetPosition(x+2.0f,2.0f);
+	VR_AddChooserString( m_VRRect, m_pWpnStr, pWeapon->szShortName, x+2.0f, 2.0f, m_fTextHeight * m_fScale );
 
 	for (uint8 n = 0; n < pWeapon->nNumAmmoIds && n < kMaxAmmoTypes; n++)
 	{
@@ -470,6 +483,7 @@ void CHUDAmmoChooser::Update()
 		float fWidth = (float)tw * ( fHeight / (float)th );
 
 		g_pDrawPrim->SetXYWH( &m_AmmoPoly[nSlot], x-fWidth, y, fWidth, fHeight );
+		m_VRRect.Add( x-fWidth, y, fWidth, fHeight );
 
 		
 		char szTmp[256] = "";
@@ -482,6 +496,7 @@ void CHUDAmmoChooser::Update()
 		{
 			m_pStr->SetText( szTmp);
 			m_pStr->SetPosition(x+2.0f,y+2.0f);
+			VR_AddChooserString( m_VRRect, m_pStr, szTmp, x+2.0f, y+2.0f, m_fTextHeight * m_fScale );
 		}
 
 		nSlot++;

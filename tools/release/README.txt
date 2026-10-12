@@ -38,8 +38,9 @@ saves and logs in the VR folder.
 SETTINGS
 --------
 In the game: Options > VR (turning, comfort, height, seated or standing,
-HUD, left-handed play, reloading and throwing style, cutscenes and more)
-and Options > Cheats (including level select).
+HUD, left-handed play, reloading and throwing style, cutscenes and more),
+Options > VR performance (desktop mirror, render resolution: lower them if
+your frame rate drops) and Options > Cheats (including level select).
 
 Stand (or sit) as you'll play, then hold both stick clicks for a second to
 set your height.

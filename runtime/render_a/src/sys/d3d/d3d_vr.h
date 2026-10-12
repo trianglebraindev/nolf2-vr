@@ -37,8 +37,9 @@ bool d3d_VR_IsActive();
 
 // Called from d3d_RenderScene before the normal (monitor) pass. If this
 // scene is the frame's main view of the world, renders it once per eye
-// into the headset's textures.
-void d3d_VR_RenderEyes(SceneDesc* pDesc);
+// into the headset's textures. True if it did: the monitor pass is then
+// skipped (the monitor shows the headset's picture, or nothing).
+bool d3d_VR_RenderEyes(SceneDesc* pDesc);
 
 // Called from d3d_RenderScene after the normal pass. If the eyes were
 // drawn for that scene, the rest of the frame's drawing (the interface)

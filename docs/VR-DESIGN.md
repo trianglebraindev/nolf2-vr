@@ -881,6 +881,43 @@ symbols from the build's .pdb files):
   spot learnt first never matched again ("never caught waiting"). It's
   learnt afresh each time now.
 
+## QOL update (0.2.0)
+
+- Adjust mode on a setting (Tre: stray left stick clicks). VRAdjustClick,
+  Options > VR > "Adjust with stick click", off by default. Only starting
+  needs it; finishing always works.
+- Bug: clicking again didn't finish adjusting; only the menu got you out.
+  Cause: since adjust mode switched the controllers to their own binding
+  set, UpdateStickClicks no longer counted the left click (it required
+  bPlay). Now the click counts while adjusting too, and the right stick
+  click (reload / next ammo) is held off then.
+- Ammo chooser on the gun: CHUDAmmoChooser reports its own VR spot
+  (kHUDVRGunChooser) and the rectangle it drew (weapon icon and name, each
+  ammo icon, the chosen ammo's name); while choosing, it takes the ammo
+  read-out's place on the gun, 1.5x as wide. With VRGunHud 0 both stay on
+  the HUD.
+- Performance (Tre's question: what costs the most on a weaker PC).
+  From the code: the engine drew the world three times a
+  frame, both eyes plus the monitor's own flat camera, and that third
+  picture was then covered by the mirror (or seen by nobody, headset on).
+  Now d3d_VR_RenderEyes returns true when it drew the eyes and
+  d3d_RenderScene skips the monitor's pass (still setting up its frame for
+  the interface drawn after). Time moves in the left eye's pass now
+  (m_FrameTime), as it did in the monitor's.
+- Desktop mirror on/off (VRMirror, Options > VR performance): off leaves
+  the monitor black and skips putting the mirror picture together.
+- Render resolution (VRRenderScale 50-100, percent per side): the eyes are
+  drawn into the top left of their textures at that size, and the bridge's
+  copy into the headset's images stretches that part (the copy shader's
+  UV scale). The depth buffer stays texture-sized.
+- Perf line every 10 s of world frames in xrbridge.log: fps against the
+  headset's refresh, frame time avg / worst, CPU from eye drawing to the
+  submit, GPU over the same span (D3D9 timestamp queries, read a few
+  frames later without waiting), time spent in xrWaitFrame (time to
+  spare), eye size and mirror. Menus and flat screens restart the count.
+- Options > VR performance is its own page: the VR page was already
+  squeezed to 46% row spacing to fit.
+
 ## Menus: the mouse steps aside
 
 - Problem (Tre): in menus the mouse cursor sat in the middle of the screen

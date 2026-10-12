@@ -162,8 +162,22 @@ public:
 	bool		IsSessionRunning() const;
 	bool		ShouldQuit() const;		// runtime asked the app to exit
 
+	// The eyes' size this frame: their textures' size times the render
+	// scale (SetEyeRenderScale, 0.5 - 1). Draw into the top left that big;
+	// EndFrame stretches it over the headset's images. The textures
+	// themselves are always full size (GetEyeTextureWidth / Height).
 	unsigned	GetEyeWidth() const;
 	unsigned	GetEyeHeight() const;
+	unsigned	GetEyeTextureWidth() const;
+	unsigned	GetEyeTextureHeight() const;
+	void		SetEyeRenderScale(float fScale);
+	float		GetEyeRenderScale() const;
+
+	// Timing, for the performance line in the log: how long the last
+	// xrWaitFrame waited on the headset (ms; time to spare), and the
+	// headset's frame time (ms, from its refresh rate).
+	double		GetLastWaitMs() const;
+	double		GetDisplayPeriodMs() const;
 
 	// Textures owned by the bridge; do not release. Render targets in
 	// D3DFMT_A8R8G8B8.
