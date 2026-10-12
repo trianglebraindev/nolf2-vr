@@ -246,11 +246,15 @@ void CHUDDecision::VR_ChooseSelection()
 	Choose((uint8)m_nVRSelection);
 }
 
-// In VR the highlighted answer keeps the normal text colour and the others
-// are dimmed. Without VR all answers look the same, as they always did.
+// In VR the highlighted answer is red (the layout's text colour, a dark
+// blue, was hard to pick out in the headset) and the others are dimmed.
+// Without VR all answers look the same, as they always did.
+static const uint32 kVRDecisionSelectedColor = SET_ARGB(0xFF, 230, 20, 20);
+
 void CHUDDecision::UpdateVRHighlight()
 {
 	const bool bVR = g_VRMgr.IsActive();
+	const uint32 nSelected = bVR ? kVRDecisionSelectedColor : m_nTextColor;
 	uint32 nDim = m_nTextColor;
 	if (bVR)
 	{
@@ -265,7 +269,7 @@ void CHUDDecision::UpdateVRHighlight()
 		if (!m_pText[i])
 			continue;
 		LTBOOL bSelected = (bVR && i == m_nVRSelection) ? LTTRUE : LTFALSE;
-		m_pText[i]->SetColors(m_nTextColor, nDim, m_nTextColor);
+		m_pText[i]->SetColors(nSelected, nDim, m_nTextColor);
 		m_pText[i]->Select(!bSelected);		// force the colours to be re-applied
 		m_pText[i]->Select(bSelected);
 	}

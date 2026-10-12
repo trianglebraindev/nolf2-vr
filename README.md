@@ -105,7 +105,7 @@ and **Options > VR performance**.
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
 | Left stick click | with Options > VR > Adjust with stick click on (off by default): adjust the gun's fit in your hand (looking through a scope: adjust the scope; holding a magazine: adjust how it's held); click again to save | |
-| Conversation choices | right stick up / down, right trigger or A to pick, B to say nothing | |
+| Conversation choices | right stick up / down (the chosen answer shows in red), right trigger or A to pick, B to say nothing | |
 | Home key (keyboard) | recentre | recenter |
 
 Left-handed (Options > VR > Gun hand: Left): every row swaps sides (fire
