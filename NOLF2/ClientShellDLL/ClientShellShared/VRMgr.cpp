@@ -1112,6 +1112,21 @@ void CVRMgr::Log(const char* pszFormat, ...)
 	FILE* pFile = fopen("vr_game.log", "a");
 	if (!pFile)
 		return;
+	// Seconds since the game started (the same clock as xrbridge.log's
+	// lines; whole numbers only, the FPU runs at low precision).
+	{
+		FILETIME created, exited, kernel, user, now;
+		unsigned __int64 nCs = 0;
+		if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+		{
+			GetSystemTimeAsFileTime(&now);
+			unsigned __int64 c = ((unsigned __int64)created.dwHighDateTime << 32) | created.dwLowDateTime;
+			unsigned __int64 n = ((unsigned __int64)now.dwHighDateTime << 32) | now.dwLowDateTime;
+			if (n > c)
+				nCs = (n - c) / 100000;
+		}
+		fprintf(pFile, "[%u.%02u] ", (unsigned)(nCs / 100), (unsigned)(nCs % 100));
+	}
 	va_list args;
 	va_start(args, pszFormat);
 	vfprintf(pFile, pszFormat, args);

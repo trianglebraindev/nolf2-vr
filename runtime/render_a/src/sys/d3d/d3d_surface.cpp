@@ -655,6 +655,7 @@ void d3d_SwapBuffers(uint flags)
 
 	// prevent frame buffering
 	g_Device.PreventFrameBuffering();
+	d3d_VR_AfterPresent();
 
 	ClearDirtyRects();
 }

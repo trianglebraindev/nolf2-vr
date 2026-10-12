@@ -36,12 +36,33 @@ namespace xrb
 // Logging
 //------------------------------------------------------------------
 
+// Seconds since the game started, as "[123.45] ": the same clock as
+// vr_game.log's lines, so the two logs can be lined up. (Whole numbers
+// only: the game runs the FPU at low precision.)
+static void TimeStamp(char* pszOut, size_t nSize)
+{
+	FILETIME created, exited, kernel, user, now;
+	unsigned long long nCs = 0;
+	if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+	{
+		GetSystemTimeAsFileTime(&now);
+		unsigned long long c = ((unsigned long long)created.dwHighDateTime << 32) | created.dwLowDateTime;
+		unsigned long long n = ((unsigned long long)now.dwHighDateTime << 32) | now.dwLowDateTime;
+		if (n > c)
+			nCs = (n - c) / 100000ull;		// 100 ns units -> hundredths of a second
+	}
+	_snprintf(pszOut, nSize, "[%u.%02u] ", (unsigned)(nCs / 100ull), (unsigned)(nCs % 100ull));
+	pszOut[nSize - 1] = '\0';
+}
+
 void Log(const char* pszFormat, ...)
 {
 	char szBuf[1024];
+	TimeStamp(szBuf, 32);
+	const size_t nStamp = strlen(szBuf);
 	va_list args;
 	va_start(args, pszFormat);
-	_vsnprintf(szBuf, sizeof(szBuf) - 2, pszFormat, args);
+	_vsnprintf(szBuf + nStamp, sizeof(szBuf) - 2 - nStamp, pszFormat, args);
 	va_end(args);
 	szBuf[sizeof(szBuf) - 2] = '\0';
 	strcat(szBuf, "\n");

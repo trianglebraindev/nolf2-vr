@@ -274,6 +274,13 @@ struct VRPerf
 	LARGE_INTEGER	windowStart;	// the 10 seconds being measured
 	LARGE_INTEGER	lastSwap;
 	LARGE_INTEGER	eyesStart;		// this frame's eye drawing began
+	// For breaking a slow frame down (see VR_PerfFrameDone):
+	LARGE_INTEGER	openEnd;		// the headset let us start this frame (end of xrWaitFrame)
+	LARGE_INTEGER	presentEnd;		// the monitor's Present done
+	LARGE_INTEGER	submitStart;	// handing the frame to the headset began
+	int				nMissed;		// frames that took longer than 1.5 headset frames
+	int				nHitches;		// frames that took longer than 2.5 headset frames (and 25 ms)
+	int				nHitchesLogged;
 	bool			bWindowOpen;
 	bool			bLastSwapValid;
 	int				nFrames;
@@ -362,6 +369,7 @@ static void VR_PerfEyesStart(IDirect3DDevice9* pDevice)
 // This frame's drawing is done (just before it goes to the headset).
 static void VR_PerfGpuEnd()
 {
+	QueryPerformanceCounter(&g_VRPerf.submitStart);
 	if (!g_VRPerf.bGpuOpen)
 		return;
 	VRPerfSlot& s = g_VRPerf.aSlots[g_VRPerf.nSlot];
@@ -399,32 +407,59 @@ static void VR_PerfFrameDone(bool bEyes)
 		g_VRPerf.fFrameMsSum = g_VRPerf.fFrameMsWorst = 0.0;
 		g_VRPerf.fCpuMsSum = g_VRPerf.fWaitMsSum = g_VRPerf.fGpuMsSum = 0.0;
 		g_VRPerf.nGpuSamples = 0;
+		g_VRPerf.nMissed = g_VRPerf.nHitches = g_VRPerf.nHitchesLogged = 0;
 		return;		// (the first frame's time includes whatever came before)
 	}
 
+	const double fWaitMs = g_pVRBridge ? g_pVRBridge->GetLastWaitMs() : 0.0;
+	const double fPeriod = g_pVRBridge ? g_pVRBridge->GetDisplayPeriodMs() : 0.0;
 	++g_VRPerf.nFrames;
 	g_VRPerf.fFrameMsSum += fFrameMs;
 	if (fFrameMs > g_VRPerf.fFrameMsWorst)
 		g_VRPerf.fFrameMsWorst = fFrameMs;
 	g_VRPerf.fCpuMsSum += VR_PerfMs(g_VRPerf.eyesStart, now);
-	g_VRPerf.fWaitMsSum += g_pVRBridge ? g_pVRBridge->GetLastWaitMs() : 0.0;
+	g_VRPerf.fWaitMsSum += fWaitMs;
+
+	// A slow frame: where did its time go? From the end of the last frame's
+	// hand-over to the end of this one's, in order: waiting for the headset
+	// (xrWaitFrame), the monitor's Present, the game (simulation, sound,
+	// everything before the world is drawn), drawing, handing it over.
+	if (fPeriod > 0.0 && fFrameMs > fPeriod * 1.5)
+		++g_VRPerf.nMissed;
+	if (fPeriod > 0.0 && fFrameMs > fPeriod * 2.5 && fFrameMs > 25.0)
+	{
+		++g_VRPerf.nHitches;
+		if (g_VRPerf.nHitchesLogged < 10)
+		{
+			++g_VRPerf.nHitchesLogged;
+			double fPresent = VR_PerfMs(g_VRPerf.openEnd, g_VRPerf.presentEnd);
+			double fGame = VR_PerfMs(g_VRPerf.presentEnd, g_VRPerf.eyesStart);
+			double fDraw = VR_PerfMs(g_VRPerf.eyesStart, g_VRPerf.submitStart);
+			double fSubmit = VR_PerfMs(g_VRPerf.submitStart, now);
+			if (fPresent < 0.0) fPresent = 0.0;
+			if (fGame < 0.0) fGame = 0.0;
+			if (fDraw < 0.0) fDraw = 0.0;
+			if (fSubmit < 0.0) fSubmit = 0.0;
+			xrb::Log("Hitch: %.1f ms = headset wait %.1f + present %.1f + game %.1f + drawing %.1f + hand-over %.1f (other %.1f)",
+				fFrameMs, fWaitMs, fPresent, fGame, fDraw, fSubmit, fFrameMs - fWaitMs - fPresent - fGame - fDraw - fSubmit);
+		}
+	}
 
 	const double fWindowMs = VR_PerfMs(g_VRPerf.windowStart, now);
 	if (fWindowMs < 10000.0 || g_VRPerf.nFrames <= 0)
 		return;
 
 	const double n = (double)g_VRPerf.nFrames;
-	const double fPeriod = g_pVRBridge ? g_pVRBridge->GetDisplayPeriodMs() : 0.0;
 	char szGpu[32];
 	if (g_VRPerf.nGpuSamples > 0)
 		_snprintf(szGpu, sizeof(szGpu), "%.1f ms", g_VRPerf.fGpuMsSum / (double)g_VRPerf.nGpuSamples);
 	else
 		strcpy(szGpu, "n/a");
 	xrb::Log("Perf: %.1f fps (headset %.0f Hz), frame %.1f ms avg / %.1f worst, drawing CPU %.1f ms / GPU %s, "
-		"headset wait %.1f ms, eyes %ux%u (%d%%), mirror %s",
+		"headset wait %.1f ms, slow frames %d (hitches %d), eyes %ux%u (%d%%), mirror %s",
 		n * 1000.0 / fWindowMs, fPeriod > 0.0 ? 1000.0 / fPeriod : 0.0,
 		g_VRPerf.fFrameMsSum / n, g_VRPerf.fFrameMsWorst, g_VRPerf.fCpuMsSum / n, szGpu,
-		g_VRPerf.fWaitMsSum / n,
+		g_VRPerf.fWaitMsSum / n, g_VRPerf.nMissed, g_VRPerf.nHitches,
 		g_pVRBridge ? g_pVRBridge->GetEyeWidth() : 0, g_pVRBridge ? g_pVRBridge->GetEyeHeight() : 0,
 		g_pVRBridge ? (int)(g_pVRBridge->GetEyeRenderScale() * 100.0f + 0.5f) : 100,
 		g_CV_VRMirror.m_Val ? "on" : "off");
@@ -661,6 +696,7 @@ static bool VR_EnsureFrameOpen()
 	if (!g_bVRFrameOpen)
 	{
 		g_bVRFrameOpen = g_pVRBridge->BeginFrame();
+		QueryPerformanceCounter(&g_VRPerf.openEnd);
 		g_bVREyesDrawn = false;
 		VR_BuildState();
 	}
@@ -2232,6 +2268,13 @@ static void VR_UpdateCursorClip()
 //------------------------------------------------------------------
 // End of frame
 //------------------------------------------------------------------
+
+// The monitor's Present is done (d3d_SwapBuffers): for the hitch breakdown.
+void d3d_VR_AfterPresent()
+{
+	if (d3d_VR_IsActive())
+		QueryPerformanceCounter(&g_VRPerf.presentEnd);
+}
 
 void d3d_VR_OnSwapBuffers()
 {

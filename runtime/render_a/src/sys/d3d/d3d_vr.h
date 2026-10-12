@@ -56,4 +56,8 @@ void d3d_VR_ApplyCommands(uint8* pCommands, uint32 nCommands);
 // is what paces the game to the headset.
 void d3d_VR_OnSwapBuffers();
 
+// After the monitor's Present (timing only: the performance log's hitch
+// breakdown).
+void d3d_VR_AfterPresent();
+
 #endif // __D3D_VR_H__
