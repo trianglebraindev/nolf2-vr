@@ -179,6 +179,18 @@ public:
 	double		GetLastWaitMs() const;
 	double		GetDisplayPeriodMs() const;
 
+	// The last EndFrame, part by part (ms), for the hitch lines:
+	enum
+	{
+		SUBMIT_WAIT_D3D9,	// the game's drawing finishing on the graphics card
+		SUBMIT_IMAGE_WAIT,	// xrWaitSwapchainImage: the runtime handing us its images
+		SUBMIT_COPY,		// copying into them (D3D11)
+		SUBMIT_WAIT_D3D11,	// those copies finishing on the graphics card
+		SUBMIT_END_FRAME,	// xrEndFrame: the runtime taking the frame
+		SUBMIT_PARTS
+	};
+	void		GetLastSubmitTimes(double aMs[SUBMIT_PARTS]) const;
+
 	// Textures owned by the bridge; do not release. Render targets in
 	// D3DFMT_A8R8G8B8.
 	IDirect3DTexture9*	GetEyeTexture(Eye eEye) const;

@@ -348,6 +348,9 @@ struct Bridge::Impl
 		m_bSessionRunning = m_bQuit = m_bRecenterPending = false;
 		m_fEyeScale = 1.0f;
 		m_fLastWaitMs = 0.0;
+		m_fImageWaitMs = 0.0;
+		for (int i = 0; i < SUBMIT_PARTS; ++i)
+			m_aSubmitMs[i] = 0.0;
 		ZeroMemory(&m_AdapterLuid, sizeof(m_AdapterLuid));
 		m_eMinFeatureLevel = D3D_FEATURE_LEVEL_11_0;
 		m_nSwapchainFormat = 0;
@@ -405,6 +408,8 @@ struct Bridge::Impl
 	// headset's images stretches that part over them.
 	float		m_fEyeScale;
 	double		m_fLastWaitMs;		// last xrWaitFrame (waiting on the headset)
+	double		m_aSubmitMs[SUBMIT_PARTS];	// the last EndFrame, part by part (GetLastSubmitTimes)
+	double		m_fImageWaitMs;		// this EndFrame's xrWaitSwapchainImage calls, added up
 };
 
 static XrPosef IdentityPose()
@@ -1324,7 +1329,9 @@ void Bridge::Impl::Blit(SharedTexture& src, Swapchain& dst, bool bAlpha, float f
 	ZeroMemory(&wi, sizeof(wi));
 	wi.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO;
 	wi.timeout = 1000000000;	// 1 s: never hang the game on the headset
+	const double fImageWaitStart = NowMs();
 	XrResult resWait = xrWaitSwapchainImage(dst.m_hSwapchain, &wi);
+	m_fImageWaitMs += NowMs() - fImageWaitStart;
 	if (resWait == XR_TIMEOUT_EXPIRED)
 		Log("xrWaitSwapchainImage timed out; skipping this image");
 	if (resWait == XR_SUCCESS)
@@ -1452,9 +1459,13 @@ void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen, const La
 			apExtra[nExtra++] = &pLayers[i];
 	}
 
+	// (Timed part by part, for the performance log's hitch lines.)
+	double fT0 = NowMs(), fT1 = fT0, fT2 = fT0, fT3 = fT0;
+	im.m_fImageWaitMs = 0.0;
 	if (bEyes || bScreen || nExtra)
 	{
 		im.WaitForD3D9();
+		fT1 = NowMs();
 		if (bEyes)
 		{
 			for (int e = 0; e < EYE_COUNT; ++e)
@@ -1473,7 +1484,9 @@ void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen, const La
 		}
 		if (bScreen)
 			im.Blit(im.m_ScreenTex, im.m_ScreenChain, pScreen->alpha);
+		fT2 = NowMs();
 		im.WaitForD3D11();
+		fT3 = NowMs();
 	}
 
 	XrCompositionLayerProjectionView aProjViews[EYE_COUNT];
@@ -1528,6 +1541,19 @@ void Bridge::EndFrame(bool bSubmitEyes, const ScreenPlacement* pScreen, const La
 	ei.layerCount = nLayers;
 	ei.layers = nLayers ? apLayers : NULL;
 	im.Check(xrEndFrame(im.m_hSession, &ei), "xrEndFrame");
+	const double fT4 = NowMs();
+
+	im.m_aSubmitMs[SUBMIT_WAIT_D3D9]	= fT1 - fT0;
+	im.m_aSubmitMs[SUBMIT_IMAGE_WAIT]	= im.m_fImageWaitMs;
+	im.m_aSubmitMs[SUBMIT_COPY]			= (fT2 - fT1) - im.m_fImageWaitMs;
+	im.m_aSubmitMs[SUBMIT_WAIT_D3D11]	= fT3 - fT2;
+	im.m_aSubmitMs[SUBMIT_END_FRAME]	= fT4 - (fT3 > fT0 ? fT3 : fT0);
+}
+
+void Bridge::GetLastSubmitTimes(double aMs[SUBMIT_PARTS]) const
+{
+	for (int i = 0; i < SUBMIT_PARTS; ++i)
+		aMs[i] = m_pImpl ? m_pImpl->m_aSubmitMs[i] : 0.0;
 }
 
 bool Bridge::Impl::DoRecenter()

@@ -440,8 +440,13 @@ static void VR_PerfFrameDone(bool bEyes)
 			if (fGame < 0.0) fGame = 0.0;
 			if (fDraw < 0.0) fDraw = 0.0;
 			if (fSubmit < 0.0) fSubmit = 0.0;
-			xrb::Log("Hitch: %.1f ms = headset wait %.1f + present %.1f + game %.1f + drawing %.1f + hand-over %.1f (other %.1f)",
-				fFrameMs, fWaitMs, fPresent, fGame, fDraw, fSubmit, fFrameMs - fWaitMs - fPresent - fGame - fDraw - fSubmit);
+			double aSub[xrb::Bridge::SUBMIT_PARTS];
+			g_pVRBridge->GetLastSubmitTimes(aSub);
+			xrb::Log("Hitch: %.1f ms = headset wait %.1f + present %.1f + game %.1f + drawing %.1f + hand-over %.1f (other %.1f); "
+				"hand-over: GPU finishing D3D9 %.1f, runtime images %.1f, copy %.1f, GPU finishing copy %.1f, xrEndFrame %.1f",
+				fFrameMs, fWaitMs, fPresent, fGame, fDraw, fSubmit, fFrameMs - fWaitMs - fPresent - fGame - fDraw - fSubmit,
+				aSub[xrb::Bridge::SUBMIT_WAIT_D3D9], aSub[xrb::Bridge::SUBMIT_IMAGE_WAIT], aSub[xrb::Bridge::SUBMIT_COPY],
+				aSub[xrb::Bridge::SUBMIT_WAIT_D3D11], aSub[xrb::Bridge::SUBMIT_END_FRAME]);
 		}
 	}
 
