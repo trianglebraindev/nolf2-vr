@@ -61,11 +61,6 @@ RCONVAR(g_CV_VRMirror, "VRMirror", int, 1);
 // The headset picture's resolution, percent of what the VR runtime asks
 // for (50 - 100): lower is faster on a slower graphics card.
 RCONVAR(g_CV_VRRenderScale, "VRRenderScale", float, 100.0f);
-// Testing (the stall hunt; not saved): what goes to the headset on frames
-// with the world in it. 0 = everything; 1 = the world only (no HUD, crosshair,
-// wrist or gun layers); 2 = the world only, and the monitor window isn't
-// updated at all (no Present).
-RCONVAR(g_CV_VRTestSubmit, "VRTestSubmit", int, 0);
 
 //------------------------------
 // Really Close settings

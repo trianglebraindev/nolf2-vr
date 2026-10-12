@@ -22,7 +22,6 @@ enum
 {
 	CMD_VR_OPTIONS = CMD_CUSTOM + 300,
 	CMD_VR_RESET,
-	CMD_VR_GIVEALL,
 	CMD_VR_SETHEIGHT,
 	CMD_VR_PERF,			// Options > VR performance
 	CMD_VR_PERF_RESET
@@ -104,7 +103,6 @@ protected:
 
 	LTBOOL	m_bMirror;			// VRMirror
 	int		m_nRenderScale;		// VRRenderScale, percent
-	uint8	m_nTestSubmit;		// VRTestSubmit (testing, not saved): 0 everything, 1 world only, 2 + no monitor
 };
 
 #endif // _SCREEN_VR_H_

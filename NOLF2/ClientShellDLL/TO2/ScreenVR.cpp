@@ -21,7 +21,6 @@
 #include "GameClientShell.h"	// (brings the interface, layout and string ids)
 #include "InterfaceMgr.h"
 #include "LayoutMgr.h"
-#include "CheatMgr.h"
 
 namespace
 {
@@ -66,12 +65,10 @@ namespace
 		kHelpVehicleTilt,
 		kHelpCutscenes,
 		kHelpReset,
-		kHelpGiveAll,
 		kHelpAdjustClick,
 		kHelpMirror,
 		kHelpRenderScale,
 		kHelpPerfReset,
-		kHelpTestSubmit,
 		kHelpEnd
 	};
 
@@ -100,12 +97,10 @@ namespace
 		"Riding the snowmobile: keep the horizon level (comfortable), or let the view bank and climb with it.",
 		"In 3D: the scene plays out around you and you can look about. Flat screen: watch it framed as the game's camera shot it, on a screen in front of you.",
 		"Put every setting on this page back to how it started.",
-		"For testing: every weapon, gadget and piece of gear, with full ammo (single player, in a mission).",
 		"On: click the left stick to move the gun, scope, magazine grip or snowmobile hands to fit you; click again to save. Off: stray clicks do nothing.",
 		"On: the monitor shows what the headset shows. Off: the monitor stays black, which saves a little work each frame.",
 		"How sharp the headset picture is drawn, as a percentage of what your headset asks for. Lower runs faster but looks softer; 70 draws about half the pixels of 100.",
 		"Put the settings on this page back to how they started.",
-		"For tracking down stutters: what the game sends to the headset. World only hides the HUD, crosshair and read-outs. Not saved: back to Everything next time.",
 	};
 
 	// The index of the closest value in a list.
@@ -297,7 +292,6 @@ LTBOOL CScreenVR::Build()
 	pCycle->AddString("Hard");
 
 	AddTextItem((char*)"Reset to defaults", CMD_VR_RESET, kHelpReset);
-	AddTextItem((char*)"Testing: all weapons and gear", CMD_VR_GIVEALL, kHelpGiveAll);
 
 	// These menus don't scroll: if the rows run past the bottom of the page,
 	// close them up evenly to fit (every control but the frame, control 0).
@@ -356,19 +350,6 @@ uint32 CScreenVR::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwParam2)
 			WriteSettings();
 			g_VRMgr.SetHeightNow();
 			g_pClientSoundMgr->PlayInterfaceSound((char*)g_pInterfaceResMgr->GetSoundSelect());
-			break;
-		}
-	case CMD_VR_GIVEALL:
-		{
-			// The game's own cheats ("guns", "gear", "ammo"), so testing
-			// doesn't need the keyboard. Single player, in a mission only.
-			if (g_pCheatMgr && g_pLTClient->IsConnected() && !IsMultiplayerGame())
-			{
-				g_pCheatMgr->Check("guns");
-				g_pCheatMgr->Check("gear");
-				g_pCheatMgr->Check("ammo");
-				g_pClientSoundMgr->PlayInterfaceSound((char*)g_pInterfaceResMgr->GetSoundSelect());
-			}
 			break;
 		}
 	default:
@@ -532,7 +513,6 @@ CScreenVRPerf::CScreenVRPerf()
 {
 	m_bMirror = LTTRUE;
 	m_nRenderScale = 100;
-	m_nTestSubmit = 0;
 }
 
 CScreenVRPerf::~CScreenVRPerf()
@@ -570,11 +550,6 @@ LTBOOL CScreenVRPerf::Build()
 	pSlider->SetSliderIncrement(10);
 	pSlider->SetNumericDisplay(LTTRUE);
 
-	CLTGUICycleCtrl* pCycle = AddCycle((char*)"Testing: send to headset", kHelpTestSubmit, kGap, &m_nTestSubmit);
-	pCycle->AddString((char*)"Everything");
-	pCycle->AddString((char*)"World only");
-	pCycle->AddString((char*)"World only, monitor off");
-
 	AddTextItem((char*)"Reset to defaults", CMD_VR_PERF_RESET, kHelpPerfReset);
 
 	if (! CBaseScreen::Build()) return LTFALSE;
@@ -589,7 +564,6 @@ uint32 CScreenVRPerf::OnCommand(uint32 dwCommand, uint32 dwParam1, uint32 dwPara
 	{
 		CVRMgr::SetSetting("VRMirror", CVRMgr::GetSettingDefault("VRMirror"));
 		CVRMgr::SetSetting("VRRenderScale", CVRMgr::GetSettingDefault("VRRenderScale"));
-		CVRMgr::SetSetting("VRTestSubmit", 0.0f);
 		ReadSettings();
 		UpdateData(LTFALSE);
 		return 1;
@@ -674,13 +648,10 @@ void CScreenVRPerf::ReadSettings()
 	int n = (int)(CVRMgr::GetSetting("VRRenderScale") + 0.5f);
 	n = 10 * ((n + 5) / 10);		// (the slider's steps)
 	m_nRenderScale = (n < 50) ? 50 : (n > 100 ? 100 : n);
-	int nTest = (int)(CVRMgr::GetSetting("VRTestSubmit") + 0.5f);
-	m_nTestSubmit = (uint8)((nTest < 0) ? 0 : (nTest > 2 ? 2 : nTest));
 }
 
 void CScreenVRPerf::WriteSettings()
 {
 	CVRMgr::SetSetting("VRMirror",		m_bMirror ? 1.0f : 0.0f);
 	CVRMgr::SetSetting("VRRenderScale",	(float)m_nRenderScale);
-	CVRMgr::SetSetting("VRTestSubmit",	(float)m_nTestSubmit);	// (not in the saved list: testing only)
 }

@@ -644,11 +644,7 @@ void d3d_SwapBuffers(uint flags)
 	// VR: send the finished frame to the headset (also paces the game to it).
 	d3d_VR_OnSwapBuffers();
 
-	if (d3d_VR_SkipPresent())
-	{
-		// (Testing: the monitor window isn't updated.)
-	}
-	else if ((flags & FLIPSCREEN_DIRTY) != 0) 
+	if ((flags & FLIPSCREEN_DIRTY) != 0) 
 	{
 		DirtyRectSwap(); 
 	}

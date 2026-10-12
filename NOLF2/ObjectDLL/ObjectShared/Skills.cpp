@@ -274,8 +274,28 @@ void CSkills::HandleSkillUpdate(ILTMessage_Read *pMsg)
 }
 
 
+// NOLF2 VR: a fixed 1,000 points each time (Tre). Monolith's version gave
+// the points the missions before this one would have earned, which is
+// nothing on the first mission: the message showed, no points came. Their
+// version follows, unused.
+static const uint32 kVRSkillsCheatPoints = 1000;
+
 void CSkills::SkillsCheat()
 {
+	{
+		CAutoMessage cClientMsg;
+		cClientMsg.Writeuint8(MID_PLAYER_INFOCHANGE);
+		cClientMsg.Writeuint8(IC_SKILLS_ID);
+		cClientMsg.Writeuint8(-1);
+		cClientMsg.Writeuint8(0);
+		cClientMsg.Writefloat((float)kVRSkillsCheatPoints);
+		g_pLTServer->SendToClient(cClientMsg.Read(), LTNULL, MESSAGE_GUARANTEED);
+
+		m_nTotalPoints += kVRSkillsCheatPoints;
+		m_nAvailPoints += kVRSkillsCheatPoints;
+		return;
+	}
+
 	int nCurrentMission = g_pServerMissionMgr->GetCurrentMission( );
 
 	if (nCurrentMission < 0 || nCurrentMission >= g_pMissionButeMgr->GetNumMissions())

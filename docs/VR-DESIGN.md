@@ -918,7 +918,7 @@ symbols from the build's .pdb files):
 - Options > VR performance is its own page: the VR page was already
   squeezed to 46% row spacing to fit.
 
-## Stutter hunt (in progress)
+## Stutter hunt (Tre's network, not the mod)
 
 - Tre: drops from 90 to the 20s, feeling random. Measured (Perf / Hitch
   lines): game and drawing stay under 4 ms; the lost time is inside
@@ -928,13 +928,15 @@ symbols from the build's .pdb files):
   shows no drops on the same PC, so it's something about how we use VDXR.
 - SteamVR as the OpenXR runtime: the picture is upside down (Tre). Not
   looked at yet.
-- Next: VRTestSubmit (Options > VR performance > Testing): 1 = submit the
-  projection only (no quad layers), 2 = also no monitor Present. Logged as
-  "Test:" and in the Perf line, so each setting is measured apart.
-- Result: no change with VRTestSubmit 2 (the same 40 s cycle, at 73.54 and
-  113.54 s), and Tre sees drops to the 60s sitting at the main menu (the
-  screen layer only). So it's not what we send. Next: VRProbe, the bridge
-  alone with no game, now logs the same Hitch / Perf lines.
+- A test switch (VRTestSubmit: world only, then also no monitor Present)
+  changed nothing (the same 40 s cycle), and Tre saw drops to the 60s
+  sitting at the main menu (the screen layer only). So not what we send.
+- VRProbe (the bridge alone, no game; it now logs the same Hitch / Perf
+  lines) stutters the same way: 3 x 100 ms in xrEndFrame every 40 s.
+- Titanfall 2 VR with Virtual Desktop's overlay: the same drops, with
+  Networking flagged (20-27 ms) and Spacewarp active. Settled: it's Tre's
+  streaming path (Wi-Fi to the Quest), not the mod. The test switch was
+  taken out again; the Perf / Hitch lines stay, for players' reports.
 
 ## Menus: the mouse steps aside
 

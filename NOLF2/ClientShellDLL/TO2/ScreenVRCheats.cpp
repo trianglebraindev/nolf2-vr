@@ -76,7 +76,7 @@ namespace
 		"Full ammo for everything you have.",
 		"Full health.",
 		"Full armor.",
-		"Skill points to spend.",
+		"1,000 skill points to spend, each time.",
 		"Pick any level of any mission and start it fresh, at this difficulty.",
 		"Finish this level now and go on to the next.",
 		"Finish this whole mission now.",
