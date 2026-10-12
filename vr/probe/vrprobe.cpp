@@ -18,6 +18,13 @@
 //
 //  A log is written to xrbridge.log next to this program.
 //
+//  TIMING
+//  While it runs, the log gets the same "Hitch:" lines as the game (any
+//  frame over 25 ms and 2.5 headset frames: where its time went) and a
+//  "Perf:" line every 10 seconds. With nothing but this program feeding
+//  the headset, it shows whether stutters come from the bridge and the
+//  runtime, or from something in the game.
+//
 //------------------------------------------------------------------
 
 #define WIN32_LEAN_AND_MEAN
@@ -158,6 +165,13 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int)
 	QueryPerformanceFrequency(&freq);
 	QueryPerformanceCounter(&start);
 	unsigned nFrames = 0;
+
+	// Timing (see the top of this file).
+	LARGE_INTEGER lastEnd, windowStart, t0, t1;
+	bool bHaveLast = false;
+	windowStart.QuadPart = 0;
+	int nWinFrames = 0, nWinHitches = 0;
+	double fWinWorst = 0.0, fWinSum = 0.0;
 	DWORD dwLastTitle = GetTickCount();
 
 	while (!g_bQuit && !bridge.ShouldQuit())
@@ -174,6 +188,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int)
 			bridge.Recenter();
 		}
 
+		QueryPerformanceCounter(&t0);
 		bool bXR = bridge.BeginFrame();
 
 		QueryPerformanceCounter(&now);
@@ -190,12 +205,52 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int)
 
 		if (bXR)
 		{
+			QueryPerformanceCounter(&t1);
 			bridge.EndFrame(false, true);
 			++nFrames;
+
+			LARGE_INTEGER tEnd;
+			QueryPerformanceCounter(&tEnd);
+			const double fMsPerTick = 1000.0 / (double)freq.QuadPart;
+			if (bHaveLast)
+			{
+				double fFrame = (double)(tEnd.QuadPart - lastEnd.QuadPart) * fMsPerTick;
+				double fWait = bridge.GetLastWaitMs();
+				double fOwn = (double)(t1.QuadPart - t0.QuadPart) * fMsPerTick - fWait;	// BeginFrame's rest + drawing + Present
+				double fEnd = (double)(tEnd.QuadPart - t1.QuadPart) * fMsPerTick;
+				double fPeriod = bridge.GetDisplayPeriodMs();
+				if (!windowStart.QuadPart)
+					windowStart = tEnd;
+				++nWinFrames;
+				fWinSum += fFrame;
+				if (fFrame > fWinWorst)
+					fWinWorst = fFrame;
+				if (fPeriod > 0.0 && fFrame > fPeriod * 2.5 && fFrame > 25.0)
+				{
+					++nWinHitches;
+					double aSub[xrb::Bridge::SUBMIT_PARTS];
+					bridge.GetLastSubmitTimes(aSub);
+					xrb::Log("Hitch: %.1f ms = headset wait %.1f + probe %.1f + hand-over %.1f (other %.1f); xrEndFrame %.1f",
+						fFrame, fWait, fOwn, fEnd, fFrame - fWait - fOwn - fEnd, aSub[xrb::Bridge::SUBMIT_END_FRAME]);
+				}
+				double fWindow = (double)(tEnd.QuadPart - windowStart.QuadPart) * fMsPerTick;
+				if (fWindow >= 10000.0 && nWinFrames > 0)
+				{
+					xrb::Log("Perf: %.1f fps (headset %.0f Hz), frame %.1f ms avg / %.1f worst, hitches %d",
+						(double)nWinFrames * 1000.0 / fWindow, fPeriod > 0.0 ? 1000.0 / fPeriod : 0.0,
+						fWinSum / (double)nWinFrames, fWinWorst, nWinHitches);
+					windowStart = tEnd;
+					nWinFrames = nWinHitches = 0;
+					fWinSum = fWinWorst = 0.0;
+				}
+			}
+			lastEnd = tEnd;
+			bHaveLast = true;
 		}
 		else
 		{
 			Sleep(10);	// headset not ready yet; don't spin
+			bHaveLast = false;
 		}
 
 		if (GetTickCount() - dwLastTitle > 500)

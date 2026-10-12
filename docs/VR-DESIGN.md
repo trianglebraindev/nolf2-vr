@@ -931,6 +931,10 @@ symbols from the build's .pdb files):
 - Next: VRTestSubmit (Options > VR performance > Testing): 1 = submit the
   projection only (no quad layers), 2 = also no monitor Present. Logged as
   "Test:" and in the Perf line, so each setting is measured apart.
+- Result: no change with VRTestSubmit 2 (the same 40 s cycle, at 73.54 and
+  113.54 s), and Tre sees drops to the 60s sitting at the main menu (the
+  screen layer only). So it's not what we send. Next: VRProbe, the bridge
+  alone with no game, now logs the same Hitch / Perf lines.
 
 ## Menus: the mouse steps aside
 
