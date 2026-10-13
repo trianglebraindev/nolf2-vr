@@ -72,6 +72,9 @@
 //                   middle of the controller's handle, cm (default 7)
 //   VRHandPalm      ... and how far the hand sits off the handle toward
 //                   the back of the hand, cm (default 3.5)
+//   VRFreeHandX/Y/Z the free hand's own fit on top of that (the adjust
+//                   mode, left trigger): slide right / up / forward, cm
+//   VRFreeHandYaw/Pitch/Roll  ... and turn / tilt / roll, degrees
 //
 //   Wrist and gun HUD (health and armour on the left wrist, ammo on the
 //   gun; see RenderHudItem):
@@ -207,6 +210,9 @@ static VarTrack g_vtVRGunPitch;
 static VarTrack g_vtVRArms;
 static VarTrack g_vtVRWristBack;
 static VarTrack g_vtVRHandPalm;
+static VarTrack g_vtVRFreeHand[6];		// VRFreeHandX, Y, Z, Yaw, Pitch, Roll
+static const char* const kFreeHandNames[6] =
+	{ "VRFreeHandX", "VRFreeHandY", "VRFreeHandZ", "VRFreeHandYaw", "VRFreeHandPitch", "VRFreeHandRoll" };
 static VarTrack g_vtVRWristHud;
 static VarTrack g_vtVRWristHudWatch;
 static VarTrack g_vtVRWristHudX;
@@ -347,6 +353,8 @@ CVRMgr::CVRMgr()
 	m_bAdjusting		= false;
 	m_bAdjustScope		= false;
 	m_bAdjustMag		= false;
+	m_bAdjustHand		= false;
+	memset(m_afHandFit, 0, sizeof(m_afHandFit));
 	m_bHoldingMag		= false;
 	m_hGunModel			= LTNULL;
 	m_hNodeArmL = m_hNodeWristL = m_hNodeArmR = m_hNodeWristR = INVALID_MODEL_NODE;
@@ -419,6 +427,8 @@ void CVRMgr::Init()
 	g_vtVRArms.Init(g_pLTClient, "VRArms", NULL, 0.0f);
 	g_vtVRWristBack.Init(g_pLTClient, "VRWristBack", NULL, 7.0f);
 	g_vtVRHandPalm.Init(g_pLTClient, "VRHandPalm", NULL, 3.5f);
+	for (int i = 0; i < 6; ++i)
+		g_vtVRFreeHand[i].Init(g_pLTClient, kFreeHandNames[i], NULL, 0.0f);
 	g_vtVRWristHud.Init(g_pLTClient, "VRWristHud", NULL, 1.0f);
 	g_vtVRWristHudWatch.Init(g_pLTClient, "VRWristHudWatch", NULL, 1.0f);
 	g_vtVRWristHudX.Init(g_pLTClient, "VRWristHudX", NULL, -3.0f);
@@ -530,6 +540,12 @@ static const VRSettingDef s_aVRSettings[] =
 	{ "VRArms",				0.0f },
 	{ "VRWristBack",		7.0f },
 	{ "VRHandPalm",			3.5f },
+	{ "VRFreeHandX",		0.0f },
+	{ "VRFreeHandY",		0.0f },
+	{ "VRFreeHandZ",		0.0f },
+	{ "VRFreeHandYaw",		0.0f },
+	{ "VRFreeHandPitch",	0.0f },
+	{ "VRFreeHandRoll",		0.0f },
 	{ "VRGunScale",			12.0f },
 	{ "VRGunHandX",			12.0f },
 	{ "VRGunHandY",			-18.0f },
@@ -948,10 +964,7 @@ void CVRMgr::Update(float fFrameTime)
 	const bool bCutscene = bPlaying && g_pPlayerMgr && g_pPlayerMgr->IsUsingExternalCamera();
 
 	if ((!bPlaying || bCutscene) && m_bAdjusting)
-	{
-		m_bAdjusting = false;		// left play (menu, death, level change, cutscene): stop adjusting
-		SaveGunFits();
-	}
+		StopAdjusting();		// left play (menu, death, level change, cutscene): stop adjusting
 
 	// Riding the snowmobile: its controls (see UpdateVehicle).
 	UpdateVehicle(bPlaying);
@@ -1237,10 +1250,7 @@ void CVRMgr::SetCurrentGun(const char* pszName, HOBJECT hModel)
 	if (strcmp(pszName, m_szCurrentGun) != 0)
 	{
 		if (m_bAdjusting)
-		{
-			m_bAdjusting = false;
-			SaveGunFits();
-		}
+			StopAdjusting();
 		strncpy(m_szCurrentGun, pszName, sizeof(m_szCurrentGun) - 1);
 		m_szCurrentGun[sizeof(m_szCurrentGun) - 1] = '\0';
 		if (IsActive())
@@ -1421,6 +1431,7 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 			if (!m_szCurrentGun[0] || !GetOrAddCurrentFit())
 				return;
 			m_bAdjusting = true;
+			m_bAdjustHand = false;
 			// Holding a magazine: adjust how it's held. Looking through the
 			// scope: adjust where the scope is.
 			m_bAdjustMag = m_bHoldingMag && !m_bRiding;
@@ -1447,15 +1458,22 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 			{
 				Message("ADJUST GUN: left stick slides it, right stick tilts and turns it.");
 				Message("Right grip + right stick up/down raises it. A / B: bigger / smaller.");
-				Message("Line the sights up with the crosshair. Click the left stick when done.");
+				Message("Line the sights up with the crosshair. Left trigger: adjust your free hand. Click the left stick when done.");
 			}
 		}
 		else
 		{
-			m_bAdjusting = false;
-			SaveGunFits();
+			const bool bWasHand = m_bAdjustHand;
+			StopAdjusting();
 			char szMsg[160];
-			if (m_bAdjustMag)
+			if (bWasHand)
+			{
+				_snprintf(szMsg, sizeof(szMsg), "Free hand fit saved (slide %.1f %.1f %.1f cm, turn %.0f tilt %.0f roll %.0f).",
+					m_afHandFit[0], m_afHandFit[1], m_afHandFit[2], m_afHandFit[3], m_afHandFit[4], m_afHandFit[5]);
+				szMsg[sizeof(szMsg) - 1] = '\0';
+				Log("%s", szMsg);
+			}
+			else if (m_bAdjustMag)
 			{
 				const GunFit* pDone = GetCurrentFit();
 				_snprintf(szMsg, sizeof(szMsg), "Magazine hold saved (%s: slide %.1f %.1f %.1f cm, turn %.0f tilt %.0f roll %.0f).",
@@ -1525,6 +1543,49 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 	ApplyDeadZone(lx, ly);
 	ApplyDeadZone(rx, ry);
 
+	// Adjusting the gun: the left trigger switches to the free hand (and
+	// back). Its fit is one for every weapon.
+	if (!m_bRiding && !m_bAdjustMag && !m_bAdjustScope && Pressed(LTVR_LEFT, LTVR_BTN_TRIGGER))
+	{
+		m_bAdjustHand = !m_bAdjustHand;
+		if (m_bAdjustHand)
+		{
+			GetFreeHandFit(m_afHandFit);
+			Message("ADJUST FREE HAND: left stick slides it, right stick turns and tilts it.");
+			Message("Right grip + right stick up/down raises it. A / B: roll. Left trigger: back to the gun.");
+			Message("Fit it to your controller. Click the left stick when done.");
+		}
+		else
+		{
+			Message("ADJUST GUN again. Left trigger: your free hand. Click the left stick when done.");
+		}
+	}
+
+	if (m_bAdjustHand)
+	{
+		// Left-handed, the hands are drawn mirrored: flip what's mirrored
+		// (sideways, turning, rolling) so the stick moves it the way you see.
+		const float fSide = m_bLeftHanded ? -1.0f : 1.0f;
+		const float kHandCmPerSec = 3.0f;
+		const float kHandDegPerSec = 45.0f;
+		m_afHandFit[0] += lx * fSide * kHandCmPerSec * fFrameTime;
+		m_afHandFit[2] += ly * kHandCmPerSec * fFrameTime;
+		if (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_GRIP)
+		{
+			m_afHandFit[1] += ry * kHandCmPerSec * fFrameTime;
+		}
+		else
+		{
+			m_afHandFit[3] += rx * fSide * kHandDegPerSec * fFrameTime;
+			m_afHandFit[4] += ry * kHandDegPerSec * fFrameTime;
+		}
+		if (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_PRIMARY)
+			m_afHandFit[5] += fSide * kHandDegPerSec * fFrameTime;
+		if (m_State.hand[LTVR_RIGHT].buttons & LTVR_BTN_SECONDARY)
+			m_afHandFit[5] -= fSide * kHandDegPerSec * fFrameTime;
+		return;
+	}
+
 	if (m_bAdjustMag)
 	{
 		const float kMagDegPerSec = 45.0f;
@@ -1593,6 +1654,29 @@ void CVRMgr::UpdateGunAdjust(float fFrameTime)
 
 	if (!m_bRiding && CurrentGunHasScope())
 		MoveScopeWithGun(kBefore, *pFit);
+}
+
+// Leaves the adjust mode, saving what was being adjusted: the gun fits
+// (vr_guns.txt), and the free hand's fit (vr_settings.txt) if that was it.
+void CVRMgr::StopAdjusting()
+{
+	m_bAdjusting = false;
+	SaveGunFits();
+	if (m_bAdjustHand)
+	{
+		m_bAdjustHand = false;
+		for (int i = 0; i < 6; ++i)
+			SetSetting(kFreeHandNames[i], m_afHandFit[i]);
+		SaveSettings();
+	}
+}
+
+// The free hand's fit: while adjusting it, as it's being adjusted; otherwise
+// the saved settings.
+void CVRMgr::GetFreeHandFit(float afFit[6]) const
+{
+	for (int i = 0; i < 6; ++i)
+		afFit[i] = (m_bAdjusting && m_bAdjustHand) ? m_afHandFit[i] : g_vtVRFreeHand[i].GetFloat(0.0f);
 }
 
 bool CVRMgr::CurrentGunHasScope() const
@@ -2251,8 +2335,24 @@ bool CVRMgr::GetFreeHandTransform(LTMatrix& mT, LTVector& vPalm) const
 	LTVector vS = -rGrip.Forward();
 	LTVector vN = rGrip.Right();
 
+	// The player's own fit (VRFreeHand*, the adjust mode): slide along the
+	// hand (right = palm side, up = back of the knuckles' row, forward = the
+	// knuckles' way), and turn about the hand's up, tilt about its right and
+	// roll about its forward, all pivoting on the controller's handle.
+	float afFit[6];
+	GetFreeHandFit(afFit);
 	const float fUnitsPerCm = (m_State.unitsPerMeter > 1.0f ? m_State.unitsPerMeter : 54.5454f) / 100.0f;
-	LTVector vWrist = vGrip - vF * (g_vtVRWristBack.GetFloat(7.0f) * fUnitsPerCm)
+	const LTVector vSlide = (vN * afFit[0] - vS * afFit[1] + vF * afFit[2]) * fUnitsPerCm;
+	if (afFit[3] != 0.0f || afFit[4] != 0.0f || afFit[5] != 0.0f)
+	{
+		const LTRotation rFit = LTRotation(-vS, DEG2RAD(afFit[3])) * LTRotation(vN, DEG2RAD(afFit[4])) *
+			LTRotation(vF, DEG2RAD(afFit[5]));
+		vF = VR_Rotate(rFit, vF);
+		vS = VR_Rotate(rFit, vS);
+		vN = VR_Rotate(rFit, vN);
+	}
+
+	LTVector vWrist = vGrip + vSlide - vF * (g_vtVRWristBack.GetFloat(7.0f) * fUnitsPerCm)
 							- vN * (g_vtVRHandPalm.GetFloat(3.5f) * fUnitsPerCm);
 	vWrist /= GetGunScale();	// camera space -> really-close space
 
@@ -2674,7 +2774,9 @@ void CVRMgr::UpdateDecisionControls(float fFrameTime)
 	else if (nKey == VK_DOWN)
 		g_pDecision->VR_MoveSelection(1);
 
-	if (Pressed(LTVR_RIGHT, LTVR_BTN_TRIGGER) || Pressed(LTVR_RIGHT, LTVR_BTN_PRIMARY))
+	// (Either trigger picks: the free hand's is the one you use things with.)
+	if (Pressed(LTVR_RIGHT, LTVR_BTN_TRIGGER) || Pressed(LTVR_LEFT, LTVR_BTN_TRIGGER) ||
+		Pressed(LTVR_RIGHT, LTVR_BTN_PRIMARY))
 		g_pDecision->VR_ChooseSelection();
 	else if (Pressed(LTVR_RIGHT, LTVR_BTN_SECONDARY))
 		g_pDecision->Choose(MAX_DECISION_CHOICES);	// say nothing, like Escape

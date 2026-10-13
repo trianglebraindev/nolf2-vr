@@ -484,6 +484,9 @@ private:
 	bool		m_bAdjusting;
 	bool		m_bAdjustScope;			// (adjusting the scope's line, not the gun)
 	bool		m_bAdjustMag;			// (adjusting how the left hand holds a magazine)
+	bool		m_bAdjustHand;			// (adjusting the free hand's fit; the left trigger switches to it)
+	float		m_afHandFit[6];			// the free hand's fit while adjusting it: slide right / up /
+										// forward (cm), turn / tilt / roll (degrees); VRFreeHand*
 	bool		m_bHoldingMag;			// the left hand holds a magazine (the weapon says, each frame)
 
 	const GunFit*	GetCurrentFit() const;
@@ -492,6 +495,8 @@ private:
 	void		MoveScopeWithGun(const GunFit& before, GunFit& fit) const;	// (the gun adjust mode)
 	void		LoadGunFits();
 	void		SaveGunFits();
+	void		StopAdjusting();		// leaves the adjust mode, saving what was adjusted
+	void		GetFreeHandFit(float afFit[6]) const;
 	void		Message(const char* pszText);
 	bool		Pressed(int nHand, unsigned nButton) const;		// went down this frame
 	void		SendKey(int nKey);

@@ -104,8 +104,8 @@ and **Options > VR performance**.
 | Left grip | on the weapon: hold it with both hands; elsewhere: pick up / drop a body | |
 | Left X | mission objectives | |
 | Left Y or menu button | pause menu | back |
-| Left stick click | with Options > VR > Adjust with stick click on (off by default): adjust the gun's fit in your hand (looking through a scope: adjust the scope; holding a magazine: adjust how it's held); click again to save | |
-| Conversation choices | right stick up / down (the chosen answer shows in red), right trigger or A to pick, B to say nothing | |
+| Left stick click | with Options > VR > Adjust with stick click on (off by default): adjust the gun's fit in your hand (looking through a scope: adjust the scope; holding a magazine: adjust how it's held); while adjusting the gun, the left trigger switches to your free hand's fit; click again to save | |
+| Conversation choices | right stick up / down (the chosen answer shows in red), either trigger or A to pick, B to say nothing | |
 | Home key (keyboard) | recentre | recenter |
 
 Left-handed (Options > VR > Gun hand: Left): every row swaps sides (fire
@@ -134,6 +134,7 @@ hand: one `Name value` per line, read when the game starts.
 | `VRGunScale` | 12 | size of the gun in your hand |
 | `VRArms` | 0 | 1 = the game's full arms instead of hands |
 | `VRWristBack` / `VRHandPalm` | 7 / 3.5 | the free left hand: how far the wrist sits behind the middle of the controller's handle, and how far the hand sits off the handle toward its back (cm) |
+| `VRFreeHandX/Y/Z`, `VRFreeHandYaw/Pitch/Roll` | 0 | your own fit for the free hand on top of that (the adjust mode, left trigger): slide right / up / forward (cm), turn / tilt / roll (degrees) |
 | `VRWristHud` / `VRGunHud` | 1 / 1 | 0 = health / ammo back on the HUD panel |
 | `VRWristHudWatch` | 1 | 1 = health shows as you turn your wrist toward you; 0 = always shown, facing you |
 | `VRWristHudX/Y/Z`, `VRWristHudSize` | -3 / 0 / -9, 9 | where health sits on the left wrist (cm), its width (cm) |
