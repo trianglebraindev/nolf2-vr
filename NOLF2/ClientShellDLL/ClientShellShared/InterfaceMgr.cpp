@@ -5473,6 +5473,96 @@ void CInterfaceMgr::UpdateModelAnimations(LTFLOAT fCurFrameDelta)
 }
 
 // --------------------------------------------------------------------------- //
+// VR (looking into a 3D main menu): what a menu screen draws in 3D behind
+// its text, written to vr_game.log when the screen or its set of objects
+// changes. Each pass is one RenderObjects call (one menu layer, plus the
+// lights). Positions are relative to the menu camera, in its own axes
+// (right, up, forward), in game units.
+// --------------------------------------------------------------------------- //
+
+static void VR_LogMenuScenePass(HOBJECT hCamera, HLOCALOBJ* pObjs, int nObjs, int nLayer, int nPass)
+{
+	static int s_nLastScreen = -1;
+	static int s_nLastSignature = -1;
+	static int s_nLogged = 0;
+	static bool s_bLoggingThisFrame = false;
+
+	if (!g_VRMgr.IsActive() || !hCamera || s_nLogged >= 60)
+		return;
+
+	const int nScreen = g_pInterfaceMgr && g_pInterfaceMgr->GetScreenMgr() ?
+		(int)g_pInterfaceMgr->GetScreenMgr()->GetCurrentScreenID() : -1;
+	if (nPass == 0)
+	{
+		// A new frame: log it if the screen or what's drawn changed.
+		int nSignature = nObjs * 1000 + nLayer;
+		s_bLoggingThisFrame = (nScreen != s_nLastScreen || nSignature != s_nLastSignature);
+		s_nLastScreen = nScreen;
+		s_nLastSignature = nSignature;
+		if (!s_bLoggingThisFrame)
+			return;
+		++s_nLogged;
+
+		LTVector vCam;
+		LTRotation rCam;
+		g_pLTClient->GetObjectPos(hCamera, &vCam);
+		g_pLTClient->GetObjectRotation(hCamera, &rCam);
+		uint32 nW = 0, nH = 0;
+		g_pLTClient->GetSurfaceDims(g_pLTClient->GetScreenSurface(), &nW, &nH);
+		g_VRMgr.Log("Menu scene: screen %d, camera at %.1f %.1f %.1f, forward %.2f %.2f %.2f, fov %.0f x %.0f deg, screen %ux%u",
+			nScreen, vCam.x, vCam.y, vCam.z, rCam.Forward().x, rCam.Forward().y, rCam.Forward().z,
+			g_vtInterfaceFOVX.GetFloat(), g_vtInterfaceFOVY.GetFloat(), nW, nH);
+	}
+	if (!s_bLoggingThisFrame)
+		return;
+
+	LTVector vCam;
+	LTRotation rCam;
+	g_pLTClient->GetObjectPos(hCamera, &vCam);
+	g_pLTClient->GetObjectRotation(hCamera, &rCam);
+	g_VRMgr.Log("  pass %d (layer %d): %d objects", nPass, nLayer, nObjs);
+	for (int i = 0; i < nObjs; ++i)
+	{
+		HLOCALOBJ hObj = pObjs[i];
+		if (!hObj)
+			continue;
+		uint32 nType = 0;
+		g_pCommonLT->GetObjectType(hObj, &nType);
+		LTVector vPos, vScale(1.0f, 1.0f, 1.0f);
+		g_pLTClient->GetObjectPos(hObj, &vPos);
+		g_pLTClient->GetObjectScale(hObj, &vScale);
+		const LTVector d = vPos - vCam;
+		const float fRight = d.Dot(rCam.Right()), fUp = d.Dot(rCam.Up()), fFwd = d.Dot(rCam.Forward());
+		uint32 dwFlags = 0;
+		g_pCommonLT->GetObjectFlags(hObj, OFT_Flags, dwFlags);
+
+		char szName[128] = "";
+		const char* pszType = "other";
+		switch (nType)
+		{
+		case OT_MODEL:
+			pszType = "model";
+			g_pModelLT->GetModelDBFilename(hObj, szName, sizeof(szName));
+			break;
+		case OT_SPRITE:		pszType = "sprite";		break;
+		case OT_LIGHT:		pszType = "light";		break;
+		case OT_POLYGRID:	pszType = "polygrid";	break;
+		case OT_PARTICLESYSTEM: pszType = "particles"; break;
+		case OT_LINESYSTEM:	pszType = "lines";		break;
+		case OT_CANVAS:		pszType = "canvas";		break;
+		case OT_NORMAL:		pszType = "normal";		break;
+		default:			break;
+		}
+		szName[sizeof(szName) - 1] = '\0';
+		g_VRMgr.Log("    %-9s right %7.1f up %7.1f forward %7.1f, scale %.2f %.2f %.2f, %s",
+			pszType, fRight, fUp, fFwd, vScale.x, vScale.y, vScale.z,
+			(dwFlags & FLAG_VISIBLE) ? "visible" : "hidden");
+		if (szName[0])
+			g_VRMgr.Log("              %s", szName);
+	}
+}
+
+// --------------------------------------------------------------------------- //
 //
 //	ROUTINE:	CInterfaceMgr::UpdateInterfaceSFX
 //
@@ -5568,6 +5658,7 @@ void CInterfaceMgr::UpdateInterfaceSFX()
 	FXRenderList::iterator iter = renderList.begin();
 	static char szTmp[256];
 	static char szNum[16];
+	int nVRPass = 0;		// (VR: logging the menu scene)
 	while (iter != renderList.end())
 	{
 		next = 0;
@@ -5596,6 +5687,7 @@ void CInterfaceMgr::UpdateInterfaceSFX()
 		}
 
 
+		VR_LogMenuScenePass(m_hInterfaceCamera, objs, next, layer, nVRPass++);
 		g_pLTClient->RenderObjects(m_hInterfaceCamera, objs, next,g_pLTClient->GetFrameTime());
 	
 	}
